@@ -1,6 +1,6 @@
-# CLAUDE.md — "Rompler" project: port & integration brief
+# CLAUDE.md — "The Dreamer" project: port & integration brief
 
-Project: dual-mode 90s ROMpler VST3 (JUCE, CMake, C++17, Windows 11, Cubase 15
+Project: 90s ROMpler VST3 (JUCE, CMake, C++17, Windows 11, Cubase 15
 as the validation DAW). Built from two sources:
 
 1. **Rubber-Rhino codebase** (existing, working plugin) — donor for filters,
@@ -10,6 +10,39 @@ as the validation DAW). Built from two sources:
    read-only unless a task explicitly says otherwise.
 
 Read this file fully before any task. When in doubt: ask, don't improvise.
+
+---
+
+## Scope decisions (user, 2026-07-17 — override anything below that conflicts)
+
+1. **DREAM is the only mode.** No Mode 1 / RHINO, no mode switch. The voice is
+   the dual-partial JD-990 topology from Mode2Voice.h. The old phase 3
+   (Mode 1 topology) is dropped.
+2. **24-voice polyphony**, oldest-note stealing. (Known defect in the verified
+   bank code: `Mode2Synth::noteOn` never assigns `stamp_` to the voice, so its
+   "steal oldest" steals the least-reused voice instead of the oldest note.
+   Fixed in glue (`DreamSynth` passes a global stamp); dsp/bank stays untouched.)
+3. **2 LFOs per partial** (ported rhino::Lfo: sine/tri/ramp/square/S&H,
+   exp 0.05–30 Hz), each with shape / rate / depth / dest (Pitch, Cutoff,
+   Level) / key-trigger. Values applied at the voice's existing 16-sample
+   control rate — the stepping is era-honest, do not smooth it.
+4. **Full Rubber-Rhino FX chain ported verbatim** (distortion, DC block,
+   16-bit truncation, stereo delay + HP/LP returns, chorus, flanger, phaser,
+   spring reverb + juce::Reverb, instability, comp/limiter, brickwall), on a
+   post-voice-sum stereo bus in the donor's processBlock order.
+5. **RubberFilter ported without the "mod"**: the Character block
+   (drive/squelch/tweet/tweak) stays compiled but permanently disabled
+   (default `Character{}`) and is not parameter-exposed. `Faithful1017Filter`
+   is NOT ported. All 7 filter types are exposed per partial.
+6. Envelopes stay the bank's `rompler::EnvelopeAdsr` (era-honest ADSR).
+7. Ported-file rule: the ONLY textual change in a ported file is namespace
+   `rhino` → `dreamer` (plus deleting the unreachable Faithful1017Filter from
+   RhinoFilter.h). This lets donor and port coexist in one test TU for exact
+   null tests.
+8. Plugin identity: product "The Dreamer", company "Menashe Audio",
+   manufacturer `Mnsh`, plugin code `Drmr`, VST3 only, generic APVTS editor
+   until the WebView GUI handoff lands. Parameter IDs are locked for that
+   handoff (see plugin/Params.h).
 
 ---
 
@@ -48,23 +81,42 @@ Read this file fully before any task. When in doubt: ask, don't improvise.
       tests/             # unit + null tests, standalone console targets
       validation/        # reference renders, null-test scripts
 
-## Class-name mapping (fill in real Rubber-Rhino names before phase 1)
+## Class-name mapping (filled 2026-07-17; all ports keep class names, only the namespace changes rhino → dreamer)
 
-| Rubber-Rhino source              | Ported name / location            |
-|----------------------------------|-----------------------------------|
-| <FilterClass>       (TODO name)  | dsp/ported/RhinoFilter.h/.cpp     |
-| <FilterTypeEnum>                 | keep values & order EXACTLY       |
-| <EnvelopeClass>                  | dsp/ported/RhinoEnvelope.*        |
-| <LfoClass>                       | dsp/ported/RhinoLfo.*             |
-| <FxChain: chorus/delay/etc>      | dsp/ported/fx/*                   |
-| <VoiceClass>                     | reference only -- NOT ported      |
-| APVTS layout helpers             | plugin/Params.*                   |
+| Rubber-Rhino source                                        | Ported name / location |
+|------------------------------------------------------------|------------------------|
+| Source/dsp/RubberFilter.h — `rhino::RubberFilter`, `Type`, `Character` | dsp/ported/RhinoFilter.h (`dreamer::RubberFilter`; Faithful1017Filter class DELETED — unreachable; Character kept but permanently disabled) |
+| `RubberFilter::Type` enum {classic,liquid,scream,plane,ladder,ms20,wasp} | keep values & order EXACTLY (7-entry choice param, frozen) |
+| Source/dsp/Envelope.h (FilterADEnv/VolumeADEnv)            | NOT ported — envelopes stay rompler::EnvelopeAdsr (scope decision 6) |
+| Source/dsp/Lfo.h — `rhino::Lfo`                            | dsp/ported/RhinoLfo.h (`dreamer::Lfo`) |
+| Source/dsp/Effects.h (Distortion, DCBlocker, Truncate16/12, StereoDelay) | dsp/ported/fx/Effects.h |
+| Source/dsp/ReturnFilter.h                                  | dsp/ported/fx/ReturnFilter.h |
+| Source/dsp/ModFx.h (ModDelayFx, Phaser)                    | dsp/ported/fx/ModFx.h |
+| Source/dsp/SpringReverb.h                                  | dsp/ported/fx/SpringReverb.h |
+| Source/dsp/Instability.h                                   | dsp/ported/fx/Instability.h |
+| Source/dsp/Dynamics.h (CompLimiter, BrickwallClip)         | dsp/ported/fx/Dynamics.h |
+| Source/dsp/Voice.h, MorphOscillator.h, Sequencer.h, WaveMap.h | reference only — NOT ported (single-mode decision) |
+| APVTS layout helpers                                       | plugin/Params.h |
+
+New glue (this project, not ports): dsp/glue/RhinoFilterSlot.h (FilterSlot
+adapter over dreamer::RubberFilter), dsp/glue/DreamVoice.h (adapted copy of
+Mode2Voice.h with 2 LFOs/partial, pitch bend, live-param updates, steal fix,
+fixed 24 voices).
 
 ---
 
-## Phase plan
+## Phase plan (rewritten 2026-07-17 per scope decisions; executed by Fable 5.
+## Historical dual-mode phases kept below for reference — superseded where they
+## mention Mode 1 / mode switch.)
 
-### Phase 1 — Filter port + FilterSlot adapter   [Sonnet 4.6]
+1. port/scaffold — layout, bank copy, deps/JUCE, CMake configure, test_bank. DONE 2026-07-17.
+2. port/filter — RhinoFilter.h + RhinoFilterSlot.h + test_filter_port (donor-vs-port null, adapter identity, res=max sweep).
+3. port/fx — RhinoLfo.h + fx/* + test_fx_port (per-class donor-vs-port null).
+4. port/voice — DreamVoice.h + test_voice (alloc guard, steal, LFO laws, control-rate probe, pitch bend) + demo renders.
+5. port/plugin — Params.h + PluginProcessor (24-voice synth + full FX bus) + generic editor; Release build zero new warnings.
+6. port/validation — SR sweep, pluginval strictness 8, deploy to share, VALIDATION.md, STATE update.
+
+### Phase 1 (historical) — Filter port + FilterSlot adapter   [Sonnet 4.6]
 - Copy Rubber-Rhino filter classes into `dsp/ported/` per mapping table.
 - Write `dsp/glue/RhinoFilterSlot.h`: adapter implementing the FilterSlot
   interface from Mode2Voice.h:
