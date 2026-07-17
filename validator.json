@@ -29,6 +29,16 @@
   "deploy": {
     "targets": ["C:\\the-dreamer\\The Dreamer.vst3", "\\\\VBOXSVR\\vagrant\\The Dreamer.vst3"]
   },
+  "gui": {
+    "pages": [
+      { "name": "main",
+        "dir": "plugin\\gui",
+        "entry": "editor.html",
+        "checks": ["load", "screenshot"],
+        "windowSize": "1180,700",
+        "bridgeResults": { "getInfo": { "version": "validator", "build": "validator" } } }
+    ]
+  },
   "host": { "pluginval": { "strictness": 8 } }
 }
 

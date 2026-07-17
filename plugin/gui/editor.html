@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>The Dreamer</title>
+<link rel="stylesheet" href="style.css">
+</head><body>
+
+<!-- Fixed 1140x660 design canvas, uniformly scaled by app.js fit().
+     Static skeleton only: repetitive controls (knobs, sliders, matrix/FX
+     rows, tone columns) are built by app.js into the mount points below
+     (house pattern, see rubber-rhino gui). -->
+<div id="frame">
+  <div id="panel">
+
+    <!-- ============ header: logo / main LCD / MASTER / POWER ============ -->
+    <div id="hdr">
+      <div id="logo">
+        <div id="logoName">THE DREAMER</div>
+        <div id="logoSub">12-BIT ROM VECTOR SYNTHESIZER</div>
+      </div>
+      <div id="lcdWrap">
+        <div id="mainLcd">
+          <div id="waveGlyph"></div>
+          <div id="lcdLines">
+            <div id="lcdRow1"><span>P042 ETHEREAL DAWN</span><span id="lcdTone">TONE A</span></div>
+            <div id="lcdRow2"><span id="lcdTouched"></span><span id="lcdMeter"></span></div>
+          </div>
+        </div>
+      </div>
+      <div id="masterMount"></div>
+      <div id="powerWrap">
+        <div class="led on big"></div>
+        <div class="plab">POWER</div>
+      </div>
+    </div>
+
+    <!-- ============ row 1: TONES / TONE EDIT / FILTERS ============ -->
+    <div id="row1">
+
+      <div class="group" id="gTones">
+        <div class="gtitle">TONES</div>
+        <div id="toneCols"></div>
+      </div>
+
+      <div class="group" id="gToneEdit">
+        <div class="gtitle">TONE EDIT&nbsp; <span id="editToneName">A</span></div>
+        <div class="terow">
+          <div class="plbl">WAVE</div>
+          <div class="lcd" id="waveLcd" style="width:170px;height:20px;padding:0 6px"></div>
+          <div class="step" id="waveDec">&lt;</div>
+          <div class="step" id="waveInc">&gt;</div>
+          <div style="width:14px"></div>
+          <div class="plbl">SHAPE</div>
+          <div class="lcd ctr" id="shapeLcd" style="width:96px;height:20px"></div>
+          <div class="step" id="shapeDec">&lt;</div>
+          <div class="step" id="shapeInc">&gt;</div>
+        </div>
+        <div id="teKnobs"></div>
+        <div id="teTvfRow">
+          <div id="tvfVert">TVF</div>
+          <div id="tvfTypeCol">
+            <div class="lcd ctr sm" id="tvfTypeLcd" style="width:36px;height:18px"></div>
+            <div class="plab7" style="letter-spacing:.08em">TYPE</div>
+          </div>
+          <div id="tvfKnobs"></div>
+          <div class="bank" id="bankTvf"></div>
+          <div class="bank" id="bankTva"></div>
+          <div class="bank" id="bankAux"></div>
+        </div>
+        <div id="teLfoRow">
+          <div class="bttl">TONE LFO</div>
+          <div id="lfoDepthMount"></div>
+          <div class="plbl">DEST</div>
+          <div class="cbtn" id="lfoDestBtn" style="width:56px"></div>
+          <div style="width:16px"></div>
+          <div class="bttl">VECTOR</div>
+          <div id="vecMount" style="display:flex;gap:8px"></div>
+          <div style="flex:1"></div>
+          <div id="footnote">SHAPER + TVF + AUX + LFO + VECTOR + PAN ARE PER-TONE</div>
+        </div>
+      </div>
+
+      <div class="group" id="gFilters">
+        <div class="gtitle">FILTERS</div>
+        <div class="fstrip">
+          <div class="fnum">1</div>
+          <div class="step" id="f1Dec">&lt;</div>
+          <div class="lcd ctr sm" id="f1Lcd" style="height:20px"></div>
+          <div class="step" id="f1Inc">&gt;</div>
+        </div>
+        <div class="fknobs" id="f1Knobs"></div>
+        <div id="fDivider"></div>
+        <div class="fstrip">
+          <div class="fnum">2</div>
+          <div class="step" id="f2Dec">&lt;</div>
+          <div class="lcd ctr sm" id="f2Lcd" style="height:20px"></div>
+          <div class="step" id="f2Inc">&gt;</div>
+        </div>
+        <div class="fknobs" id="f2Knobs"></div>
+        <div id="routeRow">
+          <div class="ledlbl"><div class="led" id="serLed"></div><div class="plab8">SER</div></div>
+          <div class="pbtn" id="routeBtn" style="width:34px;height:18px"></div>
+          <div class="ledlbl"><div class="led" id="parLed"></div><div class="plab8">PAR</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ row 2: DREAM VECTOR / MOD MATRIX / FX ============ -->
+    <div id="row2">
+
+      <div class="group" id="gVector">
+        <div class="gtitle">DREAM VECTOR</div>
+        <div id="vecLeft">
+          <div id="flowBox"><svg id="flowSvg" viewBox="0 0 150 132"></svg></div>
+          <div id="flowCap">SIGNAL FLOW &middot; PHASE</div>
+        </div>
+        <div id="vecRight">
+          <div id="phaseMount"></div>
+          <div id="rateMount"></div>
+          <div class="togrow"><div class="led" id="orbitLed"></div><div class="pbtn tog" id="orbitBtn"></div><div class="plab7">ORBIT</div></div>
+          <div class="togrow"><div class="led" id="penvLed"></div><div class="pbtn tog" id="penvBtn"></div><div class="plab7">P-ENV</div></div>
+        </div>
+      </div>
+
+      <div class="group" id="gMatrix">
+        <div class="gtitle">MOD MATRIX</div>
+        <div id="mtxRows" style="display:flex;flex-direction:column;gap:5px"></div>
+        <div id="glfoRow">
+          <div class="bttl">GLOBAL LFO</div>
+          <div id="glfoRateMount"></div>
+          <div class="cbtn" id="glfoWaveBtn" style="width:44px"></div>
+        </div>
+      </div>
+
+      <div class="group" id="gFx">
+        <div class="gtitle">FX</div>
+        <div id="fxRows" style="display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+    </div>
+
+    <!-- version/build stamp, filled by the getInfo native call -->
+    <div id="verStamp"></div>
+  </div>
+
+  <!-- ============ menu overlay (scrim + LCD page) ============ -->
+  <div id="menuOverlay">
+    <div id="menuBox">
+      <div id="menuHead"><span id="menuTitle"></span><span>ESC=EXIT</span></div>
+      <div id="menuList" class="lcd-scroll"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body></html>

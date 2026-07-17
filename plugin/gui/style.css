@@ -1,0 +1,171 @@
+/* The Dreamer -- GUI v5 production stylesheet (design-handoff/gui-v5).
+   Fixed 1140x660 logical canvas, uniformly scaled by app.js fit().
+   Tokens + component specs verbatim from the v5 README / prototype. */
+
+/* Fonts served from BinaryData by bare filename (fully offline). */
+@font-face{font-family:'Barlow Semi Condensed';font-style:normal;font-weight:600;
+  src:url('BarlowSemiCondensed-SemiBold.ttf') format('truetype')}
+@font-face{font-family:'Barlow Semi Condensed';font-style:normal;font-weight:700;
+  src:url('BarlowSemiCondensed-Bold.ttf') format('truetype')}
+@font-face{font-family:'Doto';font-style:normal;font-weight:100 900;
+  src:url('Doto-Variable.ttf') format('truetype')}
+@font-face{font-family:'Michroma';font-style:normal;font-weight:400;
+  src:url('Michroma-Regular.ttf') format('truetype')}
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-user-select:none;user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#15172e}
+#frame{position:absolute;left:0;top:0;width:1140px;height:660px;transform-origin:top left}
+#panel{position:relative;width:1140px;height:660px;background:#232850;border-radius:6px;overflow:hidden;
+  box-shadow:0 12px 40px rgba(0,0,0,.6),inset 0 1px 0 rgba(201,205,242,.12);
+  font-family:'Barlow Semi Condensed',sans-serif}
+
+/* ============ header ============ */
+#hdr{position:relative;height:60px;background:#1b1f40;border-bottom:1px solid #464e94;
+  display:flex;align-items:center;padding:0 16px;gap:16px}
+#logo{display:flex;flex-direction:column;gap:2px}
+#logoName{font:400 19px 'Michroma';color:#c9cdf2;letter-spacing:.14em;white-space:nowrap}
+#logoSub{font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.34em;white-space:nowrap}
+#lcdWrap{flex:1;display:flex;justify-content:center;min-width:0}
+#mainLcd{width:520px;height:44px;background:#07070a;border-radius:3px;
+  box-shadow:inset 0 2px 8px rgba(0,0,0,.9),0 1px 0 rgba(201,205,242,.15);
+  padding:5px 10px;display:flex;align-items:center;gap:12px}
+#waveGlyph{display:flex;align-items:flex-end;gap:1px;height:30px}
+#waveGlyph div{width:3px;background:#ffd23f;opacity:.9}
+#lcdLines{flex:1;display:flex;flex-direction:column;gap:3px;overflow:hidden}
+#lcdRow1{display:flex;justify-content:space-between;font:800 12px 'Doto';color:#ffd23f;
+  letter-spacing:.04em;white-space:nowrap}
+#lcdRow2{display:flex;align-items:center;gap:8px;font:800 11px 'Doto';color:#ffd23f;white-space:nowrap}
+#lcdTouched{min-width:130px;white-space:pre}
+#lcdMeter{display:flex;gap:2px}
+#lcdMeter span{width:6px;height:9px;background:#1c1a10}
+#powerWrap{display:flex;flex-direction:column;align-items:center;gap:4px}
+.plab{font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.2em}
+
+/* ============ LEDs (strictly binary, no transitions) ============ */
+.led{width:6px;height:6px;border-radius:50%;background:#4a1020;flex:none}
+.led.on{background:#ff2b3e;box-shadow:0 0 8px rgba(255,43,62,.85)}
+.led.big{width:8px;height:8px}
+
+/* ============ rows / function groups ============ */
+#row1{display:grid;grid-template-columns:118px 1fr 200px;gap:10px;padding:14px 12px 0;height:352px}
+#row2{display:grid;grid-template-columns:250px 296px 1fr;gap:10px;padding:14px 12px 0;height:212px}
+.group{border:1px solid #464e94;border-radius:4px;position:relative}
+.gtitle{position:absolute;top:-7px;left:8px;background:#232850;padding:0 5px;
+  font:700 10px 'Barlow Semi Condensed';color:#c9cdf2;letter-spacing:.18em;white-space:nowrap}
+#editToneName{color:#ff5b6e}
+
+/* ============ shared control faces ============ */
+.lcd{background:#07070a;border-radius:2px;box-shadow:inset 0 1px 4px #000;color:#ffd23f;
+  font:800 11px 'Doto';display:flex;align-items:center;white-space:nowrap;overflow:hidden;cursor:pointer;flex:none}
+.lcd.ctr{justify-content:center}
+.lcd.sm{font-size:10px}
+.step{width:20px;height:18px;flex:none;background:#181b34;border:1px solid #464e94;border-radius:2px;
+  color:#c9cdf2;font:700 10px 'Barlow Semi Condensed';display:flex;align-items:center;justify-content:center;cursor:pointer}
+.step:active{background:#2c3160}
+.cbtn{height:18px;flex:none;background:#181b34;border:1px solid #464e94;border-radius:2px;color:#c9cdf2;
+  font:700 8px 'Barlow Semi Condensed';display:flex;align-items:center;justify-content:center;cursor:pointer}
+.cbtn:active{background:#2c3160}
+.pbtn{background:#181b34;border:1px solid #464e94;border-radius:3px;cursor:pointer;
+  box-shadow:0 2px 3px rgba(0,0,0,.5);flex:none}
+.pbtn:active{background:#10122a}
+.pbtn.tog{width:26px;height:14px}
+.lbl{font:600 8px 'Barlow Semi Condensed';letter-spacing:.08em;color:#9aa1d8;white-space:nowrap}
+.plbl{font:600 8.5px 'Barlow Semi Condensed';letter-spacing:.1em;color:#9aa1d8;white-space:nowrap}
+.plab8{font:600 8px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.08em}
+.plab7{font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8}
+.bttl{font:700 8px 'Barlow Semi Condensed';letter-spacing:.14em;color:#c9cdf2;white-space:nowrap}
+
+/* knob: skirt + fluted cap + solid centre + rotating pointer (-135..+135) */
+.kwrap{display:flex;flex-direction:column;align-items:center;gap:3px;flex:none}
+.kskirt{border-radius:50%;background:#14162c;display:flex;align-items:center;justify-content:center;
+  cursor:ns-resize;box-shadow:0 2px 4px rgba(0,0,0,.5);flex:none}
+.kcap{border-radius:50%;background:repeating-conic-gradient(#2a2d48 0deg 12deg,#20233c 12deg 24deg);position:relative}
+.kcapin{position:absolute;inset:5px;border-radius:50%;background:#2a2d48}
+.krot{position:absolute;inset:0}
+.kptr{position:absolute;left:50%;top:2px;width:2px;margin-left:-1px;border-radius:1px;background:#e8eaff}
+
+/* vertical slider: 9px track + 19x9 cap with white top line */
+.vsl{position:relative;width:9px;background:#0c0e20;border-radius:2px;cursor:ns-resize;
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.8);flex:none}
+.vcap{position:absolute;left:-5px;width:19px;height:9px;border-radius:2px;background:#2a2d48;
+  border-top:2px solid #e8eaff;box-shadow:0 2px 3px rgba(0,0,0,.6)}
+
+/* ============ TONES strip ============ */
+#gTones{padding:16px 6px 8px}
+#toneCols{display:flex;gap:4px;width:100%;justify-content:space-around}
+.tcol{display:flex;flex-direction:column;align-items:center;gap:5px}
+.tname{font:700 9px 'Barlow Semi Condensed';color:#c9cdf2;letter-spacing:.08em}
+.tbtn{width:20px;height:14px}
+.tonlbl{font:600 7px 'Barlow Semi Condensed';color:#9aa1d8}
+
+/* ============ TONE EDIT ============ */
+#gToneEdit{padding:16px 12px 8px;display:flex;flex-direction:column;gap:9px}
+.terow{display:flex;align-items:center;gap:6px}
+#teKnobs{display:flex;justify-content:space-between}
+#teTvfRow{display:flex;align-items:flex-start;gap:10px}
+#tvfVert{font:700 9px 'Barlow Semi Condensed';color:#ff5b6e;letter-spacing:.14em;
+  writing-mode:vertical-rl;transform:rotate(180deg);height:56px;display:flex;align-items:center}
+#tvfTypeCol{display:flex;flex-direction:column;align-items:center;gap:3px;justify-content:center;height:62px}
+#tvfKnobs{display:flex;gap:4px}
+.bank{display:flex;flex-direction:column;align-items:center;gap:3px}
+.bankrow{display:flex;gap:6px}
+.bcol{display:flex;flex-direction:column;align-items:center;gap:3px;width:20px}
+.banktitle{display:flex;align-items:center;gap:4px}
+#teLfoRow{display:flex;align-items:center;gap:8px;margin-top:2px}
+#footnote{font:600 7.5px 'Barlow Semi Condensed';color:#7d84c0;letter-spacing:.08em}
+
+/* ============ FILTERS ============ */
+#gFilters{padding:16px 10px 8px;display:flex;flex-direction:column;gap:7px;align-items:center}
+.fstrip{display:flex;align-items:center;gap:5px;width:100%}
+.fstrip .lcd{flex:1}
+.fnum{font:700 9px 'Barlow Semi Condensed';color:#c9cdf2;width:10px;flex:none}
+.fknobs{display:flex;justify-content:space-around;width:100%}
+#fDivider{width:100%;height:1px;background:#464e94;opacity:.55}
+#routeRow{margin-top:auto;display:flex;align-items:center;gap:10px;padding-bottom:2px}
+.ledlbl{display:flex;align-items:center;gap:4px}
+
+/* ============ DREAM VECTOR ============ */
+#gVector{padding:16px 10px 8px;display:flex;gap:10px}
+#vecLeft{display:flex;flex-direction:column;align-items:center;gap:4px}
+#flowBox{position:relative;width:150px;height:132px;background:#07070a;border-radius:3px;
+  box-shadow:inset 0 2px 8px rgba(0,0,0,.9)}
+#flowSvg{position:absolute;inset:0;width:100%;height:100%}
+#flowCap{font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.12em}
+#vecRight{display:flex;flex-direction:column;gap:6px;justify-content:center}
+.togrow{display:flex;align-items:center;gap:5px}
+
+/* ============ MOD MATRIX + GLOBAL LFO ============ */
+#gMatrix{padding:16px 10px 8px;display:flex;flex-direction:column;gap:5px}
+.mrowline{display:flex;align-items:center;gap:5px}
+.mnumcol{font:700 8px 'Barlow Semi Condensed';color:#9aa1d8;width:8px;flex:none}
+.marrow{font:800 10px 'Doto';color:#ffd23f}
+.mbar{flex:1;height:8px;background:#0c0e20;border-radius:2px;position:relative;overflow:hidden}
+.mfill{position:absolute;left:0;top:0;bottom:0;background:#ffd23f;opacity:.8}
+#glfoRow{display:flex;align-items:center;gap:8px;margin-top:auto}
+
+/* ============ FX ============ */
+#gFx{padding:16px 12px 8px;display:flex;flex-direction:column;gap:6px}
+.fxrow{display:flex;align-items:center;gap:8px}
+.fxname{width:36px;flex:none;font:700 8px 'Barlow Semi Condensed';letter-spacing:.14em;color:#c9cdf2}
+.fxdiv{width:100%;height:1px;background:#464e94;opacity:.4}
+.fxright{margin-left:auto;display:flex;align-items:center;gap:5px}
+
+/* version/build stamp (getInfo) */
+#verStamp{position:absolute;right:14px;bottom:8px;font:600 7px 'Barlow Semi Condensed';
+  color:#7d84c0;letter-spacing:.08em}
+
+/* ============ menu overlay ============ */
+#menuOverlay{position:absolute;inset:0;background:rgba(7,7,10,.82);display:none;
+  align-items:center;justify-content:center;z-index:10}
+#menuBox{width:430px;max-height:520px;background:#07070a;border:1px solid #464e94;border-radius:4px;
+  box-shadow:0 8px 40px #000;padding:12px;display:flex;flex-direction:column;gap:8px}
+#menuHead{display:flex;justify-content:space-between;font:800 12px 'Doto';color:#ffd23f}
+#menuList{overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;min-height:0}
+.mrow{display:flex;gap:10px;padding:3px 6px;cursor:pointer;font:800 12px 'Doto';color:#ffd23f;flex:none}
+.mrow.cur{background:#ffd23f;color:#07070a}
+.mrow .mnum{width:20px;flex:none}
+.mrow .mcat{width:44px;flex:none}
+.lcd-scroll{scrollbar-width:thin;scrollbar-color:#3a3410 #07070a}
+.lcd-scroll::-webkit-scrollbar{width:6px}
+.lcd-scroll::-webkit-scrollbar-track{background:#07070a}
+.lcd-scroll::-webkit-scrollbar-thumb{background:#3a3410;border-radius:3px}
