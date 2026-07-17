@@ -1,0 +1,7 @@
+build*/
+deps/
+*.vst3/
+tests/bin/
+validation/*.wav
+*.obj
+*.exe
