@@ -4,18 +4,18 @@
 > block. STATE is OVERWRITE-ONLY: update it in place as the last act of a work
 > pass — never append a second STATE block.
 
-## STATE (updated 2026-07-17, phase: ALL 6 PHASES DONE — RC 0.1.0 deployed)
+## STATE (updated 2026-07-18, v2 CORE engine — RC 0.2.0 deployed, validator PASS)
 
 | Item | Value |
 |---|---|
-| Deployed version | **0.1.0 RC** — `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root), built 2026-07-17 |
-| Plugin identity | "The Dreamer", VST3, `Mnsh`/`Drmr` — new identity: Cubase needs a FULL plugin re-scan on first load |
-| Current phase | all 6 phases merged to main; awaiting user Cubase 15 manual pass |
-| Phases done | scaffold, filter, fx, voice, plugin, validation (each gated: tests green, see validation/VALIDATION.md) |
-| Pending | user Cubase pass; WebView GUI handoff integration (frontend-developer when it lands); optional: per-partial pan (deliberately omitted — new params + stereo voice sum if wanted) |
-| GUI | generic APVTS editor (~99 params, scrollable); WebView design handoff IN FLIGHT elsewhere (Claude Design) — param IDs LOCKED in plugin/Params.h, bind by ID |
-| Git | main has all 6 phase merges, pushed to mannyzagri/the-dreamer; share the-dreamer-src\ export refreshed |
-| Build plan | C:\Users\vagrant\.claude\plans\read-claude-workflow-md-from-shared-drifting-leaf.md (approved 2026-07-17) |
+| Deployed version | **0.2.0 RC (v2 4-tone engine)** — `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root), built 2026-07-18; validator 11/11 PASS incl. pluginval strictness 8 |
+| Engine | v2 per design-handoff/FEATURES.md CORE: 4 tones/voice (osc→shaper→SVF TVF→TVA, AUX env, G-LFO taps, pan), Dream Vector v4 (DIR/INT + phase/orbit/P-env), 3-slot mod matrix, 2 global filters (frozen 14-type list, 7 live: 4 SVF + Liquid/Classic/Ladder) SER/PAR, FX = modfx→delay→reverb. 24 voices |
+| Plugin identity | "The Dreamer", VST3, `Mnsh`/`Drmr` — param LIST changed vs 0.1.0 → Cubase FULL re-scan |
+| Current phase | v2 CORE merged (core/tone-engine + core/plugin-v2); awaiting user Cubase ear pass |
+| Pending | user Cubase pass; WebView GUI build from design_handoff_dreamer_gui (→ frontend-developer; 1140×660 panel, bind by Params.h IDs); V1.1 filters (notch/combs/NL3/formant/allpass — global list entries 8-13 currently bypass); V2 DreamPlane (f2_morph inert until then) |
+| GUI | generic APVTS editor (~180 params); GUI handoff package: `\\VBOXSVR\vagrant\The Dreamer\Design markdown file\design_handoff_dreamer_gui\` (HTML prototype + PNG + README, exact tokens/layout/param map) — NOT yet integrated |
+| Git | main pushed to mannyzagri/the-dreamer; share the-dreamer-src\ export refreshed |
+| Build plan | .claude\plans\read-claude-workflow-md-from-shared-drifting-leaf.md (v1) + design-handoff/FEATURES.md §9 phases (v2) |
 
 ### Phase-gate checklist (every phase, before merge)
 - [ ] cl.exe test harness(es) for the phase compile and print ALL CHECKS PASSED
@@ -44,13 +44,27 @@
   CLAUDE.md scope decision 2.
 - EnvelopeAdsr release is exponential with a 1e-4 idle gate: a 1.2 s release
   needs ~11 s to reach silence — size tail-silence test windows accordingly.
-- pluginval NOT installed on the VM; download via Invoke-WebRequest (TLS 1.2),
-  fallback Steinberg SDK validator (C:\Utilities\vst-sdk_3.8.0_build-66_2025-10-20).
-- Deploy (phase 6): whole "The Dreamer.vst3" bundle → \\VBOXSVR\vagrant\ root
+- Deploy: whole "The Dreamer.vst3" bundle → \\VBOXSVR\vagrant\ root
   + C:\the-dreamer\; refresh share the-dreamer-src\ export after each push.
+- v2 engine facts: waveshaper LUTs are BAKED — edit tools/bake_shapers.cpp
+  then rerun it to regenerate dsp/glue/ShaperTables.h (no python on the VM,
+  by design; ENVIRONMENT.md's python/Ninja items are satisfied by house
+  equivalents, documented in CLAUDE.md v2 decision 6). Matrix param choices
+  have NO "-" entry (GUI parity): engine enum = param index + 1, slot inert
+  at amt 0. FX stages beyond the panel (dist/comp/clip/instability/spring/
+  delay-sync) are OMITTED from the processor at bit-transparent defaults.
 
 ## STATUS log (newest first)
 
+- 2026-07-18 — v2 CORE engine + plugin (design handoff FEATURES v4 executed,
+  user-approved rebuild): 4-tone DreamVoice with waveshaper (C++-baked LUTs),
+  ToneSvf TVF, AUX env, G-LFO taps, Dream Vector v4, mod matrix, per-tone pan;
+  global filter block (14-type frozen list, 7 live); FX panel subset in spec
+  order (filters→modfx→delay(mono-sum in)→reverb, donor knob laws + donor
+  reverb voicing/kDryScale). ~180 params re-locked incl. GUI additions
+  (f1_env = aux-max→cutoff ±2 oct, f2_morph reserved, delay_on/rev_on).
+  test_engine.cpp replaces test_voice.cpp; validator.json harness updated.
+  RC 0.2.0: validator 11/11 PASS (pluginval 8), deployed local + share.
 - 2026-07-17 — Phases 2-6 complete, RC 0.1.0 deployed. Phase 2: RhinoFilter.h
   port (Faithful1017Filter dropped, namespace-only diff audited) + FilterSlot
   adapter, bitwise parity all 7 types. Phase 3: full FX chain + Lfo ported,

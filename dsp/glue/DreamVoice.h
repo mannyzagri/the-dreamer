@@ -429,6 +429,8 @@ public:
     // matrix cutoff offsets for the processor's global filter slots (octaves)
     float matrixCut1Oct() const noexcept { return mtxCut1Oct_; }
     float matrixCut2Oct() const noexcept { return mtxCut2Oct_; }
+    // voice-max AUX env level (control-rate) -- drives the GUI's F1 ENV knob
+    float auxMax() const noexcept { return auxMax_; }
 
     void process(float driftTuneSemis, float driftCutOct, float& l, float& r) noexcept {
         glfo_.tick();
@@ -466,6 +468,7 @@ private:
         float auxMax = 0.0f;
         for (auto& v : voices_)
             if (v.isActive()) auxMax = std::fmax(auxMax, v.auxMax());
+        auxMax_ = auxMax;
 
         auto srcValue = [&](int src) -> float {
             switch (src) {
@@ -513,6 +516,7 @@ private:
     uint64_t   stamp_ = 0;
     float      bendSemis_ = 0.0f, wheel_ = 0.0f, lastVelocity_ = 0.8f;
     float      basePhi_ = 0.0f;
+    float      auxMax_ = 0.0f;
     float      mtxPitchSemis_ = 0, mtxCut1Oct_ = 0, mtxCut2Oct_ = 0,
                mtxShapeAdd_ = 0, mtxPanAdd_ = 0;
     bool       sustainDown_ = false;
