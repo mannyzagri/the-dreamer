@@ -4,17 +4,17 @@
 > block. STATE is OVERWRITE-ONLY: update it in place as the last act of a work
 > pass — never append a second STATE block.
 
-## STATE (updated 2026-07-17, phase: port/scaffold)
+## STATE (updated 2026-07-17, phase: ALL 6 PHASES DONE — RC 0.1.0 deployed)
 
 | Item | Value |
 |---|---|
-| Deployed version | none yet (no plugin build shipped) |
-| Plugin identity | "The Dreamer", VST3, `Mnsh`/`Drmr` — NOT yet scanned by any host |
-| Current phase | 1/6 port/scaffold (branch `port/scaffold`) |
-| Phases done | — |
-| Pending phases | port/filter → port/fx → port/voice → port/plugin → port/validation |
-| GUI | generic APVTS editor; WebView design handoff IN FLIGHT elsewhere (Claude Design) — param IDs locked, see plugin/Params.h once it exists |
-| Git | repo C:\the-dreamer, remote mannyzagri/the-dreamer, main pushed; phase branches merge to main after each gate |
+| Deployed version | **0.1.0 RC** — `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root), built 2026-07-17 |
+| Plugin identity | "The Dreamer", VST3, `Mnsh`/`Drmr` — new identity: Cubase needs a FULL plugin re-scan on first load |
+| Current phase | all 6 phases merged to main; awaiting user Cubase 15 manual pass |
+| Phases done | scaffold, filter, fx, voice, plugin, validation (each gated: tests green, see validation/VALIDATION.md) |
+| Pending | user Cubase pass; WebView GUI handoff integration (frontend-developer when it lands); optional: per-partial pan (deliberately omitted — new params + stereo voice sum if wanted) |
+| GUI | generic APVTS editor (~99 params, scrollable); WebView design handoff IN FLIGHT elsewhere (Claude Design) — param IDs LOCKED in plugin/Params.h, bind by ID |
+| Git | main has all 6 phase merges, pushed to mannyzagri/the-dreamer; share the-dreamer-src\ export refreshed |
 | Build plan | C:\Users\vagrant\.claude\plans\read-claude-workflow-md-from-shared-drifting-leaf.md (approved 2026-07-17) |
 
 ### Phase-gate checklist (every phase, before merge)
@@ -45,6 +45,17 @@
 
 ## STATUS log (newest first)
 
+- 2026-07-17 — Phases 2-6 complete, RC 0.1.0 deployed. Phase 2: RhinoFilter.h
+  port (Faithful1017Filter dropped, namespace-only diff audited) + FilterSlot
+  adapter, bitwise parity all 7 types. Phase 3: full FX chain + Lfo ported,
+  bitwise parity per class. Phase 4: DreamVoice glue (2 LFOs/partial,
+  control-rate pitch/cutoff/level laws, oldest-note steal fix, kill/killAll,
+  sustain) — alloc-free, all behavior tests green. Phase 5: plugin shell,
+  ~99 params, donor FX bus order, generic editor, Release build green.
+  Phase 6: pluginval strictness 8 SUCCESS (incl. 44.1/48/96k × 64/256/1024),
+  deployed local + share. Note: test-harness lesson — kill() silences but
+  freezes envelope levels (by design, matches steal behavior); hermetic
+  renders need fresh synth instances.
 - 2026-07-17 — Phase 1 scaffold: repo layout (dsp/bank|ported|glue, plugin,
   tests, validation), bank headers copied, deps\JUCE cached, CMake configure
   green with placeholder plugin stubs, tests\test_bank.cpp ALL CHECKS PASSED

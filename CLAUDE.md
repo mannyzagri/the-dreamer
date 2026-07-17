@@ -110,11 +110,11 @@ fixed 24 voices).
 ## mention Mode 1 / mode switch.)
 
 1. port/scaffold — layout, bank copy, deps/JUCE, CMake configure, test_bank. DONE 2026-07-17.
-2. port/filter — RhinoFilter.h + RhinoFilterSlot.h + test_filter_port (donor-vs-port null, adapter identity, res=max sweep).
-3. port/fx — RhinoLfo.h + fx/* + test_fx_port (per-class donor-vs-port null).
-4. port/voice — DreamVoice.h + test_voice (alloc guard, steal, LFO laws, control-rate probe, pitch bend) + demo renders.
-5. port/plugin — Params.h + PluginProcessor (24-voice synth + full FX bus) + generic editor; Release build zero new warnings.
-6. port/validation — SR sweep, pluginval strictness 8, deploy to share, VALIDATION.md, STATE update.
+2. port/filter — RhinoFilter.h + RhinoFilterSlot.h + test_filter_port. DONE 2026-07-17 (bitwise parity).
+3. port/fx — RhinoLfo.h + fx/* + test_fx_port. DONE 2026-07-17 (bitwise parity per class).
+4. port/voice — DreamVoice.h + test_voice + demo renders. DONE 2026-07-17.
+5. port/plugin — Params.h + PluginProcessor + generic editor. DONE 2026-07-17 (Release green).
+6. port/validation — pluginval strictness 8 SUCCESS (incl. 44.1/48/96k sweep), RC 0.1.0 deployed local + share. DONE 2026-07-17 — see validation/VALIDATION.md. Cubase manual pass pending (user).
 
 ### Phase 1 (historical) — Filter port + FilterSlot adapter   [Sonnet 4.6]
 - Copy Rubber-Rhino filter classes into `dsp/ported/` per mapping table.
