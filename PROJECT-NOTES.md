@@ -26,6 +26,12 @@
 
 ## Facts a fresh session needs
 
+- Validator (2026-07-18): `powershell -ExecutionPolicy Bypass -File
+  C:\code-bank\validator\validate.ps1 -Project C:\the-dreamer` runs the 4 test
+  harnesses + bundle/deploy checks + pluginval strictness 8 in one command
+  (config: `validator.json`; see CLAUDE-WORKFLOW.md §7.7). pluginval is now
+  KEPT at C:\Utilities\pluginval\ (the "not installed" note below is obsolete).
+
 - Donor: C:\rubber-rhino (READ-ONLY). Bank source of truth: files\rompler-bank-v2\
   (copied verbatim to dsp\bank\ — READ-ONLY, 12-bit grain is data).
 - deps\JUCE = JUCE 8.0.4 source cache (gitignored; robocopy from

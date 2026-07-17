@@ -5,3 +5,4 @@ tests/bin/
 validation/*.wav
 *.obj
 *.exe
+.validator/

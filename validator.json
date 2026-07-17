@@ -1,0 +1,34 @@
+﻿{
+  "schema": 1,
+  "project": "the-dreamer",
+  "dsp": {
+    "harnesses": [
+      { "name": "bank",
+        "compile": "(if not exist tests\\bin mkdir tests\\bin) && cl /nologo /std:c++17 /O2 /EHsc /D_USE_MATH_DEFINES /I. tests\\test_bank.cpp /Fo:tests\\bin\\ /Fe:tests\\bin\\test_bank.exe",
+        "run": "tests\\bin\\test_bank.exe",
+        "expect": ["ALL CHECKS PASSED"] },
+      { "name": "filter_port",
+        "compile": "(if not exist tests\\bin mkdir tests\\bin) && cl /nologo /std:c++17 /O2 /EHsc /D_USE_MATH_DEFINES /I. tests\\test_filter_port.cpp /Fo:tests\\bin\\ /Fe:tests\\bin\\test_filter_port.exe",
+        "run": "tests\\bin\\test_filter_port.exe",
+        "expect": ["ALL CHECKS PASSED"] },
+      { "name": "fx_port",
+        "compile": "(if not exist tests\\bin mkdir tests\\bin) && cl /nologo /std:c++17 /O2 /EHsc /DRHINO_TEST_FEATURES=1 /D_USE_MATH_DEFINES /I. tests\\test_fx_port.cpp /Fo:tests\\bin\\ /Fe:tests\\bin\\test_fx_port.exe",
+        "run": "tests\\bin\\test_fx_port.exe",
+        "expect": ["ALL CHECKS PASSED"] },
+      { "name": "voice",
+        "compile": "(if not exist tests\\bin mkdir tests\\bin) && cl /nologo /std:c++17 /O2 /EHsc /DRHINO_TEST_FEATURES=1 /D_USE_MATH_DEFINES /I. tests\\test_voice.cpp /Fo:tests\\bin\\ /Fe:tests\\bin\\test_voice.exe",
+        "run": "tests\\bin\\test_voice.exe",
+        "expect": ["ALL CHECKS PASSED"] }
+    ]
+  },
+  "bundle": {
+    "built": "build\\TheDreamer_artefacts\\Release\\VST3\\The Dreamer.vst3",
+    "versionFrom": { "file": "CMakeLists.txt", "regex": "project\\(TheDreamer VERSION ([0-9.]+)" },
+    "sources": ["dsp", "plugin", "CMakeLists.txt"]
+  },
+  "deploy": {
+    "targets": ["C:\\the-dreamer\\The Dreamer.vst3", "\\\\VBOXSVR\\vagrant\\The Dreamer.vst3"]
+  },
+  "host": { "pluginval": { "strictness": 8 } }
+}
+
