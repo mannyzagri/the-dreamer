@@ -4,18 +4,18 @@
 > block. STATE is OVERWRITE-ONLY: update it in place as the last act of a work
 > pass — never append a second STATE block.
 
-## STATE (updated 2026-07-18, v2 CORE engine — RC 0.2.0 deployed, validator PASS)
+## STATE (updated 2026-07-18, RC 0.3.0 — v2 engine + WebView GUI, validator 13/13 PASS)
 
 | Item | Value |
 |---|---|
-| Deployed version | **0.2.0 RC (v2 4-tone engine)** — `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root), built 2026-07-18; validator 11/11 PASS incl. pluginval strictness 8 |
-| Engine | v2 per design-handoff/FEATURES.md CORE: 4 tones/voice (osc→shaper→SVF TVF→TVA, AUX env, G-LFO taps, pan), Dream Vector v4 (DIR/INT + phase/orbit/P-env), 3-slot mod matrix, 2 global filters (frozen 14-type list, 7 live: 4 SVF + Liquid/Classic/Ladder) SER/PAR, FX = modfx→delay→reverb. 24 voices |
-| Plugin identity | "The Dreamer", VST3, `Mnsh`/`Drmr` — param LIST changed vs 0.1.0 → Cubase FULL re-scan |
-| Current phase | v2 CORE merged (core/tone-engine + core/plugin-v2); awaiting user Cubase ear pass |
-| Pending | user Cubase pass; WebView GUI build from design_handoff_dreamer_gui (→ frontend-developer; 1140×660 panel, bind by Params.h IDs); V1.1 filters (notch/combs/NL3/formant/allpass — global list entries 8-13 currently bypass); V2 DreamPlane (f2_morph inert until then) |
-| GUI | generic APVTS editor (~180 params); GUI handoff package: `\\VBOXSVR\vagrant\The Dreamer\Design markdown file\design_handoff_dreamer_gui\` (HTML prototype + PNG + README, exact tokens/layout/param map) — NOT yet integrated |
+| Deployed version | **0.3.0 RC (v2 engine + v5 WebView GUI)** — `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root), built 2026-07-18; validator PASS all stages (dsp×4, bundle, deploy×2, gui×2, pluginval strictness 8 incl. editor tests) |
+| Engine | v2 per design-handoff/FEATURES.md CORE: 4 tones/voice (osc→shaper→SVF TVF→TVA, AUX env, G-LFO taps, pan), Dream Vector v4, 3-slot mod matrix, 2 global filters (frozen 14-type list, 7 live) SER/PAR, FX = modfx→delay→reverb. 24 voices |
+| GUI | **WebView2 editor SHIPPED** (design handoff v5, pixel-faithful): plugin/gui/ editor.html+style.css+app.js + JUCE helpers + 4 committed fonts; ~185 relay bindings by APVTS ID; 1140×660 fixed-aspect; standalone-mock mode for headless-Chrome checks; MASTER knob = volume. No-panel params (penv start/end/time/loop, aux_amt, output, interp, engine) are host-automatable only — flag to design track for a future GUI rev (aux_amt especially: AUX env has no amount knob on the v5 panel) |
+| Plugin identity | "The Dreamer", VST3, `Mnsh`/`Drmr` — param LIST changed vs 0.1.0 → Cubase FULL re-scan; WebView2 runtime needed on the host (evergreen, Cubase machine has it) |
+| Current phase | gui/webview-v5 merged; awaiting user Cubase ear+eye pass |
+| Pending | user Cubase pass; V1.1 filters (global list entries 8-13 currently bypass); V2 DreamPlane (f2_morph inert until then) |
 | Git | main pushed to mannyzagri/the-dreamer; share the-dreamer-src\ export refreshed |
-| Build plan | .claude\plans\read-claude-workflow-md-from-shared-drifting-leaf.md (v1) + design-handoff/FEATURES.md §9 phases (v2) |
+| Build plan | design-handoff/FEATURES.md §9 phases + gui-v5 README |
 
 ### Phase-gate checklist (every phase, before merge)
 - [ ] cl.exe test harness(es) for the phase compile and print ALL CHECKS PASSED
@@ -56,6 +56,16 @@
 
 ## STATUS log (newest first)
 
+- 2026-07-18 (later) — WebView GUI shipped (RC 0.3.0): design_handoff_dreamer_gui
+  v5 recreated as plugin/gui/ (frontend-developer subagent pass; the handoff
+  HTML is a claude.ai artifact bundle — real source extracted from the
+  __bundler/template script via ConvertFrom-Json). PluginEditor = WebView2 +
+  ~185 loop-built relays (donor scaffolding); CMake adds WEBVIEW2 flags +
+  TheDreamerAssets. Fonts fetched from google/fonts GitHub via IWR and
+  committed. validator gained a gui stage (load+screenshot over HTTP bridge).
+  GOTCHA: plain file:// blocks ES-module imports — headless-Chrome checks of
+  the raw page need --allow-file-access-from-files (validator's HTTP path
+  unaffected).
 - 2026-07-18 — v2 CORE engine + plugin (design handoff FEATURES v4 executed,
   user-approved rebuild): 4-tone DreamVoice with waveshaper (C++-baked LUTs),
   ToneSvf TVF, AUX env, G-LFO taps, Dream Vector v4, mod matrix, per-tone pan;
