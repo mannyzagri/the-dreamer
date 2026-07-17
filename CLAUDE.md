@@ -13,7 +13,35 @@ Read this file fully before any task. When in doubt: ask, don't improvise.
 
 ---
 
-## Scope decisions (user, 2026-07-17 — override anything below that conflicts)
+## Scope decisions v2 (user, 2026-07-18 — the FEATURES handoff supersedes v1)
+
+The design track delivered design-handoff/FEATURES.md (+ ENVIRONMENT.md, GUI
+v4 mockup, design_handoff_dreamer_gui GUI package). User-approved rebuild:
+
+1. **4 Tones per voice** (JD-990 model) replaces the v1 2-partial engine.
+   Per tone: PcmOscillator → Waveshaper (01/W LUTs) → ToneSvf TVF
+   (LP24/LP12/BP/HP) → TVA; TVF/TVA/AUX ADSRs; G-LFO tap; pan; vector DIR/INT.
+2. **Character filters are GLOBAL**: 2 slots on the voice-sum bus, SER/PAR,
+   frozen 14-entry type list (4 SVF + LIQUID/CLASSIC/LADDER Rhino verbatim;
+   NOTCH…DREAMPLN reserved → bypass until V1.1/V2 phases).
+3. **One global LFO** with per-tone depth/dest taps (not per-tone LFOs);
+   **Dream Vector v4** (per-tone DIR/INT, phase = manual + orbit + P-env);
+   **3-slot mod matrix** (VEC PHS self-route clamped; MORPH dest reserved).
+4. **CORE scope only** this pass; V1.1 filters + DreamPlane are future phases.
+5. **24 voices** kept (user choice over the spec's 8-voice budget figure).
+6. Bake scripts are **C++ tools** (tools/bake_shapers.cpp), not python — the
+   VM keeps no python by design; ENVIRONMENT.md's python/Ninja/preset items
+   are satisfied by the equivalent house toolchain (documented deviation).
+7. FX = panel subset (MOD FX → DELAY → REVERB); Rubber-Rhino stages beyond
+   the panel (dist, comp, clip, instability, spring, delay-sync) run at
+   bit-transparent fixed defaults and are omitted from the processor.
+8. Param IDs re-locked in plugin/Params.h (~180, a_/b_/c_/d_ tone blocks) —
+   param-LIST change vs v0.1.0 → Cubase full re-scan.
+9. Validation runs through the shared validator
+   (C:\code-bank\validator\validate.ps1 -Project C:\the-dreamer; config
+   validator.json at repo root).
+
+## Scope decisions v1 (user, 2026-07-17 — superseded where v2 conflicts)
 
 1. **DREAM is the only mode.** No Mode 1 / RHINO, no mode switch. The voice is
    the dual-partial JD-990 topology from Mode2Voice.h. The old phase 3

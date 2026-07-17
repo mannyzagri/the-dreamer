@@ -10,53 +10,50 @@ TheDreamerProcessor::TheDreamerProcessor()
           "Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "PARAMS", createParameterLayout())
 {
-    cachePartialPtrs(pA, "a_");
-    cachePartialPtrs(pB, "b_");
+    const char* prefixes[4] = { "a_", "b_", "c_", "d_" };
+    for (int t = 0; t < 4; ++t) cacheTonePtrs(pTone[t], prefixes[t]);
 
-    auto p = [this](const char* id) { return apvts.getRawParameterValue(id); };
-    pInterp = p(kInterp);   pEngine = p(kEngine);
-    pVolume = p(kVolume);   pOutput = p(kOutput);
-    pCondition = p(kCondition); pStability = p(kStability); pTempo = p(kTempo);
-    pDistType = p(kDistType); pDistDrive = p(kDistDrive);
-    pDistColor = p(kDistColor); pDistMix = p(kDistMix);
-    pDelayType = p(kDelayType); pDelayMode = p(kDelayMode);
-    pDelayMs = p(kDelayMs); pDelayFb = p(kDelayFb); pDelayMix = p(kDelayMix);
-    pDelayHpSlope = p(kDelayHpSlope); pDelayHpFreq = p(kDelayHpFreq);
-    pDelayLpSlope = p(kDelayLpSlope); pDelayLpFreq = p(kDelayLpFreq);
-    pChorusOn = p(kChorusOn); pChorusDepth = p(kChorusDepth); pChorusRate = p(kChorusRate);
-    pFlangerOn = p(kFlangerOn); pFlangerDepth = p(kFlangerDepth); pFlangerRate = p(kFlangerRate);
-    pPhaserOn = p(kPhaserOn); pPhaserDepth = p(kPhaserDepth); pPhaserRate = p(kPhaserRate);
-    pRevType = p(kRevType); pRevSize = p(kRevSize); pRevDamp = p(kRevDamp); pRevMix = p(kRevMix);
-    pReverbHpSlope = p(kReverbHpSlope); pReverbHpFreq = p(kReverbHpFreq);
-    pReverbLpSlope = p(kReverbLpSlope); pReverbLpFreq = p(kReverbLpFreq);
-    pCompOn = p(kCompOn); pCompLim = p(kCompLim); pCompThresh = p(kCompThresh);
-    pCompRatio = p(kCompRatio); pCompGain = p(kCompGain);
-    pClipOn = p(kClipOn);
+    auto p = [this](const juce::String& id) { return apvts.getRawParameterValue(id); };
+    pInterp = p(kInterp); pEngine = p(kEngine);
+    pVolume = p(kVolume); pOutput = p(kOutput);
+    pVecPhase = p(kVecPhase); pOrbitOn = p(kOrbitOn); pOrbitRate = p(kOrbitRate);
+    pPenvOn = p(kPenvOn); pPenvLoop = p(kPenvLoop);
+    pPenvStart = p(kPenvStart); pPenvEnd = p(kPenvEnd); pPenvTime = p(kPenvTime);
+    pGlfoShape = p(kGlfoShape); pGlfoRate = p(kGlfoRate);
+    for (int i = 0; i < 3; ++i) {
+        const juce::String n(i + 1);
+        pMtxSrc[i]  = p("mod" + n + "_src");
+        pMtxDest[i] = p("mod" + n + "_dest");
+        pMtxAmt[i]  = p("mod" + n + "_amt");
+    }
+    pF1Type = p(kF1Type); pF1Cutoff = p(kF1Cutoff); pF1Reso = p(kF1Reso); pF1Env = p(kF1Env);
+    pF2Type = p(kF2Type); pF2Cutoff = p(kF2Cutoff); pF2Reso = p(kF2Reso); pF2Morph = p(kF2Morph);
+    pFiltRouting = p(kFiltRouting);
+    pModfxOn = p(kModfxOn); pModfxType = p(kModfxType);
+    pModfxRate = p(kModfxRate); pModfxDepth = p(kModfxDepth); pModfxMix = p(kModfxMix);
+    pDelayOn = p(kDelayOn); pDelayMode = p(kDelayMode);
+    pDelayTime = p(kDelayTime); pDelayFb = p(kDelayFb); pDelayMix = p(kDelayMix);
+    pRevOn = p(kRevOn); pRevType = p(kRevType);
+    pRevSize = p(kRevSize); pRevDamp = p(kRevDamp); pRevMix = p(kRevMix);
 }
 
-void TheDreamerProcessor::cachePartialPtrs(PartialPtrs& dst, const char* prefix)
+void TheDreamerProcessor::cacheTonePtrs(TonePtrs& dst, const char* prefix)
 {
     auto p = [&](const char* suffix) {
         return apvts.getRawParameterValue(pid(prefix, suffix));
     };
     dst.on = p("on"); dst.wave = p("wave"); dst.coarse = p("coarse");
     dst.fine = p("fine"); dst.level = p("level"); dst.velsens = p("velsens");
-    dst.start = p("start"); dst.filterType = p("filter_type");
-    dst.cutoff = p("cutoff"); dst.reso = p("reso");
+    dst.start = p("start"); dst.pan = p("pan");
+    dst.dir = p("dir"); dst.vint = p("int");
+    dst.shapeType = p("shape_type"); dst.shapeDepth = p("shape_depth");
+    dst.tvfType = p("tvf_type"); dst.cutoff = p("cutoff"); dst.reso = p("reso");
     dst.envAmt = p("env_amt"); dst.keyfollow = p("keyfollow");
-    dst.tvfA = p("tvf_att"); dst.tvfD = p("tvf_dec");
-    dst.tvfS = p("tvf_sus"); dst.tvfR = p("tvf_rel");
-    dst.tvaA = p("tva_att"); dst.tvaD = p("tva_dec");
-    dst.tvaS = p("tva_sus"); dst.tvaR = p("tva_rel");
-    for (int l = 0; l < 2; ++l) {
-        const juce::String lp = "lfo" + juce::String(l + 1) + "_";
-        auto q = [&](const char* suffix) {
-            return apvts.getRawParameterValue(pid(prefix, (lp + suffix).toRawUTF8()));
-        };
-        dst.lfo[l].shape = q("shape"); dst.lfo[l].rate = q("rate");
-        dst.lfo[l].depth = q("depth"); dst.lfo[l].dest = q("dest");
-        dst.lfo[l].keytrig = q("keytrig");
-    }
+    dst.tvfA = p("tvf_att"); dst.tvfD = p("tvf_dec"); dst.tvfS = p("tvf_sus"); dst.tvfR = p("tvf_rel");
+    dst.tvaA = p("tva_att"); dst.tvaD = p("tva_dec"); dst.tvaS = p("tva_sus"); dst.tvaR = p("tva_rel");
+    dst.auxA = p("aux_att"); dst.auxD = p("aux_dec"); dst.auxS = p("aux_sus"); dst.auxR = p("aux_rel");
+    dst.auxDest = p("aux_dest"); dst.auxAmt = p("aux_amt");
+    dst.lfoDepth = p("lfo_depth"); dst.lfoDest = p("lfo_dest");
 }
 
 //==============================================================================
@@ -64,29 +61,23 @@ void TheDreamerProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     synth.prepare(sampleRate);
     synth.killAll();
-    lastOversample = 0;   // force re-apply below
+    lastOversample = 0;
 
-    dist.prepare(sampleRate);
-    dcBlock.prepare(sampleRate);
+    for (int ch = 0; ch < 2; ++ch) {
+        f1[ch].setSampleRate(sampleRate);
+        f2[ch].setSampleRate(sampleRate);
+        dcBlock[ch].prepare(sampleRate);
+    }
+    gfCtrl = 0;
+
     delay.prepare(sampleRate);
     chorus.prepare(sampleRate, 6.0f);
     flanger.prepare(sampleRate, 3.0f);
     phaser.prepare(sampleRate);
-    comp.prepare(sampleRate);
     reverb.setSampleRate(sampleRate);
     reverb.reset();
-    springReverb.prepare(sampleRate);
-    springReverb.reset();
     reverbWasActive = false;
     revCache = {};
-
-    // deterministic character, not re-randomised per instance (donor seed)
-    instability.prepare(sampleRate, 0x1955B52Fu);
-
-    delayHP.prepare(sampleRate, dreamer::ReturnFilter::Mode::highpass);
-    delayLP.prepare(sampleRate, dreamer::ReturnFilter::Mode::lowpass);
-    reverbHP.prepare(sampleRate, dreamer::ReturnFilter::Mode::highpass);
-    reverbLP.prepare(sampleRate, dreamer::ReturnFilter::Mode::lowpass);
 
     reverbWetL.assign((size_t)juce::jmax(1, samplesPerBlock), 0.0f);
     reverbWetR.assign((size_t)juce::jmax(1, samplesPerBlock), 0.0f);
@@ -100,34 +91,58 @@ void TheDreamerProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 //==============================================================================
 void TheDreamerProcessor::buildPatch(dreamer::DreamPatch& patch) const
 {
-    auto fill = [](dreamer::DreamPartialParams& d, const PartialPtrs& s) {
-        d.base.enabled      = s.on->load() > 0.5f;
-        d.base.waveIndex    = (int)s.wave->load();
-        d.base.coarse       = (int)s.coarse->load();
-        d.base.fineCents    = s.fine->load();
-        d.base.level        = s.level->load();
-        d.base.velSens      = s.velsens->load();
-        d.base.startOffset  = s.start->load();
-        d.base.cutoffHz     = s.cutoff->load();
-        d.base.resonance    = s.reso->load();
-        d.base.tvfEnvAmount = s.envAmt->load();
-        d.base.tvfKeyFollow = s.keyfollow->load();
-        d.base.tvfA = s.tvfA->load() * 0.001; d.base.tvfD = s.tvfD->load() * 0.001;
-        d.base.tvfS = s.tvfS->load();         d.base.tvfR = s.tvfR->load() * 0.001;
-        d.base.tvaA = s.tvaA->load() * 0.001; d.base.tvaD = s.tvaD->load() * 0.001;
-        d.base.tvaS = s.tvaS->load();         d.base.tvaR = s.tvaR->load() * 0.001;
-        d.filterType = (int)s.filterType->load();
-        for (int l = 0; l < 2; ++l) {
-            d.lfo[l].shape   = (int)s.lfo[l].shape->load();
-            d.lfo[l].rate01  = s.lfo[l].rate->load();
-            d.lfo[l].depth   = s.lfo[l].depth->load();
-            d.lfo[l].dest    = (int)s.lfo[l].dest->load();
-            d.lfo[l].keyTrig = s.lfo[l].keytrig->load() > 0.5f;
-        }
-    };
-    fill(patch.a, pA);
-    fill(patch.b, pB);
+    for (int t = 0; t < 4; ++t) {
+        auto& d = patch.tone[t];
+        const auto& s = pTone[t];
+        d.enabled      = s.on->load() > 0.5f;
+        d.waveIndex    = (int)s.wave->load();
+        d.coarse       = (int)s.coarse->load();
+        d.fineCents    = s.fine->load();
+        d.level        = s.level->load();
+        d.velSens      = s.velsens->load();
+        d.startOffset  = s.start->load();
+        d.pan          = s.pan->load();
+        d.dir          = s.dir->load();
+        d.vecInt       = s.vint->load();
+        d.shapeMode    = (int)s.shapeType->load();
+        d.shapeDepth   = s.shapeDepth->load();
+        d.tvfMode      = (int)s.tvfType->load();
+        d.cutoffHz     = s.cutoff->load();
+        d.resonance    = s.reso->load();
+        d.tvfEnvAmount = s.envAmt->load();
+        d.tvfKeyFollow = s.keyfollow->load();
+        d.tvfA = s.tvfA->load() * 0.001; d.tvfD = s.tvfD->load() * 0.001;
+        d.tvfS = s.tvfS->load();         d.tvfR = s.tvfR->load() * 0.001;
+        d.tvaA = s.tvaA->load() * 0.001; d.tvaD = s.tvaD->load() * 0.001;
+        d.tvaS = s.tvaS->load();         d.tvaR = s.tvaR->load() * 0.001;
+        d.auxA = s.auxA->load() * 0.001; d.auxD = s.auxD->load() * 0.001;
+        d.auxS = s.auxS->load();         d.auxR = s.auxR->load() * 0.001;
+        d.auxDest = (int)s.auxDest->load();
+        d.auxAmt  = s.auxAmt->load();
+        d.lfoDepth = s.lfoDepth->load();
+        d.lfoDest  = (int)s.lfoDest->load();
+    }
     patch.interp = (int)pInterp->load();
+
+    patch.vec.phase       = pVecPhase->load();
+    patch.vec.orbitOn     = pOrbitOn->load() > 0.5f;
+    patch.vec.orbitRate01 = pOrbitRate->load();
+    patch.vec.penvOn      = pPenvOn->load() > 0.5f;
+    patch.vec.penvLoop    = pPenvLoop->load() > 0.5f;
+    patch.vec.penvStart   = pPenvStart->load();
+    patch.vec.penvEnd     = pPenvEnd->load();
+    patch.vec.penvTime    = pPenvTime->load();
+
+    patch.glfoShape01 = (int)pGlfoShape->load();
+    patch.glfoRate01  = pGlfoRate->load();
+
+    for (int i = 0; i < 3; ++i) {
+        // param choices have no "-": engine enums are param index + 1;
+        // a slot is inert at amt = 0
+        patch.slot[i].src  = (int)pMtxSrc[i]->load() + 1;
+        patch.slot[i].dest = (int)pMtxDest[i]->load() + 1;
+        patch.slot[i].amt  = pMtxAmt[i]->load();
+    }
 }
 
 //==============================================================================
@@ -139,16 +154,6 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     const int numSamples = buffer.getNumSamples();
 
-    constexpr float kChorusBaseMs  = 4.0f;    // chorus centre delay (RR)
-    constexpr float kFlangerBaseMs = 0.5f;    // flanger centre delay (RR)
-
-    // ---- host BPM (delay sync); tempo param is the fallback ----------------
-    double bpm = (double)pTempo->load();
-    if (auto* ph = getPlayHead())
-        if (auto pos = ph->getPosition())
-            if (auto b = pos->getBpm())
-                bpm = juce::jlimit(20.0, 999.0, *b);
-
     // ---- patch + engine ----------------------------------------------------
     buildPatch(synth.patch());
     synth.updateLive();
@@ -157,11 +162,10 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     const int  os      = vintage ? 1 : 2;
     if (os != lastOversample) {
         lastOversample = os;
-        synth.setOversample(os);
-        synth.killAll();      // hardware-honest: engine swap restarts voices
+        for (int ch = 0; ch < 2; ++ch) { f1[ch].setOversample(os); f2[ch].setOversample(os); }
     }
 
-    // ---- collect sample-accurate MIDI events -------------------------------
+    // ---- MIDI --------------------------------------------------------------
     numEvents = 0;
     for (const auto meta : midi) {
         const auto msg = meta.getMessage();
@@ -182,53 +186,42 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             pushEvent({ ofs, NoteEvent::Type::allNotesOff, 0, 0.0f });
         else if (msg.isAllSoundOff())
             pushEvent({ ofs, NoteEvent::Type::allSoundOff, 0, 0.0f });
+        else if (msg.isControllerOfType(1))                       // mod wheel
+            synth.setWheel(msg.getControllerValue() / 127.0f);    // matrix source
     }
 
-    // ---- per-block FX settings (Rubber-Rhino mappings, verbatim) -----------
-    dist.set((dreamer::Distortion::Mode)(int)pDistType->load(),
-             pDistDrive->load(), pDistColor->load());
-    const float distMix = pDistMix->load();
+    // ---- per-block settings ------------------------------------------------
+    const int  routing  = (int)pFiltRouting->load();              // 0 SER, 1 PAR
+    const int  f1Type   = (int)pF1Type->load();
+    const int  f2Type   = (int)pF2Type->load();
+    const float f1Env   = pF1Env->load();
+    for (int ch = 0; ch < 2; ++ch) { f1[ch].setType(f1Type); f2[ch].setType(f2Type); }
 
-    delay.setType((dreamer::StereoDelay::Type)(int)pDelayType->load());
-    if (pDelayMode->load() > 0.5f) {
-        delay.setTimeFree(pDelayMs->load());
-    } else {
-        static const juce::NormalisableRange<float> msRange(1.0f, 1000.0f, 1.0f, 0.4f);
-        const int zone = juce::jlimit(0, 7,
-            (int)(msRange.convertTo0to1(pDelayMs->load()) * 8.0f));
-        delay.setTimeSynced(zone, bpm);
-    }
-    const float fb  = pDelayFb->load();
-    const float wet = pDelayMix->load();
-    delayHP.setParams((int)pDelayHpSlope->load(), pDelayHpFreq->load());
-    delayLP.setParams((int)pDelayLpSlope->load(), pDelayLpFreq->load());
+    const bool  modfxOn   = pModfxOn->load() > 0.5f;
+    const int   modfxType = (int)pModfxType->load();
+    const float mfRate01  = pModfxRate->load();
+    const float mfDepth   = pModfxDepth->load();
+    const float mfMix     = pModfxMix->load();
+    // Rubber-Rhino knob laws, mix from the panel's own MIX knob
+    const float chorusRateHz  = 0.05f + mfRate01 * 2.95f;
+    const float chorusRangeMs = 0.5f + mfDepth * 5.5f;
+    const float flangerRateHz  = 0.02f + mfRate01 * 1.98f;
+    const float flangerRangeMs = 0.1f + mfDepth * 2.9f;
+    const float flangerFb      = 0.3f + mfDepth * 0.5f;
+    const float phaserRateHz   = 0.02f + mfRate01 * 1.98f;
 
-    instability.setAmounts(pCondition->load(), pStability->load());
-
-    const bool  chorusOn  = pChorusOn->load()  > 0.5f;
-    const bool  flangerOn = pFlangerOn->load() > 0.5f;
-    const bool  phaserOn  = pPhaserOn->load()  > 0.5f;
-
-    const float chorusDepthN  = pChorusDepth->load();
-    const float chorusRateHz  = 0.05f + pChorusRate->load() * 2.95f;    // 0.05..3 Hz
-    const float chorusRangeMs = 0.5f + chorusDepthN * 5.5f;             // 0.5..6 ms
-    const float chorusMix     = 0.3f + chorusDepthN * 0.4f;
-
-    const float flangerDepthN  = pFlangerDepth->load();
-    const float flangerRateHz  = 0.02f + pFlangerRate->load() * 1.98f;  // 0.02..2 Hz
-    const float flangerRangeMs = 0.1f + flangerDepthN * 2.9f;           // 0.1..3 ms
-    const float flangerFb      = 0.3f + flangerDepthN * 0.5f;           // 0.3..0.8
-    const float flangerMix     = 0.3f + flangerDepthN * 0.4f;
-
-    const float phaserDepthN = pPhaserDepth->load();
-    const float phaserRateHz = 0.02f + pPhaserRate->load() * 1.98f;     // 0.02..2 Hz
-    const float phaserMix    = 0.3f + phaserDepthN * 0.4f;
+    const bool delayOn = pDelayOn->load() > 0.5f;
+    // panel DIGITAL/TAPE/PONG -> StereoDelay Type {tape=0, ping=1, dig=2}
+    static constexpr int delayTypeMap[3] = { 2, 0, 1 };
+    delay.setType((dreamer::StereoDelay::Type)delayTypeMap[(int)pDelayMode->load()]);
+    delay.setTimeFree(pDelayTime->load());
+    const float dfb  = pDelayFb->load();
+    const float dwet = delayOn ? pDelayMix->load() : 0.0f;
 
     volumeSmoothed.setTargetValue(juce::Decibels::decibelsToGain(pVolume->load()));
     outputSmoothed.setTargetValue(juce::Decibels::decibelsToGain(pOutput->load()));
 
-    // ---- render: synth -> dist -> dcblock -> truncate -> volume -> delay ->
-    //      mod-fx (Rubber-Rhino order) ---------------------------------------
+    // ---- render ------------------------------------------------------------
     auto* left  = buffer.getWritePointer(0);
     auto* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : nullptr;
 
@@ -246,92 +239,99 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             }
         }
 
-        instability.tick();                        // exactly once per sample
-        const auto drift = instability.drift();
+        float l = 0.0f, r = 0.0f;
+        synth.process(0.0f, 0.0f, l, r);
 
-        float x = synth.process(drift.tune * 0.20f,      // +/-20 cents * depth
-                                drift.cutoff * 0.15f);   // +/-0.15 oct * depth
-        x = dist.processSample(x, distMix);
-        x = dcBlock.processSample(x);
-        if (vintage)
-            x = dreamer::Truncate16::processSample(x);
-        x *= volumeSmoothed.getNextValue();              // master, pre-FX
+        // global filters, control-rate cutoff updates (matrix + F1 ENV ride in)
+        if (gfCtrl-- <= 0) {
+            gfCtrl = 15;
+            double h1 = (double)pF1Cutoff->load()
+                      * std::pow(2.0, (double)synth.matrixCut1Oct()
+                                    + (double)f1Env * 2.0 * (double)synth.auxMax());
+            double h2 = (double)pF2Cutoff->load()
+                      * std::pow(2.0, (double)synth.matrixCut2Oct());
+            h1 = juce::jlimit(20.0, 18000.0, h1);
+            h2 = juce::jlimit(20.0, 18000.0, h2);
+            for (int ch = 0; ch < 2; ++ch) {
+                f1[ch].setCutoffRes(h1, pF1Reso->load());
+                f2[ch].setCutoffRes(h2, pF2Reso->load());
+            }
+        }
+        if (routing == 0) {                                   // SER
+            l = f2[0].process(f1[0].process(l));
+            r = f2[1].process(f1[1].process(r));
+        } else {                                              // PAR
+            l = 0.5f * (f1[0].process(l) + f2[0].process(l));
+            r = 0.5f * (f1[1].process(r) + f2[1].process(r));
+        }
 
+        l = dcBlock[0].processSample(l);
+        r = dcBlock[1].processSample(r);
+        if (vintage) {
+            l = dreamer::Truncate16::processSample(l);
+            r = dreamer::Truncate16::processSample(r);
+        }
+        const float vg = volumeSmoothed.getNextValue();       // master, pre-FX
+        l *= vg;
+        r *= vg;
+
+        if (modfxOn) {
+            switch (modfxType) {
+            case 0:  chorus.process(l, r, 4.0f, chorusRangeMs, chorusRateHz, 0.0f, mfMix); break;
+            case 1:  flanger.process(l, r, 0.5f, flangerRangeMs, flangerRateHz, flangerFb, mfMix); break;
+            default: phaser.process(l, r, mfDepth, phaserRateHz, mfMix); break;
+            }
+        }
+
+        // delay: mono-sum input, stereo wet (FEATURES section 8)
         float wetL, wetR;
-        delay.processSampleWet(x, fb, wetL, wetR);
-        wetL = delayLP.processSample(0, delayHP.processSample(0, wetL));
-        wetR = delayLP.processSample(1, delayHP.processSample(1, wetR));
-        float l = x + wetL * wet;
-        float r = x + wetR * wet;
-
-        if (chorusOn)
-            chorus.process(l, r, kChorusBaseMs, chorusRangeMs, chorusRateHz, 0.0f, chorusMix);
-        if (flangerOn)
-            flanger.process(l, r, kFlangerBaseMs, flangerRangeMs, flangerRateHz, flangerFb, flangerMix);
-        if (phaserOn)
-            phaser.process(l, r, phaserDepthN, phaserRateHz, phaserMix);
+        delay.processSampleWet(0.5f * (l + r), dfb, wetL, wetR);
+        l += wetL * dwet;
+        r += wetR * dwet;
 
         left[n] = l;
         if (right != nullptr) right[n] = r;
     }
 
-    // ---- reverb (per-block, Rubber-Rhino restructure mirrored) -------------
-    const float rmix    = pRevMix->load();
-    const int   revType = (int)pRevType->load();
+    // ---- reverb (per-block; donor coefficient-cache pattern) ---------------
+    const bool  revOn = pRevOn->load() > 0.5f;
+    const float rmix  = revOn ? pRevMix->load() : 0.0f;
     if (rmix > 0.001f) {
         const float size = pRevSize->load();
         const float damp = pRevDamp->load();
+        // panel ROOM/HALL/PLATE -> donor voicing cases {room=0, plate=1, hall=2}
+        static constexpr int revTypeMap[3] = { 0, 2, 1 };
+        const int revType = revTypeMap[(int)pRevType->load()];
 
-        if (revType == 3) {   // Spring
-            springReverb.setParams(size, damp);
-            reverbHP.setParams((int)pReverbHpSlope->load(), pReverbHpFreq->load());
-            reverbLP.setParams((int)pReverbLpSlope->load(), pReverbLpFreq->load());
-            for (int n = 0; n < numSamples; ++n) {
-                float wl, wr;
-                springReverb.processSample(left[n], wl, wr);
-                reverbWetL[(size_t)n] = reverbLP.processSample(0, reverbHP.processSample(0, wl));
-                reverbWetR[(size_t)n] = reverbLP.processSample(1, reverbHP.processSample(1, wr));
+        if (revType != revCache.type || size != revCache.size || damp != revCache.damp) {
+            revCache = { revType, size, damp };
+            juce::Reverb::Parameters rp;
+            switch (revType) {
+                case 0:  rp.roomSize = 0.25f + 0.45f * size;   // Room
+                         rp.damping  = 0.35f + 0.55f * damp;
+                         rp.width    = 0.7f;  break;
+                case 1:  rp.roomSize = 0.45f + 0.35f * size;   // Plate
+                         rp.damping  = 0.10f + 0.50f * damp;
+                         rp.width    = 1.0f;  break;
+                default: rp.roomSize = 0.65f + 0.35f * size;   // Hall
+                         rp.damping  = 0.20f + 0.60f * damp;
+                         rp.width    = 1.0f;  break;
             }
-            revCache.type = -1;   // force juce::Reverb coefficient refresh on switch-back
-        } else {
-            if (revType != revCache.type || size != revCache.size || damp != revCache.damp) {
-                revCache = { revType, size, damp };
-                juce::Reverb::Parameters rp;
-                switch (revType) {
-                    case 0:  rp.roomSize = 0.25f + 0.45f * size;   // Room
-                             rp.damping  = 0.35f + 0.55f * damp;
-                             rp.width    = 0.7f;  break;
-                    case 1:  rp.roomSize = 0.45f + 0.35f * size;   // Plate
-                             rp.damping  = 0.10f + 0.50f * damp;
-                             rp.width    = 1.0f;  break;
-                    default: rp.roomSize = 0.65f + 0.35f * size;   // Hall
-                             rp.damping  = 0.20f + 0.60f * damp;
-                             rp.width    = 1.0f;  break;
-                }
-                rp.wetLevel = 1.0f;
-                rp.dryLevel = 0.0f;
-                rp.freezeMode = 0.0f;
-                reverb.setParameters(rp);
-            }
-            for (int n = 0; n < numSamples; ++n) {
-                reverbWetL[(size_t)n] = left[n];
-                reverbWetR[(size_t)n] = right != nullptr ? right[n] : left[n];
-            }
-            if (right != nullptr)
-                reverb.processStereo(reverbWetL.data(), reverbWetR.data(), numSamples);
-            else
-                reverb.processMono(reverbWetL.data(), numSamples);
-
-            reverbHP.setParams((int)pReverbHpSlope->load(), pReverbHpFreq->load());
-            reverbLP.setParams((int)pReverbLpSlope->load(), pReverbLpFreq->load());
-            for (int n = 0; n < numSamples; ++n) {
-                reverbWetL[(size_t)n] = reverbLP.processSample(0, reverbHP.processSample(0, reverbWetL[(size_t)n]));
-                reverbWetR[(size_t)n] = reverbLP.processSample(1, reverbHP.processSample(1, reverbWetR[(size_t)n]));
-            }
+            rp.wetLevel = 1.0f;
+            rp.dryLevel = 0.0f;
+            rp.freezeMode = 0.0f;
+            reverb.setParameters(rp);
         }
+        for (int n = 0; n < numSamples; ++n) {
+            reverbWetL[(size_t)n] = left[n];
+            reverbWetR[(size_t)n] = right != nullptr ? right[n] : left[n];
+        }
+        if (right != nullptr)
+            reverb.processStereo(reverbWetL.data(), reverbWetR.data(), numSamples);
+        else
+            reverb.processMono(reverbWetL.data(), numSamples);
 
-        // dry gain 2*(1-0.4*rmix) matches juce::Reverb's internal dryScaleFactor
-        // behavior the donor shipped with -- see the donor's NOTE comment.
+        // donor dry/wet law (kDryScale matches juce::Reverb's shipped behavior)
         constexpr float kDryScale = 2.0f;
         for (int n = 0; n < numSamples; ++n) {
             left[n] = left[n] * (kDryScale * (1.0f - 0.4f * rmix)) + reverbWetL[(size_t)n] * (0.8f * rmix);
@@ -340,40 +340,16 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         }
         reverbWasActive = true;
     } else if (reverbWasActive) {
-        reverb.reset();          // drop the tail so re-enabling doesn't burst
-        springReverb.reset();
-        reverbHP.reset();
-        reverbLP.reset();
+        reverb.reset();
         reverbWasActive = false;
         revCache.type = -1;
     }
 
-    // ---- comp -> hiss -> output -> brickwall -------------------------------
-    comp.setParams(pCompOn->load() > 0.5f, pCompLim->load() > 0.5f,
-                   pCompThresh->load(), pCompRatio->load(), pCompGain->load());
-    comp.resetGrMeter();
-    const bool clipOn = pClipOn->load() > 0.5f;
-
+    // ---- output gain -------------------------------------------------------
     for (int n = 0; n < numSamples; ++n) {
-        float l = left[n];
-        float r = right != nullptr ? right[n] : l;
-
-        comp.processSample(l, r);
-
-        l += instability.hiss(0);   // exactly 0.0f at condition = 1 (pristine)
-        r += instability.hiss(1);
-
         const float og = outputSmoothed.getNextValue();
-        l *= og;
-        r *= og;
-
-        if (clipOn) {
-            l = dreamer::BrickwallClip::processSample(l);
-            r = dreamer::BrickwallClip::processSample(r);
-        }
-
-        left[n] = l;
-        if (right != nullptr) right[n] = r;
+        left[n] *= og;
+        if (right != nullptr) right[n] *= og;
     }
 }
 
