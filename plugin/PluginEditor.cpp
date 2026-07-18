@@ -3,9 +3,13 @@
 
 namespace {
 
-// Design canvas (handoff v5): fixed 1140x660, uniform scale in the page.
+// Design canvas (handoff v11): fixed 1140x864 logical (control panel + the
+// keyboard/wheels strip below), uniform scale in the page. 2x assets => the
+// PNG master is 2280x1728. (v9 was 1140x660; the handoff's resize section
+// still quotes the old 660 -- 864 is authoritative per the "Logical size"
+// line and the PNG dimensions.)
 constexpr int kBaseW = 1140;
-constexpr int kBaseH = 660;
+constexpr int kBaseH = 864;
 
 // GUI-bound parameter IDs by relay type. IDs = APVTS IDs (plugin/Params.h);
 // the page JS asks for the same ids via getSliderState/getToggleState/
@@ -54,7 +58,8 @@ juce::StringArray makeComboIds() {
     juce::StringArray ids;
     for (const char* sx : { "_a", "_b", "_c", "_d" })
         for (const char* s : { "wave", "shape", "tvf_type",
-                               "aux_dest", "lfo1_dest", "lfo2_dest" })
+                               "aux_dest", "lfo1_dest", "lfo2_dest",
+                               "lfo1_shape", "lfo2_shape" })   // v11 per-tone LFO shape
             ids.add(juce::String(s) + sx);
     for (const char* s : { "vec_orbit_shape", "lfo_shape",
                            "mtx1_src", "mtx2_src", "mtx3_src",
@@ -111,14 +116,23 @@ TheDreamerEditor::TheDreamerEditor(TheDreamerProcessor& p)
     addAndMakeVisible(*webView);
     webView->goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
 
-    // Cubase-style proportional resize (v8): 50%..200% of the design canvas,
-    // fixed aspect; the page's fit() scales the 1140x660 layout to the window.
+    // Cubase-style proportional resize: 50%..200% of the design canvas, fixed
+    // aspect; the page's fit() scales the 1140x864 layout uniformly into the
+    // host window frame (v11: whole frame incl. screws scales as one unit).
     setResizable(true, true);
     getConstrainer()->setFixedAspectRatio((double)kBaseW / kBaseH);
     setResizeLimits(kBaseW / 2, kBaseH / 2, kBaseW * 2, kBaseH * 2);
     setSize(kBaseW, kBaseH);
 
     startTimerHz(30);   // output-meter feed
+}
+
+TheDreamerEditor::~TheDreamerEditor()
+{
+    // Editor teardown while audio runs: any note held on the on-screen
+    // keyboard loses its pointerup, so flush GUI-originated notes to avoid a
+    // hung voice (host MIDI notes are unaffected).
+    processor.guiAllNotesOff();
 }
 
 //==============================================================================
@@ -151,6 +165,40 @@ juce::WebBrowserComponent::Options TheDreamerEditor::makeOptions()
                 obj->setProperty("version", JucePlugin_VersionString);
                 obj->setProperty("build", juce::String(__DATE__) + " " + juce::String(__TIME__));
                 completion(juce::var(obj));
+            })
+
+        // v11 on-screen keyboard + pitch/mod wheels. Called on the message
+        // thread; each just enqueues onto the processor's lock-free FIFO
+        // (gui* -> drainGuiMidi at the top of processBlock). Args from JS:
+        //   noteOn(note 0-127, vel 0-1) / noteOff(note) /
+        //   pitchBend(norm -1..+1) / modWheel(w 0-1).
+        .withNativeFunction("noteOn",
+            [this](const juce::Array<juce::var>& a,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (a.size() >= 2) processor.guiNoteOn((int)a[0], (float)(double)a[1]);
+                completion(juce::var());
+            })
+        .withNativeFunction("noteOff",
+            [this](const juce::Array<juce::var>& a,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (a.size() >= 1) processor.guiNoteOff((int)a[0]);
+                completion(juce::var());
+            })
+        .withNativeFunction("pitchBend",
+            [this](const juce::Array<juce::var>& a,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (a.size() >= 1) processor.guiPitchBend((float)(double)a[0]);
+                completion(juce::var());
+            })
+        .withNativeFunction("modWheel",
+            [this](const juce::Array<juce::var>& a,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (a.size() >= 1) processor.guiModWheel((float)(double)a[0]);
+                completion(juce::var());
             });
 
     for (auto& r : sliderRelays) options = options.withOptionsFrom(*r);

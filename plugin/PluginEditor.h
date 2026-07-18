@@ -1,7 +1,9 @@
 // The Dreamer WebView editor: JUCE 8 WebView2 hosting plugin/gui/editor.html
-// (BinaryData), design_handoff_dreamer_gui v5 (1140x660 canvas, uniform
-// scaling). All panel controls bind via Web*Relay attachments by APVTS ID;
-// non-parameter traffic is a single getInfo native fn (version/build stamp).
+// (BinaryData), design_handoff_dreamer_gui v11 (1140x864 canvas, uniform
+// scaling incl. the keyboard/wheels strip). Panel controls bind via Web*Relay
+// attachments by APVTS ID; non-parameter traffic is getInfo (version/build
+// stamp) plus the v11 keyboard/wheel native fns (noteOn/noteOff/pitchBend/
+// modWheel -> processor lock-free MIDI FIFO).
 // House rules: relays constructed BEFORE the WebBrowserComponent, attachments
 // after; BinaryData served by original filename; check_native_interop.js
 // must ship or all page JS dies silently.
@@ -13,7 +15,7 @@ class TheDreamerEditor : public juce::AudioProcessorEditor,
                          private juce::Timer {
 public:
     explicit TheDreamerEditor(TheDreamerProcessor&);
-    ~TheDreamerEditor() override = default;
+    ~TheDreamerEditor() override;
 
     void resized() override;
 

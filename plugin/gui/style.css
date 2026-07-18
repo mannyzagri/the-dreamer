@@ -1,6 +1,8 @@
-/* The Dreamer -- GUI v7 production stylesheet (v6 face + v7 renovation,
-   design-handoff/v7/README.md). Fixed 1140x660 logical canvas, uniformly
-   scaled by app.js fit(). Tokens + component specs verbatim from v7. */
+/* The Dreamer -- GUI v11 production stylesheet (v9 face + v11 handoff,
+   GUI_4/design_handoff_dreamer_gui). Fixed 1140x864 logical canvas (660
+   control panel + 190 keyboard/wheel strip below at y=662), uniformly scaled
+   by app.js fit() as ONE frame (screws included). Tokens + component specs
+   verbatim from the handoff README + prototype. */
 
 /* Fonts served from BinaryData by bare filename (fully offline). */
 @font-face{font-family:'Barlow Semi Condensed';font-style:normal;font-weight:600;
@@ -14,13 +16,22 @@
 
 *{box-sizing:border-box;margin:0;padding:0;-webkit-user-select:none;user-select:none}
 html,body{width:100%;height:100%;overflow:hidden;background:#15172e}
-#frame{position:absolute;left:0;top:0;width:1140px;height:660px;transform-origin:top left}
-#panel{position:relative;width:1140px;height:660px;background:#232850;border-radius:6px;overflow:hidden;
+#frame{position:absolute;left:0;top:0;width:1140px;height:864px;transform-origin:top left}
+#panel{position:relative;width:1140px;height:864px;background:#232850;border-radius:6px;overflow:hidden;
   box-shadow:0 12px 40px rgba(0,0,0,.6),inset 0 1px 0 rgba(201,205,242,.12);
   font-family:'Barlow Semi Condensed',sans-serif}
 
+/* v11: faceplate finish sits BEHIND the controls (z-index 0); the header, both
+   control rows and the keyboard strip lift to z-index 1 so the metal shows only
+   through the panel gaps / group interiors -- never tinting opaque knobs or
+   keys. The 4 corner screws (#screws) render on their own layer above content
+   (z-index 6) but are cleared by the header's 26px logo/POWER margins so no
+   label is ever occluded (breakpoint #1/#4). */
+#hdr,#row1,#row2{position:relative;z-index:1}
+#kbStrip{position:absolute;z-index:1}
+
 /* ============ faceplate finish (brushed metal, default ON) ============ */
-#plate{position:absolute;inset:0;pointer-events:none;z-index:5}
+#plate{position:absolute;inset:0;pointer-events:none;z-index:0}
 #plate svg{position:absolute;inset:0;width:100%;height:100%}
 #plate .grad1{position:absolute;inset:0;
   background:linear-gradient(180deg,rgba(255,255,255,.10) 0%,rgba(255,255,255,.03) 25%,rgba(0,0,0,.05) 80%,rgba(0,0,0,.12) 100%)}
@@ -34,7 +45,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:#15172e}
 /* ============ header ============ */
 #hdr{position:relative;height:60px;background:#1b1f40;border-bottom:1px solid #464e94;
   display:flex;align-items:center;padding:0 16px;gap:16px}
-#logo{display:flex;flex-direction:column;gap:2px}
+/* v11: logo 26px in from the top-left corner screw (breakpoint #1) */
+#logo{display:flex;flex-direction:column;gap:2px;align-items:center;margin-left:26px}
 #logoName{font:400 19px 'Michroma';color:#c9cdf2;letter-spacing:.14em;white-space:nowrap}
 #logoSub{font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.34em;white-space:nowrap}
 #lcdWrap{flex:1;display:flex;justify-content:center;align-items:center;min-width:0}
@@ -55,7 +67,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:#15172e}
 #lcdTouched{min-width:130px;white-space:pre}
 #lcdMeter{display:flex;gap:2px}
 #lcdMeter span{width:6px;height:9px;background:#1c1a10}
-#powerWrap{display:flex;flex-direction:column;align-items:center;gap:4px}
+/* v11: POWER LED 26px clear of the top-right corner screw (breakpoint #1) */
+#powerWrap{display:flex;flex-direction:column;align-items:center;gap:4px;margin-right:26px}
 .plab{font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.2em}
 
 /* v8 header: MIDI LEARN (visual-only, feature deferred) + stereo L/R meters */
@@ -211,9 +224,45 @@ html,body{width:100%;height:100%;overflow:hidden;background:#15172e}
   display:flex;align-items:center;justify-content:center;letter-spacing:.08em;flex:none}
 .fxsyncbtn:active{background:#10122a}
 
-/* version/build stamp (getInfo) */
-#verStamp{position:absolute;right:14px;bottom:8px;font:600 7px 'Barlow Semi Condensed';
-  color:#7d84c0;letter-spacing:.08em}
+/* v11 version stamp (getInfo): silkscreen VER <n> at bottom-right, just left of
+   the bottom-right corner screw, on the screw layer so it is never occluded
+   (breakpoint #4). Populated from the real built version by the getInfo call. */
+#verStamp{position:absolute;right:34px;bottom:16px;z-index:6;font:600 7.5px 'Barlow Semi Condensed';
+  color:#7d84c0;letter-spacing:.16em}
+
+/* v11 corner screws: 4 separate heads on their own layer (z-index 6), centered
+   22px from each corner of the CONTROL panel (top corners + the corners just
+   above the keyboard strip). Radial head + rotated slot, matching the PNG. */
+#screws{position:absolute;inset:0;pointer-events:none;z-index:6}
+.screw{position:absolute;width:16px;height:16px;border-radius:50%;
+  background:radial-gradient(circle at 38% 38%,#6b708f,#292b42 70%,#0d0d1a);
+  box-shadow:0 1px 2px rgba(0,0,0,.6)}
+.screw i{position:absolute;left:3.5px;top:7.2px;width:9px;height:1.6px;border-radius:1px;background:#05050c}
+
+/* ============ v11 keyboard + pitch/mod wheel strip (y=662, 1140x190) ====== */
+#kbStrip{left:0;top:662px;width:1140px;height:190px;overflow:hidden;border-radius:8px;
+  background:#1a1c38;box-shadow:inset 0 1px 1px rgba(255,255,255,.1),inset 0 4px 8px rgba(0,0,0,.6)}
+#wheelBay{position:absolute;left:8px;top:10px;width:128px;height:170px;border-radius:6px;
+  background:linear-gradient(180deg,#0d0d1c 0%,#171a2e 100%);box-shadow:inset 0 3px 6px rgba(0,0,0,.7)}
+.wheelSlot{position:absolute;top:25px;width:40px;height:140px;border-radius:20px;background:#05050d;
+  box-shadow:inset 0 2px 5px rgba(0,0,0,.9)}
+.wheel{position:absolute;top:36px;width:32px;height:118px;border-radius:16px;
+  background:linear-gradient(180deg,#121426 0%,#383d61 35%,#454a73 50%,#383d61 65%,#121426 100%);
+  box-shadow:0 2px 4px rgba(0,0,0,.6);cursor:ns-resize;overflow:hidden}
+.wheel .rib{position:absolute;left:0;width:32px;height:2px;background:rgba(0,0,0,.55)}
+.wheelLbl{position:absolute;top:12px;font:600 7px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.14em}
+#keybed{position:absolute;left:144px;top:0;right:0;bottom:0}
+.wkey{position:absolute;top:0;width:32.662px;height:170px;border-radius:0 0 3px 3px;
+  box-shadow:1px 0 1px rgba(0,0,0,.35),inset 0 -3px 3px rgba(0,0,0,.25);cursor:pointer;
+  background:linear-gradient(180deg,#c7c9d6 0%,#e0e3ed 75%,#f7f7fc 94%,#b2b5c7 100%)}
+.wkey.held{background:linear-gradient(180deg,#b2b5c7 0%,#c7c9d6 75%,#e0e3ed 94%,#a4a8bd 100%)}
+.bkey{position:absolute;top:0;width:20px;height:104px;border-radius:0 0 3px 3px;
+  box-shadow:0 3px 5px rgba(0,0,0,.5);cursor:pointer;z-index:2;
+  background:linear-gradient(180deg,#1a1a24 0%,#0a0a12 60%,#383b52 92%,#05050a 100%)}
+.bkey.held{background:linear-gradient(180deg,#05050a 0%,#0a0a12 60%,#383b52 92%,#1a1a24 100%)}
+
+/* v11 per-tone LFO SHAPE mini-LCD (34x16, click = menu, no arrows) */
+.shapeLcd{width:34px;height:16px;flex:none}
 
 /* v8 window resize grip (visual affordance; native window is authoritative) */
 #grip{position:absolute;right:0;bottom:0;width:15px;height:15px;z-index:30;cursor:nwse-resize;

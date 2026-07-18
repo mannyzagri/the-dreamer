@@ -165,6 +165,9 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
             layout.add(uni(tid((LB + "depth").toRawUTF8(), t), LN + "Depth", 0.0f));
             layout.add(boolean(tid((LB + "sync").toRawUTF8(), t), LN + "Sync", false));
             layout.add(choice(tid((LB + "dest").toRawUTF8(), t), LN + "Dest", lfoDests, 0));
+            // v11: per-LFO shape (panel TRI/SIN/SAW/SQR/S+H); default SIN keeps
+            //  the pre-v11 fixed-sine behaviour bit-identical for init patches.
+            layout.add(choice(tid((LB + "shape").toRawUTF8(), t), LN + "Shape", lfoShapes, 1));
         }
         layout.add(choice(tid("aux_dest", t), P + "Aux Dest", auxDests, 0));
         layout.add(bip(tid("aux_amt", t), P + "Aux Amt", 0.0f));   // flagged

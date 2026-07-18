@@ -320,6 +320,27 @@ int main(int argc, char** argv) {
         CHECK(peakT <= peakA * 1.0001f, "tremolo never exceeds dry");
         CHECK(peakT > 0.0f, "tremolo not silent");
 
+        // v11 per-LFO shape: a SQUARE LFO on LEVEL renders audibly distinct
+        // from the default SINE at the same rate/depth. Default shape is SIN
+        // (panel index 1 -> Lfo::sine), so init patches stay bit-identical to
+        // the pre-v11 fixed-sine engine (proven by the exact-equality CHECKs
+        // throughout this suite still passing).
+        CHECK(dreamer::ToneParams::ToneLfo{}.shape == 1, "tone LFO default shape = SIN");
+        CHECK(dreamer::panelLfoShapeToLfo(1) == 0, "panel SIN maps to Lfo::sine");
+        CHECK(rt == render1s(pt), "SIN tremolo render is deterministic");
+        dreamer::DreamPatch psq = pt;
+        psq.tone[0].lfo2.shape = 3;                  // SQR (panel index 3)
+        auto rsq = render1s(psq);
+        double shDiff = 0;
+        for (size_t i = SR / 10; i < rt.size(); ++i)
+            shDiff = std::fmax(shDiff, std::fabs((double)rt[i] - rsq[i]));
+        std::printf("  sine-vs-square LFO max |diff|: %.4f\n", shDiff);
+        CHECK(shDiff > 0.02, "square LFO shape renders distinct from sine");
+        float peakSq = 0;
+        for (size_t i = SR / 10; i < rsq.size(); ++i)
+            peakSq = std::fmax(peakSq, std::fabs(rsq[i]));
+        CHECK(peakSq <= peakA * 1.0001f, "square tremolo never exceeds dry");
+
         // sync division map at 120 BPM: 1/1 (idx 2) = 0.5 Hz, 1/4 (idx 5) =
         // 2 Hz, 1/16 (idx 9) = 8 Hz, 4/1 (idx 0) = 0.125 Hz
         dreamer::ToneParams::ToneLfo s;
