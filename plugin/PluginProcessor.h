@@ -13,6 +13,12 @@
 #include "dsp/glue/DreamVoice.h"
 #include "dsp/glue/GlobalFilter.h"
 #include "dsp/glue/Ensemble.h"
+#include "dsp/glue/Dimension.h"
+#include "dsp/glue/Rotary.h"
+#include "dsp/glue/Barberpole.h"
+#include "dsp/glue/LoFi.h"
+#include "dsp/glue/StereoWidth.h"
+#include "dsp/glue/Talkbox.h"
 #include "dsp/ported/fx/Effects.h"      // DCBlocker, Truncate16, StereoDelay
 #include "dsp/ported/fx/ModFx.h"        // ModDelayFx, Phaser
 
@@ -46,6 +52,10 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
 
+    // output metering feed for the editor's header L/R meters (peak per block)
+    float getMeterL() const noexcept { return meterL.load(std::memory_order_relaxed); }
+    float getMeterR() const noexcept { return meterR.load(std::memory_order_relaxed); }
+
 private:
     struct NoteEvent {
         int   offset = 0;
@@ -66,14 +76,28 @@ private:
     dreamer::GlobalFilter f1[2], f2[2];         // [L, R] per slot
     dreamer::DCBlocker    dcBlock[2];
     dreamer::Ensemble     ensemble;
+    dreamer::Dimension    dimension;
+    dreamer::Rotary       rotary;
+    dreamer::Barberpole   barberpole;
     dreamer::StereoDelay  delay;
     dreamer::ModDelayFx   chorus, flanger;
     dreamer::Phaser       phaser;
     juce::Reverb          reverb;
+    dreamer::LoFi         lofi;
+    dreamer::StereoWidth  stereoWidth;
+    dreamer::Talkbox      talkbox;
     std::vector<float>    reverbWetL, reverbWetR;
     struct RevCache { int type = -1; float size = -1.0f, damp = -1.0f; } revCache;
     bool reverbWasActive = false;
     int  gfCtrl = 0;
+
+    // FX PARAMS extras, one-pole smoothed per block (continuous extras;
+    // discrete ones snap + de-click inside their effect). [slot][0..3]
+    float fxP_[3][4] = {};
+    float fxSmoothCoef_ = 1.0f;
+
+    // output metering feed to the editor (peak-hold in the GUI)
+    std::atomic<float> meterL { 0.0f }, meterR { 0.0f };
 
     juce::SmoothedValue<float> masterSmoothed;
 
@@ -102,6 +126,11 @@ private:
                        *pModfxType, *pModfxRate, *pModfxDepth, *pModfxMix, *pModfxOn,
                        *pDlyMode, *pDlyTime, *pDlyFb, *pDlyMix, *pDlyOn,
                        *pRevType, *pRevSize, *pRevDamp, *pRevMix, *pRevOn,
+                       *pModfxP[4], *pDlyP[4], *pRevP[4],
+                       *pLofiOn, *pLofiBits, *pLofiSrate, *pLofiCompand, *pLofiAlias,
+                       *pWidthOn, *pWidth, *pWidthHaas, *pWidthBassMono,
+                       *pTalkOn, *pTalkVa, *pTalkVb, *pTalkMorph, *pTalkSens,
+                       *pFxPrePost,
                        *pDrift, *pInterp, *pEngine;
 
     void cacheTonePtrs(TonePtrs& dst, int toneIdx);

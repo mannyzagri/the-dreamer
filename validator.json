@@ -23,6 +23,10 @@
       { "name": "engine",
         "compile": "(if not exist tests\\bin mkdir tests\\bin) && cl /nologo /std:c++17 /O2 /EHsc /DRHINO_TEST_FEATURES=1 /D_USE_MATH_DEFINES /I. tests\\test_engine.cpp /Fo:tests\\bin\\ /Fe:tests\\bin\\test_engine.exe",
         "run": "tests\\bin\\test_engine.exe",
+        "expect": ["ALL CHECKS PASSED"] },
+      { "name": "fx_v15",
+        "compile": "(if not exist tests\\bin mkdir tests\\bin) && cl /nologo /std:c++17 /O2 /EHsc /D_USE_MATH_DEFINES /I. tests\\test_fx_v15.cpp /Fo:tests\\bin\\ /Fe:tests\\bin\\test_fx_v15.exe",
+        "run": "tests\\bin\\test_fx_v15.exe",
         "expect": ["ALL CHECKS PASSED"] }
     ]
   },
