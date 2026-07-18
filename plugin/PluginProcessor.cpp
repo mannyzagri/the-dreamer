@@ -29,7 +29,7 @@ TheDreamerProcessor::TheDreamerProcessor()
     pVecPenvOn = p(kVecPenvOn); pVecPenvStart = p(kVecPenvStart);
     pVecPenvEnd = p(kVecPenvEnd); pVecPenvTime = p(kVecPenvTime);
     pVecPenvLoop = p(kVecPenvLoop);
-    pFltRoute = p(kFltRoute);
+    pFltRoute = p(kFltRoute); pFltBal = p(kFltBal);
     pFlt1Type = p(kFlt1Type); pFlt1Cut = p(kFlt1Cut);
     pFlt1Res = p(kFlt1Res); pFlt1Env = p(kFlt1Env);
     pFlt2Type = p(kFlt2Type); pFlt2Cut = p(kFlt2Cut);
@@ -60,7 +60,14 @@ void TheDreamerProcessor::cacheTonePtrs(TonePtrs& dst, int t)
     dst.shape = p("shape"); dst.shapeDepth = p("shape_depth");
     dst.noise = p("noise"); dst.noiseColor = p("noise_color");
     dst.dir = p("dir"); dst.vint = p("vint");
-    dst.lfoDepth = p("lfo_depth"); dst.lfoDest = p("lfo_dest");
+    for (int lf = 0; lf < 2; ++lf) {
+        const juce::String lb = "lfo" + juce::String(lf + 1) + "_";
+        auto q = [&](const char* s) {
+            return apvts.getRawParameterValue(tid((lb + s).toRawUTF8(), t));
+        };
+        dst.lfo[lf].rate = q("rate"); dst.lfo[lf].depth = q("depth");
+        dst.lfo[lf].sync = q("sync"); dst.lfo[lf].dest = q("dest");
+    }
     dst.auxDest = p("aux_dest"); dst.auxAmt = p("aux_amt");
     dst.tvfType = p("tvf_type"); dst.tvfCut = p("tvf_cut");
     dst.tvfRes = p("tvf_res"); dst.tvfEnv = p("tvf_env"); dst.tvfKf = p("tvf_kf");
@@ -134,8 +141,14 @@ void TheDreamerProcessor::buildPatch(dreamer::DreamPatch& patch) const
         d.auxS = s.auxS->load();          d.auxR = adsrSec(s.auxR->load());
         d.auxDest = (int)s.auxDest->load();
         d.auxAmt  = s.auxAmt->load();
-        d.lfoDepth = s.lfoDepth->load();
-        d.lfoDest  = (int)s.lfoDest->load();
+        auto fillLfo = [](dreamer::ToneParams::ToneLfo& o, const LfoPtrs& q) {
+            o.rate01 = q.rate->load();
+            o.depth  = q.depth->load();
+            o.sync   = q.sync->load() > 0.5f;
+            o.dest   = (int)q.dest->load();
+        };
+        fillLfo(d.lfo1, s.lfo[0]);
+        fillLfo(d.lfo2, s.lfo[1]);
     }
     patch.interp = (int)pInterp->load();
 
@@ -172,6 +185,15 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     buildPatch(synth.patch());
     synth.updateLive();
+
+    {   // host tempo for the v7 tone-LFO sync divisions (fallback 120)
+        double bpm = 120.0;
+        if (auto* ph = getPlayHead())
+            if (auto pos = ph->getPosition())
+                if (auto b = pos->getBpm())
+                    bpm = juce::jlimit(20.0, 999.0, *b);
+        synth.setBpm((float)bpm);
+    }
 
     const bool vintage = pEngine->load() < 0.5f;
     const int  os      = vintage ? 1 : 2;
@@ -268,12 +290,17 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                 f2[ch].setCutoffRes(h2, pFlt2Res->load());
             }
         }
-        if (routing == 0) {                                  // SER
+        if (routing == 0) {                                  // SER (BAL inert)
             l = f2[0].process(f1[0].process(l));
             r = f2[1].process(f1[1].process(r));
-        } else {                                             // PAR
-            l = 0.5f * (f1[0].process(l) + f2[0].process(l));
-            r = 0.5f * (f1[1].process(r) + f2[1].process(r));
+        } else {                                             // PAR: BAL 1<->2
+            // normalized weights: bal 0 = equal (pre-v7 behavior), +/-1 = solo
+            const float bal = pFltBal->load();
+            const float w1  = bal > 0.0f ? 1.0f - bal : 1.0f;
+            const float w2  = bal < 0.0f ? 1.0f + bal : 1.0f;
+            const float nrm = 0.5f * (w1 + w2) > 0.0f ? 1.0f / (w1 + w2) : 0.5f;
+            l = (w1 * f1[0].process(l) + w2 * f2[0].process(l)) * nrm;
+            r = (w1 * f1[1].process(r) + w2 * f2[1].process(r)) * nrm;
         }
 
         l = dcBlock[0].processSample(l);

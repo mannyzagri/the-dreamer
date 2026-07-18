@@ -16,7 +16,8 @@ juce::StringArray makeSliderIds() {
     for (const char* sx : { "_a", "_b", "_c", "_d" })
         for (const char* s : { "level", "oct", "fine", "start", "velo", "pan",
                                "shape_depth", "noise", "noise_color",
-                               "dir", "vint", "lfo_depth", "aux_amt",
+                               "dir", "vint", "aux_amt",
+                               "lfo1_rate", "lfo1_depth", "lfo2_rate", "lfo2_depth",
                                "tvf_cut", "tvf_res", "tvf_env", "tvf_kf",
                                "tvf_a", "tvf_d", "tvf_s", "tvf_r",
                                "tva_a", "tva_d", "tva_s", "tva_r",
@@ -28,7 +29,7 @@ juce::StringArray makeSliderIds() {
                            "lfo_rate",
                            "mtx1_amt", "mtx2_amt", "mtx3_amt",
                            "flt1_cut", "flt1_res", "flt1_env",
-                           "flt2_cut", "flt2_res", "flt2_morph",
+                           "flt2_cut", "flt2_res", "flt2_morph", "flt_bal",
                            "modfx_rate", "modfx_depth", "modfx_mix",
                            "dly_time", "dly_fb", "dly_mix",
                            "rev_size", "rev_damp", "rev_mix",
@@ -40,7 +41,7 @@ juce::StringArray makeSliderIds() {
 juce::StringArray makeToggleIds() {
     juce::StringArray ids;
     for (const char* sx : { "_a", "_b", "_c", "_d" })
-        for (const char* s : { "on", "start_random" })
+        for (const char* s : { "on", "start_random", "lfo1_sync", "lfo2_sync" })
             ids.add(juce::String(s) + sx);
     for (const char* s : { "vec_orbit_on", "vec_orbit_voice",
                            "vec_penv_on", "vec_penv_loop",
@@ -53,7 +54,7 @@ juce::StringArray makeComboIds() {
     juce::StringArray ids;
     for (const char* sx : { "_a", "_b", "_c", "_d" })
         for (const char* s : { "wave", "shape", "tvf_type",
-                               "aux_dest", "lfo_dest" })
+                               "aux_dest", "lfo1_dest", "lfo2_dest" })
             ids.add(juce::String(s) + sx);
     for (const char* s : { "vec_orbit_shape", "lfo_shape",
                            "mtx1_src", "mtx2_src", "mtx3_src",

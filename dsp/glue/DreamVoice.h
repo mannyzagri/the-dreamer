@@ -69,10 +69,19 @@ struct ToneParams {
 
     double auxA = 0.005, auxD = 0.3, auxS = 1.0, auxR = 0.3;
     int    auxDest = 0;            // 0 PITCH, 1 START, 2 SHAPE, 3 PAN, 4 NOISE
-    double auxAmt  = 0.0;          // -1..+1 (flagged addition vs DSP_BUILD s9)
+    double auxAmt  = 0.0;          // -1..+1 (on-panel since GUI v7)
 
-    double lfoDepth = 0.0;
-    int    lfoDest  = 0;           // 0 PITCH, 1 CUTOFF, 2 SHAPE, 3 LEVEL
+    // v7: TWO per-tone LFOs, each with its own rate (free Hz or tempo-synced
+    // to one of 12 divisions), depth and destination. Supersedes the single
+    // global-LFO tap of DSP_BUILD s3 (v7 handoff is newer).
+    struct ToneLfo {
+        double rate01 = 0.5;       // free: ->Lfo::rateHzFromParam(v*100);
+                                   // sync: quantized to division index round(v*11)
+        double depth  = 0.0;
+        bool   sync   = false;
+        int    dest   = 0;         // 0 PITCH, 1 CUTOFF, 2 SHAPE, 3 LEVEL
+    };
+    ToneLfo lfo1, lfo2;
 };
 
 struct VectorParams {
@@ -109,13 +118,30 @@ namespace mtx {
 struct ModContext {
     float bendSemis      = 0.0f;
     float driftSemis     = 0.0f;   // per-voice humanize (filled by DreamVoice)
-    float glfoValue      = 0.0f;
+    float glfoValue      = 0.0f;   // global LFO (matrix source)
+    float bpm            = 120.0f; // host tempo (tone-LFO sync divisions)
     float phi            = 0.0f;   // global phase part, turns
     float mtxPitchSemis  = 0.0f;
     float mtxShapeAdd    = 0.0f;
     float mtxPanAdd      = 0.0f;
     float mtxNoiseAdd    = 0.0f;
 };
+
+// 12 tempo divisions (GUI v7 order): 4/1 2/1 1/1 1/2 1/2T 1/4 1/4T 1/8 1/8T
+// 1/16 1/16T 1/32 -- one LFO cycle per division. Public for tests/GUI parity.
+inline double toneLfoDivisionBeats(int idx) noexcept {
+    static constexpr double beats[12] = {
+        16.0, 8.0, 4.0, 2.0, 4.0 / 3.0, 1.0, 2.0 / 3.0,
+        0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0, 0.125 };
+    if (idx < 0) idx = 0; if (idx > 11) idx = 11;
+    return beats[idx];
+}
+inline double toneLfoRateHz(const ToneParams::ToneLfo& p, double bpm) noexcept {
+    if (!p.sync)
+        return (double)Lfo::rateHzFromParam((float)(p.rate01 * 100.0));
+    const int idx = (int)(p.rate01 * 11.0 + 0.5);
+    return (bpm / 60.0) / toneLfoDivisionBeats(idx);
+}
 
 // deterministic per-instance RNG (glue idiom)
 struct GlueRng {
@@ -148,6 +174,8 @@ public:
         auxEnv_.setSampleRate(sr);
         svf_.setSampleRate(sr);
         rng_.seed(0x9E3779B9u * (seedBase + 1u));
+        lfo_[0].prepare(sr, (0xA5A5A5A5u ^ (seedBase * 2u)) | 1u);
+        lfo_[1].prepare(sr, (0x5A5A5A5Au ^ (seedBase * 2u + 1u)) | 1u);
     }
 
     void setInterpMode(int m) noexcept {
@@ -206,8 +234,8 @@ public:
         params_.fineCents    = p.fineCents;
         params_.auxDest      = p.auxDest;
         params_.auxAmt       = p.auxAmt;
-        params_.lfoDepth     = p.lfoDepth;
-        params_.lfoDest      = p.lfoDest;
+        params_.lfo1         = p.lfo1;
+        params_.lfo2         = p.lfo2;
         params_.startRandom  = p.startRandom;
         baseSemis_ = note_ - 69 + p.coarse + p.fineCents / 100.0;
         if (p.tvfMode != params_.tvfMode) {
@@ -217,6 +245,8 @@ public:
     }
 
     void process(float& l, float& r, const ModContext& m) noexcept {
+        lfo_[0].tick();                               // per-sample (Lfo contract);
+        lfo_[1].tick();                               // idle ticking keeps free-run honest
         if (!isActive()) { (void)tvfEnv_.process(); lastAux_ = auxEnv_.process(); return; }
         const float tvf = tvfEnv_.process();
         const float tva = tvaEnv_.process();
@@ -232,10 +262,14 @@ public:
             double panEff   = params_.pan + m.mtxPanAdd;
             levelMul_ = 1.0f;
 
-            {   // global-LFO tap
-                const float v = m.glfoValue;
-                const float d = (float)params_.lfoDepth;
-                switch (params_.lfoDest) {
+            // v7: two per-tone LFOs (rate free/synced, per-dest depth laws)
+            for (int i = 0; i < 2; ++i) {
+                const auto& lp = i == 0 ? params_.lfo1 : params_.lfo2;
+                lfo_[i].setRateHz((float)toneLfoRateHz(lp, (double)m.bpm));
+                const float v = lfo_[i].value();
+                const float d = (float)lp.depth;
+                if (d <= 0.0f) continue;
+                switch (lp.dest) {
                 case 0:  pitchSemis += (double)v * d * d * 12.0; break;
                 case 1:  cutOct     += (double)v * d * 2.0;      break;
                 case 2:  shapeEff   += (double)v * d;            break;
@@ -303,6 +337,7 @@ private:
     PcmOsc3                osc_;
     rompler::EnvelopeAdsr  tvfEnv_, tvaEnv_, auxEnv_;
     ToneSvf                svf_;
+    Lfo                    lfo_[2];      // v7 per-tone LFO pair (sine)
     ToneParams             params_;
     GlueRng                rng_;
     double sr_ = 44100.0;
@@ -450,6 +485,7 @@ public:
 
     void setPitchBend(float semis) noexcept { bendSemis_ = semis; }
     void setWheel(float w01) noexcept { wheel_ = w01; }
+    void setBpm(float bpm) noexcept { bpm_ = bpm > 1.0f ? bpm : 120.0f; }
 
     void noteOn(int midiNote, float velocity01) noexcept {
         lastVelocity_ = velocity01;
@@ -514,6 +550,7 @@ public:
         ModContext m;
         m.bendSemis     = bendSemis_;
         m.glfoValue     = glfo_.value();
+        m.bpm           = bpm_;
         m.phi           = basePhi_;
         m.mtxPitchSemis = mtxPitchSemis_;
         m.mtxShapeAdd   = mtxShapeAdd_;
@@ -584,6 +621,7 @@ private:
     double     orbitPhase_ = 0.0, orbitHz_ = 0.5;
     uint64_t   stamp_ = 0;
     float      bendSemis_ = 0.0f, wheel_ = 0.0f, lastVelocity_ = 0.8f;
+    float      bpm_ = 120.0f;
     float      basePhi_ = 0.0f, auxMax_ = 0.0f;
     float      shHeld_ = 0.0f, shSlewed_ = 0.0f;
     float      mtxPitchSemis_ = 0, mtxCut1Oct_ = 0, mtxCut2Oct_ = 0,

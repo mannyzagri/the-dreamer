@@ -1,8 +1,16 @@
-// The Dreamer -- GUI v6 production logic (JUCE 8 WebView2 editor).
-// v5 face + v6 renovation (design-handoff/v6/GUI_SPEC.md deltas), rebound
+// The Dreamer -- GUI v7 production logic (JUCE 8 WebView2 editor).
+// v6 face + v7 renovation (design-handoff/v7/README.md deltas), rebound
 // to the canonical DSP_BUILD.md section-9 parameter IDs (per-tone params
 // use SUFFIXES _a.._d; see plugin/Params.h -- IDs are LOCKED).
 // House pattern: rubber-rhino gui.
+//
+// v7 deltas: brushed-metal faceplate finish (seeded, default ON; star-field
+// stays an off-by-default variant), preset steppers + preset browser (24
+// factory presets, UI-side index/name; apply writes every param through the
+// bound states), TONES mixer strip (PAN mini-knobs, 130px faders), TONE EDIT
+// reflow (RND divider row, FILTER/AMPLITUDE/AUX banks, LFO1/LFO2 rows with
+// tempo-sync divisions, AUX ENV AMT+DEST row), FILTERS BAL 1<->2 knob,
+// DREAM VECTOR widened with per-tone DIR/INT knobs.
 //
 // Standalone-mock fallback: when a param ID is not registered with the
 // backend (window.__JUCE__ placeholder from check_native_interop.js, i.e.
@@ -21,9 +29,10 @@ const initData = window.__JUCE__.initialisationData;
 
 //==============================================================================
 // Choice lists -- order = APVTS choice index (LOCKED, Params.h). The wave
-// list is design-handoff/v6/wave-list-bank3.js VERBATIM (104, bank3 order:
-// 78 cycles + 16 [ENS] loops + 10 [SHOT] one-shots); display uppercases at
-// render time, tag shows right-aligned in the overlay.
+// list is bank3 VERBATIM (104, bank3 order: 78 cycles + 16 [ENS] loops +
+// 10 [SHOT] one-shots); display uppercases at render time, tag shows
+// right-aligned in the overlay. (The v7 README's "0-77" line is stale --
+// the 104-wave bank3 freeze in Params.h is authoritative.)
 const WAVES = [
   { cat: "Basic", name: "Saw", tag: "" },          { cat: "Basic", name: "Square", tag: "" },
   { cat: "Basic", name: "Triangle", tag: "" },     { cat: "Basic", name: "Sine", tag: "" },
@@ -87,6 +96,8 @@ const GLFOWAVES = ["TRI", "SIN", "SAW", "SQR", "S+H"];
 const ORBSHAPES = ["SAW", "TRI", "SIN", "SQR", "S+H"];
 const AUXDESTS  = ["PITCH", "START", "SHAPE", "PAN", "NOISE"];
 const LFODESTS  = ["PITCH", "CUTOFF", "SHAPE", "LEVEL"];
+const SYNCDIVS  = ["4/1", "2/1", "1/1", "1/2", "1/2T", "1/4",   // lfoN_sync lit:
+                   "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"];  // idx=round(v*11)
 const MSRC      = ["G-LFO", "VEC PHS", "AUX", "VELO", "WHEEL"];
 const MDST      = ["PITCH", "CUT 1", "CUT 2", "MORPH", "SHAPE", "VEC PHS", "PAN", "NOISE"];
 const MODFX     = ["CHORUS", "FLANGER", "PHASER", "ENSEMBLE"];
@@ -96,39 +107,277 @@ const TONES     = ["A", "B", "C", "D"];
 const SFX       = ["_a", "_b", "_c", "_d"];   // per-tone id SUFFIX (Params.h tid)
 
 //==============================================================================
+// Factory presets (24, prototype PRESETS order/grouping). The prototype
+// array carries category + name only; the parameter payloads below are
+// production-authored full patches: every preset = complete base patch +
+// overrides, applied through the bound states (setNormalisedValue /
+// setValue / setChoiceIndex) so the host learns of every change in plugin
+// mode. Preset index/name is UI-side state only (no APVTS param).
+// Wave numbers are bank3 indices (the WAVES array above).
+const TONE_SLIDER_BASE = {   // per-tone base (suffixed _a.._d on apply)
+  oct: .5, fine: .5, start: 0, level: .7, velo: .4, pan: .5, shape_depth: 0,
+  noise: 0, noise_color: .5, vint: .6, aux_amt: .5,
+  tvf_cut: .6, tvf_res: .25, tvf_env: .5, tvf_kf: .3,
+  tvf_a: .05, tvf_d: .6, tvf_s: .5, tvf_r: .55,
+  tva_a: .2, tva_d: .7, tva_s: .8, tva_r: .65,
+  aux_a: 0, aux_d: .4, aux_s: 0, aux_r: .3,
+  lfo1_rate: .4, lfo1_depth: .15, lfo2_rate: .25, lfo2_depth: 0,
+};
+const TONE_TOGGLE_BASE = { on: false, start_random: false, lfo1_sync: false, lfo2_sync: false };
+const TONE_COMBO_BASE  = { wave: 0, shape: 0, tvf_type: 0, aux_dest: 0, lfo1_dest: 0, lfo2_dest: 1 };
+const GLOB_SLIDER_BASE = {
+  master: .78, vec_phase: 0, vec_orbit_rate: .3,
+  vec_penv_start: 0, vec_penv_end: .5, vec_penv_time: .4, flt_bal: .5,
+  flt1_cut: 1, flt1_res: 0, flt1_env: 0, flt2_cut: 1, flt2_res: 0, flt2_morph: 0,
+  lfo_rate: .4, mtx1_amt: .5, mtx2_amt: .5, mtx3_amt: .5,
+  modfx_rate: .3, modfx_depth: .5, modfx_mix: .45,
+  dly_time: .5, dly_fb: .35, dly_mix: .3, rev_size: .6, rev_damp: .4, rev_mix: .35,
+};
+const GLOB_TOGGLE_BASE = { vec_orbit_on: false, vec_penv_on: false, vec_penv_loop: false,
+  modfx_on: false, dly_on: false, rev_on: false };
+const GLOB_COMBO_BASE  = { vec_orbit_shape: 2, lfo_shape: 0, flt_route: 0,
+  flt1_type: 0, flt2_type: 0, mtx1_src: 0, mtx1_dst: 3, mtx2_src: 1, mtx2_dst: 4,
+  mtx3_src: 2, mtx3_dst: 0, modfx_type: 0, dly_mode: 0, rev_type: 1 };
+
+// Per preset: t = 4 tone entries {w wave, lv level, off?, s/b/c overrides
+// keyed by base ids}; s/b/c = global slider/toggle/combo overrides.
+const PRESETS = [
+  { cat: "PAD", name: "ETHEREAL DAWN",   // = boot demo state / handoff PNG
+    t: [{ w: 11, lv: .8,  s: { fine: .52, start: .1,  tvf_cut: .5 } },
+        { w: 28, lv: .62, s: { fine: .48, start: .2,  tvf_cut: .6 } },
+        { w: 33, lv: .5,  s: { start: .05, tvf_cut: .45 } },
+        { w: 40, lv: .4,  s: { fine: .54, start: .15, tvf_cut: .55 } }],
+    s: { vec_phase: .12, flt1_cut: .52, flt1_res: .35, flt1_env: .5,
+         flt2_cut: .7, flt2_res: .2, flt2_morph: .4, mtx1_amt: .8, mtx2_amt: .35 },
+    b: { vec_orbit_on: true, modfx_on: true, dly_on: true, rev_on: true },
+    c: { flt1_type: 6, flt2_type: 13 } },
+  { cat: "PAD", name: "SLOW MEMORY",
+    t: [{ w: 9,  lv: .75, s: { tva_a: .5,  tva_r: .85 } },
+        { w: 82, lv: .6,  s: { tva_a: .45, tva_r: .85 } },
+        { w: 15, lv: .55, s: { tva_a: .55, tva_r: .9 } },
+        { w: 20, lv: .45, s: { tva_a: .5,  tva_r: .85 } }],
+    s: { flt1_cut: .45, flt2_morph: .5, rev_mix: .5, rev_size: .75, dly_mix: .22 },
+    b: { vec_orbit_on: true, rev_on: true, dly_on: true },
+    c: { flt2_type: 13 } },
+  { cat: "PAD", name: "GHOST HARBOR",
+    t: [{ w: 85, lv: .7,  s: { tva_a: .6,  tva_r: .9 } },
+        { w: 30, lv: .55, s: { tva_a: .5,  tva_r: .85 } },
+        { w: 12, lv: .5,  s: { tva_a: .55 } },
+        { w: 87, lv: .45, s: { tva_a: .6,  tva_r: .9 } }],
+    s: { flt1_cut: .4, flt1_res: .3, rev_mix: .55, rev_size: .8, modfx_mix: .5 },
+    b: { vec_orbit_on: true, rev_on: true, modfx_on: true },
+    c: { flt1_type: 4 } },
+  { cat: "PAD", name: "VIOLET SLEEP",
+    t: [{ w: 17, lv: .72, s: { tva_a: .45, tva_r: .8 } },
+        { w: 21, lv: .6,  s: { tva_a: .5 } },
+        { w: 5,  lv: .5,  s: { tva_a: .4 } },
+        { w: 79, lv: .42, s: { tva_a: .55, tva_r: .85 } }],
+    s: { flt1_cut: .5, flt2_morph: .35, rev_mix: .45, rev_size: .7 },
+    b: { vec_orbit_on: true, rev_on: true },
+    c: { flt2_type: 13 } },
+  { cat: "PAD", name: "TIDE GARDEN",
+    t: [{ w: 87, lv: .7,  s: { tva_a: .55, tva_r: .85 } },
+        { w: 14, lv: .55, s: { tva_a: .5 } },
+        { w: 22, lv: .5,  s: { tva_a: .45 } },
+        { w: 3,  lv: .4,  s: { oct: .25, tva_a: .5 } }],
+    s: { flt1_cut: .55, rev_mix: .5, rev_size: .75, dly_mix: .25, vec_orbit_rate: .2 },
+    b: { vec_orbit_on: true, rev_on: true, dly_on: true },
+    c: {} },
+  { cat: "PAD", name: "HALF LIGHT",
+    t: [{ w: 6,  lv: .7,  s: { tva_a: .4,  tva_r: .75 } },
+        { w: 10, lv: .6,  s: { tva_a: .45 } },
+        { w: 35, lv: .45, s: { tva_a: .5 } },
+        { w: 44, lv: .4,  s: { tva_a: .3 } }],
+    s: { flt1_cut: .48, flt1_res: .2, rev_mix: .4, modfx_mix: .4 },
+    b: { vec_orbit_on: true, rev_on: true, modfx_on: true },
+    c: { flt1_type: 5 } },
+  { cat: "SPLIT", name: "GLASS RIVER",
+    t: [{ w: 46, lv: .7,  s: { oct: .75, tva_a: .05, tva_d: .6, tva_s: .4, tva_r: .5 } },
+        { w: 17, lv: .6,  s: { tva_a: .4 } },
+        { w: 27, lv: .6,  s: { oct: .25, tva_a: .3, tva_r: .7 } },
+        { w: 3,  lv: .45, s: { oct: .25 } }],
+    s: { flt2_morph: .3, rev_mix: .4, dly_mix: .3 },
+    b: { rev_on: true, dly_on: true },
+    c: { flt_route: 1, flt2_type: 13, dly_mode: 1 } },
+  { cat: "SPLIT", name: "NIGHT DRIVE 84",
+    t: [{ w: 0,  lv: .7,  s: { oct: .25, tva_a: .02, tva_r: .3, tvf_env: .6, vint: .2 } },
+        { w: 1,  lv: .55, s: { vint: .3 } },
+        { w: 82, lv: .55, s: { tva_a: .4, tva_r: .7 } },
+        { w: 51, lv: .4,  s: { oct: .75, tva_a: .05, tva_s: .3 } }],
+    s: { flt1_cut: .5, flt1_res: .35, flt1_env: .45, dly_mix: .35, dly_fb: .45 },
+    b: { dly_on: true, rev_on: true },
+    c: { flt1_type: 6, dly_mode: 2 } },
+  { cat: "BELL", name: "TINE CATHEDRAL",
+    t: [{ w: 44, lv: .75, s: { tva_a: .02, tva_d: .75, tva_s: .35, tva_r: .75 } },
+        { w: 45, lv: .6,  s: { tva_a: .02, tva_d: .7,  tva_s: .3,  tva_r: .7 } },
+        { w: 79, lv: .5,  s: { tva_a: .5,  tva_r: .9 } },
+        { w: 54, lv: .45, s: { tva_a: .03, tva_d: .7,  tva_s: .3,  tva_r: .7 } }],
+    s: { rev_mix: .55, rev_size: .85, flt1_cut: .7 },
+    b: { rev_on: true },
+    c: {} },
+  { cat: "BELL", name: "MUSICBOX MOON",
+    t: [{ w: 49, lv: .75, s: { tva_a: 0, tva_d: .6,  tva_s: .2, tva_r: .6 } },
+        { w: 51, lv: .55, s: { tva_a: 0, tva_d: .55, tva_s: .2, tva_r: .55 } },
+        { w: 99, lv: .5,  s: { tva_a: 0, tva_d: .5,  tva_s: 0,  tva_r: .4 } },
+        { w: 3,  lv: .35, s: { oct: .75, tva_a: 0, tva_s: .2 } }],
+    s: { rev_mix: .45, rev_size: .6, dly_mix: .3, dly_time: .6 },
+    b: { rev_on: true, dly_on: true },
+    c: { rev_type: 2 } },
+  { cat: "BELL", name: "COLD CHIMES",
+    t: [{ w: 52, lv: .7,  s: { tva_a: 0, tva_d: .7,  tva_s: .25, tva_r: .7 } },
+        { w: 53, lv: .55, s: { tva_a: 0, tva_d: .65, tva_s: .25, tva_r: .65 } },
+        { w: 58, lv: .4,  s: { tva_a: 0, tva_d: .6,  tva_s: .2 } },
+        { w: 92, lv: .45, s: { tva_a: .4, tva_r: .8 } }],
+    s: { flt1_cut: .75, rev_mix: .5, rev_size: .7, flt2_morph: .45 },
+    b: { rev_on: true },
+    c: { flt2_type: 11 } },
+  { cat: "STR", name: "ORBITAL STRINGS",
+    t: [{ w: 22, lv: .75, s: { tva_a: .35, tva_r: .7 } },
+        { w: 23, lv: .6,  s: { tva_a: .4,  tva_r: .7 } },
+        { w: 26, lv: .55, s: { tva_a: .35, tva_r: .65 } },
+        { w: 78, lv: .5,  s: { tva_a: .45, tva_r: .8 } }],
+    s: { vec_orbit_rate: .45, flt1_cut: .6, rev_mix: .4, modfx_mix: .4 },
+    b: { vec_orbit_on: true, rev_on: true, modfx_on: true },
+    c: {} },
+  { cat: "STR", name: "SOLINA FIELDS",
+    t: [{ w: 82, lv: .8,  s: { tva_a: .4, tva_r: .8 } },
+        { w: 24, lv: .55, s: { tva_a: .4 } },
+        { w: 25, lv: .5,  s: { tva_a: .35 } },
+        { w: 16, lv: .4,  s: { tva_a: .5 } }],
+    s: { modfx_mix: .6, modfx_depth: .6, rev_mix: .45, flt1_cut: .55 },
+    b: { modfx_on: true, rev_on: true },
+    c: { modfx_type: 3 } },
+  { cat: "VOX", name: "CHOIR OF WIRES",
+    t: [{ w: 80, lv: .75, s: { tva_a: .45, tva_r: .8 } },
+        { w: 31, lv: .6,  s: { tva_a: .4 } },
+        { w: 34, lv: .5,  s: { tva_a: .45 } },
+        { w: 91, lv: .45, s: { tva_a: .5, tva_r: .85 } }],
+    s: { flt1_cut: .5, rev_mix: .5, rev_size: .75, flt2_morph: .5 },
+    b: { vec_orbit_on: true, rev_on: true },
+    c: { flt2_type: 11 } },
+  { cat: "VOX", name: "BREATH MACHINE",
+    t: [{ w: 14, lv: .7,  s: { noise: .25, noise_color: .6, tva_a: .5, tva_r: .85 } },
+        { w: 85, lv: .6,  s: { tva_a: .55, tva_r: .9 } },
+        { w: 32, lv: .45, s: { tva_a: .45 } },
+        { w: 15, lv: .4,  s: { noise: .15, tva_a: .5 } }],
+    s: { flt1_cut: .45, rev_mix: .5, dly_mix: .2 },
+    b: { rev_on: true, dly_on: true },
+    c: { flt1_type: 4 } },
+  { cat: "BASS", name: "RUBBER ORBIT",
+    t: [{ w: 0,   lv: .8, s: { oct: .25, tva_a: .02, tva_d: .45, tva_s: .6, tva_r: .2,
+                               tvf_env: .6, tvf_cut: .4, vint: .3 } },
+        { w: 3,   lv: .6, s: { oct: .25, tva_a: .02, tva_r: .2, vint: .2 } },
+        { w: 71,  lv: .35, s: { tva_a: .02, tva_s: .4, tva_r: .25 } },
+        { w: 102, lv: .5,  s: { tva_a: 0, tva_s: 0, tva_d: .35, tva_r: .3 } }],
+    s: { flt1_cut: .45, flt1_res: .3, flt1_env: .55, vec_orbit_rate: .5 },
+    b: { vec_orbit_on: true },
+    c: { flt1_type: 6 } },
+  { cat: "BASS", name: "SUB DREAMS",
+    t: [{ w: 3,  lv: .85, s: { oct: .25, vint: 0, tva_a: .03, tva_r: .35 } },
+        { w: 2,  lv: .5,  s: { oct: .25, vint: 0, tva_a: .05 } },
+        { w: 1,  lv: .3,  s: { vint: .2, tva_a: .05 } },
+        { w: 96, lv: .4,  s: { tva_a: 0, tva_s: 0, tva_d: .3, tva_r: .25 } }],
+    s: { flt1_cut: .35, rev_mix: .15 },
+    b: { rev_on: true },
+    c: {} },
+  { cat: "LEAD", name: "SYNC COMET",
+    t: [{ w: 0,  lv: .8,  s: { tva_a: .02, tva_r: .3, tvf_env: .55, tvf_cut: .5, vint: .15 } },
+        { w: 1,  lv: .55, s: { fine: .56, vint: .15, tva_a: .02 } },
+        { w: 63, lv: .4,  s: { tva_a: .05, tva_s: .5 } },
+        { w: 94, lv: .5,  s: { tva_a: 0, tva_s: 0, tva_d: .3 } }],
+    s: { flt1_cut: .6, flt1_res: .4, dly_mix: .3, dly_fb: .4 },
+    b: { dly_on: true },
+    c: { flt1_type: 5 } },
+  { cat: "LEAD", name: "12-BIT STAR",
+    t: [{ w: 1,  lv: .75, s: { tva_a: .02, tva_r: .35, vint: .2 } },
+        { w: 74, lv: .5,  s: { tva_a: .02, tva_s: .5 } },
+        { w: 43, lv: .5,  s: { tva_a: .02, tva_d: .6, tva_s: .3 } },
+        { w: 3,  lv: .4,  s: { oct: .75, vint: .3 } }],
+    s: { flt1_cut: .65, flt1_res: .25, dly_mix: .3, rev_mix: .3 },
+    b: { dly_on: true, rev_on: true },
+    c: {} },
+  { cat: "KEY", name: "EPIANO HAZE",
+    t: [{ w: 44, lv: .8,  s: { tva_a: .02, tva_d: .65, tva_s: .55, tva_r: .4 } },
+        { w: 45, lv: .6,  s: { tva_a: .02, tva_d: .6,  tva_s: .5,  tva_r: .4 } },
+        { w: 43, lv: .4,  s: { tva_a: .02, tva_d: .55, tva_s: .4 } },
+        { w: 95, lv: .3,  s: { tva_a: 0, tva_s: 0, tva_d: .35 } }],
+    s: { modfx_mix: .4, rev_mix: .35, flt1_cut: .7 },
+    b: { modfx_on: true, rev_on: true },
+    c: {} },
+  { cat: "KEY", name: "ORGAN NEBULA",
+    t: [{ w: 90, lv: .8,  s: { tva_a: .05, tva_s: 1, tva_r: .3 } },
+        { w: 18, lv: .55, s: { tva_a: .05, tva_s: 1 } },
+        { w: 19, lv: .5,  s: { tva_a: .05, tva_s: 1 } },
+        { w: 3,  lv: .4,  s: { oct: .25, tva_a: .05, tva_s: 1 } }],
+    s: { modfx_mix: .5, modfx_rate: .45, rev_mix: .35 },
+    b: { modfx_on: true, rev_on: true },
+    c: { modfx_type: 1 } },
+  { cat: "SFX", name: "RE-ENTRY",
+    t: [{ w: 98,  lv: .75, s: { tva_a: .6, tva_r: .9, aux_amt: .85, aux_d: .8 } },
+        { w: 103, lv: .55, s: { tva_a: .3 } },
+        { w: 84,  lv: .5,  s: { tva_a: .55, tva_r: .9 } },
+        { w: 87,  lv: .45, s: { tva_a: .6 } }],
+    s: { flt1_cut: .4, flt1_env: .6, rev_mix: .6, rev_size: .85, dly_mix: .35 },
+    b: { rev_on: true, dly_on: true, vec_orbit_on: true },
+    c: {} },
+  { cat: "SFX", name: "STATIC BLOOM",
+    t: [{ w: 93, lv: .7,  s: { tva_a: .5, tva_r: .85, noise: .4, noise_color: .7,
+                               lfo1_rate: .45, lfo1_depth: .4 }, b: { lfo1_sync: true } },
+        { w: 72, lv: .5,  s: { tva_a: .4, noise: .3 } },
+        { w: 98, lv: .45, s: { tva_a: .55 } },
+        { w: 89, lv: .4,  s: { tva_a: .5 } }],
+    s: { flt1_res: .45, flt1_cut: .5, modfx_mix: .55, rev_mix: .5 },
+    b: { modfx_on: true, rev_on: true },
+    c: { flt1_type: 7, modfx_type: 2 } },
+  { cat: "INIT", name: "INIT PATCH",
+    t: [{ w: 0, lv: .8, s: { tva_a: .05, tva_d: .35, tva_s: 1, tva_r: .35,
+                             tvf_a: .05, tvf_d: .35, tvf_s: 1, tvf_r: .35,
+                             tvf_cut: .8, tvf_res: 0, tvf_env: 0,
+                             vint: 0, lfo1_depth: 0, velo: .5 } },
+        { w: 0, off: 1 }, { w: 0, off: 1 }, { w: 0, off: 1 }],
+    s: {}, b: {}, c: { vec_orbit_shape: 0 } },
+];
+
+//==============================================================================
 // Standalone-mock demo defaults (normalised sliders / bools / choice indices)
-// -- cosmetics only, mirrors the prototype's boot state / handoff PNG. The
-// real plugin never reads these (relay initial-update wins).
+// -- cosmetics only, mirrors the prototype's boot state / handoff PNG
+// (= factory preset P001 ETHEREAL DAWN). The real plugin never reads these
+// (relay initial-update wins).
 const MOCK = { sliders: {}, toggles: {}, combos: {} };
 {
   const lv = [.8, .62, .5, .4], st = [.1, .2, .05, .15];
-  const ct = [.5, .6, .45, .55], wv = [11, 18, 28, 37];
+  const ct = [.5, .6, .45, .55], fn = [.52, .48, .5, .54];
+  const wv = [11, 28, 33, 40];
   SFX.forEach((sx, i) => {
     Object.assign(MOCK.sliders, {
-      ["oct" + sx]: .5, ["fine" + sx]: .5, ["level" + sx]: lv[i],
+      ["oct" + sx]: .5, ["fine" + sx]: fn[i], ["level" + sx]: lv[i],
       ["velo" + sx]: .4, ["start" + sx]: st[i], ["pan" + sx]: .5,
       ["dir" + sx]: i * .25, ["vint" + sx]: .6, ["shape_depth" + sx]: 0,
-      ["noise" + sx]: 0, ["noise_color" + sx]: 0,
+      ["noise" + sx]: 0, ["noise_color" + sx]: .5,
       ["tvf_cut" + sx]: ct[i], ["tvf_res" + sx]: .25, ["tvf_env" + sx]: .5,
       ["tvf_kf" + sx]: .3,
       ["tvf_a" + sx]: .05, ["tvf_d" + sx]: .6, ["tvf_s" + sx]: .5, ["tvf_r" + sx]: .55,
       ["tva_a" + sx]: .2,  ["tva_d" + sx]: .7, ["tva_s" + sx]: .8, ["tva_r" + sx]: .65,
       ["aux_a" + sx]: 0,   ["aux_d" + sx]: .4, ["aux_s" + sx]: 0,  ["aux_r" + sx]: .3,
-      ["aux_amt" + sx]: .5, ["lfo_depth" + sx]: .15,
+      ["aux_amt" + sx]: .5,
+      ["lfo1_rate" + sx]: .4, ["lfo1_depth" + sx]: .15,
+      ["lfo2_rate" + sx]: .25, ["lfo2_depth" + sx]: 0,
     });
     MOCK.toggles["on" + sx] = true;
     MOCK.toggles["start_random" + sx] = false;
+    MOCK.toggles["lfo1_sync" + sx] = false;
+    MOCK.toggles["lfo2_sync" + sx] = false;
     Object.assign(MOCK.combos, {
       ["wave" + sx]: wv[i], ["shape" + sx]: 0, ["tvf_type" + sx]: 0,
-      ["aux_dest" + sx]: 0, ["lfo_dest" + sx]: 0,
+      ["aux_dest" + sx]: 0, ["lfo1_dest" + sx]: 0, ["lfo2_dest" + sx]: 1,
     });
   });
   Object.assign(MOCK.sliders, {
     vec_phase: .12, vec_orbit_rate: .3,
-    vec_penv_start: 0, vec_penv_end: .5, vec_penv_time: .5,
-    lfo_rate: .4, mtx1_amt: .8, mtx2_amt: .32, mtx3_amt: .5,
+    vec_penv_start: 0, vec_penv_end: .5, vec_penv_time: .4,
+    lfo_rate: .4, mtx1_amt: .8, mtx2_amt: .35, mtx3_amt: .5,
     flt1_cut: .52, flt1_res: .35, flt1_env: .5,
-    flt2_cut: .7, flt2_res: .2, flt2_morph: .4,
+    flt2_cut: .7, flt2_res: .2, flt2_morph: .4, flt_bal: .5,
     modfx_rate: .3, modfx_depth: .5, modfx_mix: .45,
     dly_time: .5, dly_fb: .35, dly_mix: .3,
     rev_size: .6, rev_damp: .4, rev_mix: .35, master: .78, drift: 0,
@@ -139,9 +388,9 @@ const MOCK = { sliders: {}, toggles: {}, combos: {} };
     modfx_on: true, dly_on: true, rev_on: true,
   });
   Object.assign(MOCK.combos, {
-    lfo_shape: 0, vec_orbit_shape: 0,
+    lfo_shape: 0, vec_orbit_shape: 2,
     mtx1_src: 0, mtx2_src: 1, mtx3_src: 2,
-    mtx1_dst: 3, mtx2_dst: 4, mtx3_dst: 7,
+    mtx1_dst: 3, mtx2_dst: 4, mtx3_dst: 0,
     flt1_type: 6, flt2_type: 13, flt_route: 0,
     modfx_type: 0, dly_mode: 0, rev_type: 1,
   });
@@ -226,8 +475,10 @@ const tToggles = (base) => SFX.map((sx) => toggleState(base + sx));
 const tCombos  = (base) => SFX.map((sx) => comboState(base + sx));
 
 //==============================================================================
-// UI-only state: tone selection + redraw hooks run when it changes.
+// UI-only state: tone selection + preset index + redraw hooks run when the
+// selection changes.
 const SEL = { i: 0 };
+const PRESET = { i: 0 };
 const rebinds = [];
 
 //==============================================================================
@@ -255,7 +506,7 @@ function setTouched(label, norm, fmt) {
 //==============================================================================
 // Drag law: vertical, 140px full range, pointer capture, no easing.
 // opts: { fmt } touched-line format, { quant } value map applied while
-// dragging (octave detents, matrix center snap).
+// dragging (octave detents, bipolar center snap).
 function bindVDrag(elm, stFn, labelFn, after, opts) {
   const o = opts || {};
   elm.addEventListener("pointerdown", (e) => {
@@ -280,30 +531,36 @@ function bindVDrag(elm, stFn, labelFn, after, opts) {
     elm.addEventListener("pointerup", up);
   });
 }
+// v7 bipolar center detent (pan / AUX AMT / BAL / matrix AMT): +-.035 snap.
+const detent = (v) => (Math.abs(v - .5) < .035 ? .5 : v);
 
 //==============================================================================
 // Knob factory: skirt / fluted cap (76%) / solid centre / 2px pointer
-// rotating -135..+135 deg. o: {states, cur, label, ptr, size, touch}
+// rotating -135..+135 deg. o: {states, cur, label, ptr, size, touch, fmt,
+// quant, w, inset (capin, default 5), ptrTop (default 2), horiz (label
+// beside instead of beneath), lblCls}
 function makeKnob(mount, o) {
   const size = o.size || 36;
   const inner = Math.round(size * .76);
-  const wrap = el("div", "kwrap");
-  wrap.style.width = (size + 12) + "px";
+  const wrap = el("div", "kwrap" + (o.horiz ? " horiz" : ""));
+  if (!o.horiz) wrap.style.width = (o.w || (size + 12)) + "px";
   const skirt = el("div", "kskirt");
   skirt.style.width = skirt.style.height = size + "px";
   const cap = el("div", "kcap");
   cap.style.width = cap.style.height = inner + "px";
   const capin = el("div", "kcapin");
+  if (o.inset) capin.style.inset = o.inset + "px";
   const rot = el("div", "krot");
   const ptr = el("div", "kptr");
   ptr.style.height = Math.round(inner * .34) + "px";
+  if (o.ptrTop !== undefined) ptr.style.top = o.ptrTop + "px";
   if (o.ptr) ptr.style.background = o.ptr;
   rot.appendChild(ptr);
   cap.append(capin, rot);
   skirt.appendChild(cap);
   wrap.appendChild(skirt);
   if (o.label) {
-    const l = el("div", "lbl");
+    const l = el("div", o.lblCls || "lbl");
     l.textContent = o.label;
     wrap.appendChild(l);
   }
@@ -354,6 +611,378 @@ function makeVSlider(mount, o) {   // {states, cur, h, letter, touch}
   bindVDrag(sl, st, labelFn, draw);
   draw();
   return draw;
+}
+
+//==============================================================================
+// Faceplate finish (v7, default ON): seeded brushed-metal grain (LCG
+// a=16807 seed 19971, prototype-verbatim draw order so the screw slot
+// angles match), top-light gradient, 122deg sheen, edge vignette, 4 corner
+// screws (r8 radial-gradient heads, random-angle slot, centers 22px from
+// corners). Star-field stays an off-by-default variant (seed 1994).
+{
+  const plate = $("plate");
+  let seed = 19971;
+  const mr = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+
+  const metal = svgEl("svg");
+  metal.setAttribute("viewBox", "0 0 1140 660");
+  for (let y = 1; y < 660; y += 4 + Math.floor(mr() * 5)) {
+    const light = mr() > .45, o = (0.008 + mr() * .024).toFixed(3);
+    const h = (0.5 + mr() * .7).toFixed(2);
+    const r = svgEl("rect");
+    r.setAttribute("x", 0); r.setAttribute("y", y);
+    r.setAttribute("width", 1140); r.setAttribute("height", h);
+    r.setAttribute("fill", light ? "#fff" : "#000");
+    r.setAttribute("opacity", o);
+    metal.appendChild(r);
+  }
+  for (let i = 0; i < 18; i++) {   // long highlight streaks
+    const y = Math.floor(mr() * 660), x0 = Math.floor(mr() * 800);
+    const len = 120 + Math.floor(mr() * 560);
+    const r = svgEl("rect");
+    r.setAttribute("x", x0); r.setAttribute("y", y);
+    r.setAttribute("width", len); r.setAttribute("height", 0.8);
+    r.setAttribute("rx", 0.4); r.setAttribute("fill", "#fff");
+    r.setAttribute("opacity", (0.03 + mr() * .05).toFixed(3));
+    metal.appendChild(r);
+  }
+  plate.appendChild(metal);
+  plate.appendChild(el("div", "grad1"));   // top-light
+  plate.appendChild(el("div", "grad2"));   // 122deg sheen
+  plate.appendChild(el("div", "grad3"));   // vignette
+
+  const screws = svgEl("svg");
+  screws.setAttribute("viewBox", "0 0 1140 660");
+  const defs = svgEl("defs");
+  const grad = svgEl("radialGradient");
+  grad.setAttribute("id", "scrG");
+  grad.setAttribute("cx", ".38"); grad.setAttribute("cy", ".38"); grad.setAttribute("r", ".75");
+  [[0, "#6b708f"], [.7, "#292b42"], [1, "#0d0d1a"]].forEach(([off, col]) => {
+    const s = svgEl("stop");
+    s.setAttribute("offset", off); s.setAttribute("stop-color", col);
+    grad.appendChild(s);
+  });
+  defs.appendChild(grad);
+  screws.appendChild(defs);
+  [[22, 22], [1118, 22], [22, 638], [1118, 638]].forEach(([cx, cy]) => {
+    const rot = Math.floor(mr() * 180);
+    const head = svgEl("circle");
+    head.setAttribute("cx", cx); head.setAttribute("cy", cy);
+    head.setAttribute("r", 8); head.setAttribute("fill", "url(#scrG)");
+    const slot = svgEl("rect");
+    slot.setAttribute("x", cx - 4.5); slot.setAttribute("y", cy - 0.8);
+    slot.setAttribute("width", 9); slot.setAttribute("height", 1.6);
+    slot.setAttribute("rx", 0.6); slot.setAttribute("fill", "#05050c");
+    slot.setAttribute("transform", "rotate(" + rot + " " + cx + " " + cy + ")");
+    screws.append(head, slot);
+  });
+  plate.appendChild(screws);
+
+  // star-field variant (80 seeded 1-2px dots), off by default
+  const stars = $("stars");
+  let sSeed = 1994;
+  const sr = () => (sSeed = sSeed * 16807 % 2147483647) / 2147483647;
+  for (let i = 0; i < 80; i++) {
+    const d = el("div");
+    d.style.left = (sr() * 100).toFixed(1) + "%";
+    d.style.top = (sr() * 100).toFixed(1) + "%";
+    d.style.width = d.style.height = (sr() > .8 ? 2 : 1) + "px";
+    d.style.opacity = (.12 + sr() * .3).toFixed(2);
+    stars.appendChild(d);
+  }
+}
+
+//==============================================================================
+// Header: preset steppers + LCD preset line (browser), wave glyph,
+// MASTER knob (binds `master`), power LED is static.
+const glyphBars = [];
+for (let i = 0; i < 12; i++) glyphBars.push($("waveGlyph").appendChild(el("div")));
+const waveStates = tCombos("wave");
+function drawGlyph() {
+  const w = idx(waveStates[SEL.i], WAVES.length);
+  glyphBars.forEach((b, i) => {
+    b.style.height =
+      Math.max(3, Math.round(4 + 24 * Math.abs(Math.sin((i / 11) * Math.PI * (1 + (w % 3) * .5))))) + "px";
+  });
+}
+makeKnob($("masterMount"), { states: [sliderState("master")], label: "MASTER", size: 40, touch: "MASTER" });
+
+//==============================================================================
+// Preset apply: writes the complete patch (base + preset overrides) through
+// the bound states -- setNormalisedValue / setValue / setChoiceIndex are the
+// relay setters, so the host learns of every change in plugin mode; the
+// mock states fire the same listeners standalone. Index/name = UI-only.
+function drawPresetLbl() {
+  $("presetLbl").textContent =
+    "P" + String(PRESET.i + 1).padStart(3, "0") + " " + PRESETS[PRESET.i].name;
+}
+function applyPreset(pi) {
+  PRESET.i = ((pi % PRESETS.length) + PRESETS.length) % PRESETS.length;
+  const P = PRESETS[PRESET.i];
+  P.t.forEach((td, i) => {
+    const sx = SFX[i];
+    const sl = Object.assign({}, TONE_SLIDER_BASE,
+      { dir: i * .25, level: td.lv !== undefined ? td.lv : .7 }, td.s || {});
+    const tg = Object.assign({}, TONE_TOGGLE_BASE, { on: !td.off }, td.b || {});
+    const cb = Object.assign({}, TONE_COMBO_BASE, { wave: td.w || 0 }, td.c || {});
+    Object.keys(sl).forEach((k) => sliderState(k + sx).setNormalisedValue(sl[k]));
+    Object.keys(tg).forEach((k) => toggleState(k + sx).setValue(!!tg[k]));
+    Object.keys(cb).forEach((k) => comboState(k + sx).setChoiceIndex(cb[k]));
+  });
+  const gs = Object.assign({}, GLOB_SLIDER_BASE, P.s || {});
+  const gt = Object.assign({}, GLOB_TOGGLE_BASE, P.b || {});
+  const gc = Object.assign({}, GLOB_COMBO_BASE, P.c || {});
+  Object.keys(gs).forEach((k) => sliderState(k).setNormalisedValue(gs[k]));
+  Object.keys(gt).forEach((k) => toggleState(k).setValue(!!gt[k]));
+  Object.keys(gc).forEach((k) => comboState(k).setChoiceIndex(gc[k]));
+  drawPresetLbl();
+}
+$("presetUp").addEventListener("click", () => applyPreset(PRESET.i - 1));   // wraps
+$("presetDn").addEventListener("click", () => applyPreset(PRESET.i + 1));
+$("presetLbl").addEventListener("click", () =>
+  openMenu("PRESET SELECT", PRESETS.map((p) => ({ cat: p.cat, name: p.name })),
+    PRESET.i, applyPreset));
+
+//==============================================================================
+// TONES mixer strip: per column select LED+button, 130px level fader,
+// PAN mini-knob (24px, bipolar, center detent), ON LED+button.
+const selLeds = [];
+{
+  const mount = $("toneCols");
+  TONES.forEach((name, i) => {
+    const col = el("div", "tcol");
+    const nm = el("div", "tname"); nm.textContent = name;
+    const selLed = el("div", "led");
+    const selBtn = el("div", "pbtn tbtn");
+    col.append(nm, selLed, selBtn);
+    selLeds.push(selLed);
+    selBtn.addEventListener("click", () => select(i));
+
+    makeVSlider(col, { states: [sliderState("level" + SFX[i])], h: 130, touch: () => "LEVEL " + name });
+
+    makeKnob(col, {
+      states: [sliderState("pan" + SFX[i])], label: "PAN", size: 24,
+      inset: 4, ptrTop: 1, lblCls: "tonlbl", w: 34,
+      touch: () => "PAN " + name, fmt: "bip", quant: detent,
+    });
+
+    const onLed = el("div", "led"); onLed.style.marginTop = "1px";
+    const onBtn = el("div", "pbtn tbtn");
+    const onLbl = el("div", "tonlbl"); onLbl.textContent = "ON";
+    col.append(onLed, onBtn, onLbl);
+
+    const onState = toggleState("on" + SFX[i]);
+    const drawOn = () => {
+      const on = !!onState.getValue();
+      onLed.classList.toggle("on", on);
+      col.style.opacity = on ? "1" : ".55";
+    };
+    onState.valueChangedEvent.addListener(drawOn);
+    drawOn();
+    onBtn.addEventListener("click", () => onState.setValue(!onState.getValue()));
+    mount.appendChild(col);
+  });
+}
+
+//==============================================================================
+// TONE EDIT (rebinds to the selected tone).
+const curTone = () => SEL.i;
+const letter = () => TONES[SEL.i];
+
+// WAVE LCD + steppers + menu
+comboDraw(waveStates, true, () => {
+  const w = WAVES[idx(waveStates[SEL.i], WAVES.length)];
+  $("waveLcd").textContent = w.cat.toUpperCase() + " > " + w.name.toUpperCase();
+  drawGlyph();
+});
+bindStep($("waveDec"), $("waveInc"), () => waveStates[SEL.i], WAVES.length);
+$("waveLcd").addEventListener("click", () =>
+  openMenu("WAVE SELECT — TONE " + letter(), waveRows(),
+    idx(waveStates[SEL.i], WAVES.length), (i) => waveStates[SEL.i].setChoiceIndex(i)));
+
+// SHAPE LCD + steppers + menu
+const shapeStates = tCombos("shape");
+comboDraw(shapeStates, true, () => {
+  $("shapeLcd").textContent = SHAPES[idx(shapeStates[SEL.i], SHAPES.length)];
+});
+bindStep($("shapeDec"), $("shapeInc"), () => shapeStates[SEL.i], SHAPES.length);
+$("shapeLcd").addEventListener("click", () =>
+  openMenu("SHAPER — TONE " + letter(), rowsOf(SHAPES),
+    idx(shapeStates[SEL.i], SHAPES.length), (i) => shapeStates[SEL.i].setChoiceIndex(i)));
+
+// v7 knob row (34px knobs at 40px pitch): OCTV FINE START [RND] | divider |
+// LEVEL VELO SHP-DPT NOISE NS-COL. PAN lives in the TONES mixer strip.
+// The RND button+LED (start_random_[t]) sits next to START per GUI_SPEC.
+[["oct", "OCTV", { fmt: "oct", quant: (v) => Math.round(v * 4) / 4 }],
+ ["fine", "FINE", { fmt: "bip" }],
+ ["start", "START", {}],
+ ["level", "LEVEL", {}],
+ ["velo", "VELO", {}],
+ ["shape_depth", "SHP DPT", { ptr: "#ffd23f" }],
+ ["noise", "NOISE", {}],
+ ["noise_color", "NS COL", {}]].forEach(([base, lbl, o]) => {
+  makeKnob($("teKnobs"), {
+    states: tSliders(base), cur: curTone, label: lbl, size: 34, w: 40,
+    ptr: o.ptr || null, touch: lbl, fmt: o.fmt, quant: o.quant,
+  });
+  if (base === "start") {   // START RND: per-tone note-on start randomize
+    const col = el("div", "rndcol");
+    const led = el("div", "led");
+    const btn = el("div", "pbtn");
+    const lb = el("div", "tonlbl"); lb.textContent = "RND";
+    col.append(led, btn, lb);
+    $("teKnobs").appendChild(col);
+    $("teKnobs").appendChild(el("div", "tekdiv"));   // 1px divider before LEVEL
+    const rndStates = tToggles("start_random");
+    const drawRnd = () => led.classList.toggle("on", !!rndStates[SEL.i].getValue());
+    rndStates.forEach((s) => s.valueChangedEvent.addListener(drawRnd));
+    rebinds.push(drawRnd);
+    drawRnd();
+    btn.addEventListener("click", () => {
+      const s = rndStates[SEL.i];
+      s.setValue(!s.getValue());
+    });
+  }
+});
+
+// TVF: TYPE LCD (click = menu) + 4 red knobs + three ADSR banks
+// (FILTER / AMPLITUDE / AUX, 1px dividers between them).
+const tvfTypeStates = tCombos("tvf_type");
+comboDraw(tvfTypeStates, true, () => {
+  $("tvfTypeLcd").textContent = TVFTYPES[idx(tvfTypeStates[SEL.i], TVFTYPES.length)];
+});
+$("tvfTypeLcd").addEventListener("click", () =>
+  openMenu("TVF TYPE — TONE " + letter(), rowsOf(TVFFULL),
+    idx(tvfTypeStates[SEL.i], TVFTYPES.length), (i) => tvfTypeStates[SEL.i].setChoiceIndex(i)));
+
+[["tvf_cut", "CUT"], ["tvf_res", "RES"], ["tvf_env", "ENV"], ["tvf_kf", "KF"]].forEach(([base, lbl]) => {
+  makeKnob($("tvfKnobs"), {
+    states: tSliders(base), cur: curTone, label: lbl, size: 34, ptr: "#ff5b6e", touch: "TVF " + lbl,
+  });
+});
+
+function makeBank(mountId, prefix, title, touchPfx) {
+  const bank = $(mountId);
+  const row = el("div", "bankrow");
+  bank.appendChild(row);
+  [["a", "A"], ["d", "D"], ["s", "S"], ["r", "R"]].forEach(([sfx, l]) => {
+    makeVSlider(row, {
+      states: tSliders(prefix + "_" + sfx), cur: curTone, h: 62, letter: l,
+      touch: () => touchPfx + " " + l,
+    });
+  });
+  const t = el("div", "banktitle");
+  const tl = el("div", "bttl");
+  tl.textContent = title;
+  t.appendChild(tl);
+  bank.appendChild(t);
+  return t;
+}
+makeBank("bankTvf", "tvf", "FILTER", "TVF");
+makeBank("bankTva", "tva", "AMPLITUDE", "TVA");
+makeBank("bankAux", "aux", "AUX", "AUX");
+
+// v7 per-tone LFO1 / LFO2 rows: RATE + DEPTH (26px), SYNC btn+LED, DEST
+// select. SYNC lit: RATE pointer turns yellow and the knob label / touched
+// line show the quantized tempo division (idx = round(rate*11), SYNCDIVS).
+function makeLfoRow(mountId, n) {
+  const mount = $(mountId);
+  const rateStates = tSliders("lfo" + n + "_rate");
+  const depthStates = tSliders("lfo" + n + "_depth");
+  const syncStates = tToggles("lfo" + n + "_sync");
+  const destStates = tCombos("lfo" + n + "_dest");
+  const divOf = () => SYNCDIVS[Math.round(
+    clamp01(rateStates[SEL.i].getNormalisedValue()) * (SYNCDIVS.length - 1))];
+
+  const name = el("div", "lfoname"); name.textContent = "LFO" + n;
+  mount.appendChild(name);
+
+  // RATE knob (dynamic pointer color + label)
+  const wrap = el("div", "kwrap");
+  wrap.style.width = "38px";
+  const skirt = el("div", "kskirt");
+  skirt.style.width = skirt.style.height = "26px";
+  const cap = el("div", "kcap");
+  cap.style.width = cap.style.height = "20px";
+  const capin = el("div", "kcapin"); capin.style.inset = "4px";
+  const rot = el("div", "krot");
+  const ptr = el("div", "kptr");
+  ptr.style.height = "7px";
+  rot.appendChild(ptr);
+  cap.append(capin, rot);
+  skirt.appendChild(cap);
+  const rlbl = el("div", "plab7");
+  wrap.append(skirt, rlbl);
+  mount.appendChild(wrap);
+  const drawRate = () => {
+    const syn = !!syncStates[SEL.i].getValue();
+    rot.style.transform = "rotate(" + (-135 + rateStates[SEL.i].getNormalisedValue() * 270) + "deg)";
+    ptr.style.background = syn ? "#ffd23f" : "#e8eaff";
+    rlbl.textContent = syn ? divOf() : "RATE";
+  };
+  rateStates.concat(syncStates).forEach((s) => s.valueChangedEvent.addListener(drawRate));
+  rateStates.forEach((s) => s.propertiesChangedEvent.addListener(drawRate));
+  rebinds.push(drawRate);
+  drawRate();
+  bindVDrag(skirt, () => rateStates[SEL.i],
+    () => "LFO" + n + " " + (syncStates[SEL.i].getValue() ? divOf() : "RATE"), drawRate);
+
+  makeKnob(mount, {
+    states: depthStates, cur: curTone, label: "DEPTH", size: 26, inset: 4,
+    w: 38, lblCls: "plab7", touch: "LFO" + n + " DEPTH",
+  });
+
+  const sync = el("div", "ledlbl");
+  const led = el("div", "led");
+  const btn = el("div", "syncbtn"); btn.textContent = "SYNC";
+  sync.append(led, btn);
+  mount.appendChild(sync);
+  const drawSync = () => led.classList.toggle("on", !!syncStates[SEL.i].getValue());
+  syncStates.forEach((s) => s.valueChangedEvent.addListener(drawSync));
+  rebinds.push(drawSync);
+  drawSync();
+  btn.addEventListener("click", () => {
+    const s = syncStates[SEL.i];
+    s.setValue(!s.getValue());
+  });
+
+  const dl = el("div", "plbl"); dl.textContent = "DEST";
+  const destBtn = el("div", "cbtn destbtn");
+  mount.append(dl, destBtn);
+  comboDraw(destStates, true, () => {
+    destBtn.textContent = LFODESTS[idx(destStates[SEL.i], LFODESTS.length)];
+  });
+  destBtn.addEventListener("click", () =>
+    openMenu("LFO" + n + " DEST — TONE " + letter(), rowsOf(LFODESTS),
+      idx(destStates[SEL.i], LFODESTS.length), (i) => destStates[SEL.i].setChoiceIndex(i)));
+}
+makeLfoRow("lfo1Row", 1);
+makeLfoRow("lfo2Row", 2);
+
+// v7 AUX ENV row: bipolar AMT± knob (yellow, center detent, -63..+63) +
+// DEST select (incl NOISE) + per-tone footnote.
+{
+  const mount = $("auxEnvRow");
+  const name = el("div", "lfoname"); name.textContent = "AUX ENV";
+  mount.appendChild(name);
+  makeKnob(mount, {
+    states: tSliders("aux_amt"), cur: curTone, label: "AMT ±", size: 26,
+    inset: 4, w: 38, lblCls: "plab7", ptr: "#ffd23f",
+    touch: "AUX AMT", fmt: "bip", quant: detent,
+  });
+  const dl = el("div", "plbl"); dl.textContent = "DEST";
+  const destBtn = el("div", "cbtn destbtn");
+  mount.append(dl, destBtn);
+  const auxDestStates = tCombos("aux_dest");
+  comboDraw(auxDestStates, true, () => {
+    destBtn.textContent = AUXDESTS[idx(auxDestStates[SEL.i], AUXDESTS.length)];
+  });
+  destBtn.addEventListener("click", () =>
+    openMenu("AUX ENV DEST — TONE " + letter(), rowsOf(AUXDESTS),
+      idx(auxDestStates[SEL.i], AUXDESTS.length), (i) => auxDestStates[SEL.i].setChoiceIndex(i)));
+  const note = el("div"); note.id = "footnote";
+  note.textContent = "ALL TONE EDIT CONTROLS ARE PER-TONE";
+  mount.appendChild(note);
 }
 
 //==============================================================================
@@ -410,179 +1039,7 @@ function bindStep(dec, inc, stFn, len) {
 }
 
 //==============================================================================
-// Header: wave glyph, MASTER knob (binds `master`), power LED is static.
-const glyphBars = [];
-for (let i = 0; i < 12; i++) glyphBars.push($("waveGlyph").appendChild(el("div")));
-const waveStates = tCombos("wave");
-function drawGlyph() {
-  const w = idx(waveStates[SEL.i], WAVES.length);
-  glyphBars.forEach((b, i) => {
-    b.style.height =
-      Math.max(3, Math.round(4 + 24 * Math.abs(Math.sin((i / 11) * Math.PI * (1 + (w % 3) * .5))))) + "px";
-  });
-}
-makeKnob($("masterMount"), { states: [sliderState("master")], label: "MASTER", size: 40, touch: "MASTER" });
-
-//==============================================================================
-// TONES strip: per column select LED+button, 150px level fader, ON LED+button.
-const selLeds = [];
-{
-  const mount = $("toneCols");
-  TONES.forEach((name, i) => {
-    const col = el("div", "tcol");
-    const nm = el("div", "tname"); nm.textContent = name;
-    const selLed = el("div", "led");
-    const selBtn = el("div", "pbtn tbtn");
-    col.append(nm, selLed, selBtn);
-    selLeds.push(selLed);
-    selBtn.addEventListener("click", () => select(i));
-
-    makeVSlider(col, { states: [sliderState("level" + SFX[i])], h: 150, touch: () => "LEVEL " + name });
-
-    const onLed = el("div", "led"); onLed.style.marginTop = "2px";
-    const onBtn = el("div", "pbtn tbtn");
-    const onLbl = el("div", "tonlbl"); onLbl.textContent = "ON";
-    col.append(onLed, onBtn, onLbl);
-
-    const onState = toggleState("on" + SFX[i]);
-    const drawOn = () => {
-      const on = !!onState.getValue();
-      onLed.classList.toggle("on", on);
-      col.style.opacity = on ? "1" : ".55";
-    };
-    onState.valueChangedEvent.addListener(drawOn);
-    drawOn();
-    onBtn.addEventListener("click", () => onState.setValue(!onState.getValue()));
-    mount.appendChild(col);
-  });
-}
-
-//==============================================================================
-// TONE EDIT (rebinds to the selected tone).
-const curTone = () => SEL.i;
-const letter = () => TONES[SEL.i];
-
-// WAVE LCD + steppers + menu
-comboDraw(waveStates, true, () => {
-  const w = WAVES[idx(waveStates[SEL.i], WAVES.length)];
-  $("waveLcd").textContent = w.cat.toUpperCase() + " > " + w.name.toUpperCase();
-  drawGlyph();
-});
-bindStep($("waveDec"), $("waveInc"), () => waveStates[SEL.i], WAVES.length);
-$("waveLcd").addEventListener("click", () =>
-  openMenu("WAVE SELECT — TONE " + letter(), waveRows(),
-    idx(waveStates[SEL.i], WAVES.length), (i) => waveStates[SEL.i].setChoiceIndex(i)));
-
-// SHAPE LCD + steppers + menu
-const shapeStates = tCombos("shape");
-comboDraw(shapeStates, true, () => {
-  $("shapeLcd").textContent = SHAPES[idx(shapeStates[SEL.i], SHAPES.length)];
-});
-bindStep($("shapeDec"), $("shapeInc"), () => shapeStates[SEL.i], SHAPES.length);
-$("shapeLcd").addEventListener("click", () =>
-  openMenu("SHAPER — TONE " + letter(), rowsOf(SHAPES),
-    idx(shapeStates[SEL.i], SHAPES.length), (i) => shapeStates[SEL.i].setChoiceIndex(i)));
-
-// 9-knob row: OCTV FINE START [RND] LEVEL VELO SHP-DPT NOISE NOISE-COL PAN
-// (Ø36 as v5; SHP DPT yellow; OCTV steps 5 detents -2..+2; FINE/PAN bipolar).
-// The RND button+LED (start_random_[t]) sits next to START per GUI_SPEC.
-[["oct", "OCTV", { fmt: "oct", quant: (v) => Math.round(v * 4) / 4 }],
- ["fine", "FINE", { fmt: "bip" }],
- ["start", "START", {}],
- ["level", "LEVEL", {}],
- ["velo", "VELO", {}],
- ["shape_depth", "SHP DPT", { ptr: "#ffd23f" }],
- ["noise", "NOISE", {}],
- ["noise_color", "NOISE COL", {}],
- ["pan", "PAN", { fmt: "bip" }]].forEach(([base, lbl, o]) => {
-  makeKnob($("teKnobs"), {
-    states: tSliders(base), cur: curTone, label: lbl, size: 36,
-    ptr: o.ptr || null, touch: lbl, fmt: o.fmt, quant: o.quant,
-  });
-  if (base === "start") {   // START RND: per-tone note-on start randomize
-    const col = el("div", "rndcol");
-    const led = el("div", "led");
-    const btn = el("div", "pbtn");
-    const lb = el("div", "plab7"); lb.textContent = "RND";
-    col.append(led, btn, lb);
-    $("teKnobs").appendChild(col);
-    const rndStates = tToggles("start_random");
-    const drawRnd = () => led.classList.toggle("on", !!rndStates[SEL.i].getValue());
-    rndStates.forEach((s) => s.valueChangedEvent.addListener(drawRnd));
-    rebinds.push(drawRnd);
-    drawRnd();
-    btn.addEventListener("click", () => {
-      const s = rndStates[SEL.i];
-      s.setValue(!s.getValue());
-    });
-  }
-});
-
-// TVF: TYPE LCD (+ < > mini-stepper) + 4 red knobs + three ADSR banks
-const tvfTypeStates = tCombos("tvf_type");
-comboDraw(tvfTypeStates, true, () => {
-  $("tvfTypeLcd").textContent = TVFTYPES[idx(tvfTypeStates[SEL.i], TVFTYPES.length)];
-});
-bindStep($("tvfTypeDec"), $("tvfTypeInc"), () => tvfTypeStates[SEL.i], TVFTYPES.length);
-$("tvfTypeLcd").addEventListener("click", () =>
-  openMenu("TVF TYPE — TONE " + letter(), rowsOf(TVFFULL),
-    idx(tvfTypeStates[SEL.i], TVFTYPES.length), (i) => tvfTypeStates[SEL.i].setChoiceIndex(i)));
-
-[["tvf_cut", "CUT"], ["tvf_res", "RES"], ["tvf_env", "ENV"], ["tvf_kf", "KF"]].forEach(([base, lbl]) => {
-  makeKnob($("tvfKnobs"), {
-    states: tSliders(base), cur: curTone, label: lbl, size: 34, ptr: "#ff5b6e", touch: "TVF " + lbl,
-  });
-});
-
-function makeBank(mountId, prefix, title) {
-  const bank = $(mountId);
-  const row = el("div", "bankrow");
-  bank.appendChild(row);
-  [["a", "A"], ["d", "D"], ["s", "S"], ["r", "R"]].forEach(([sfx, l]) => {
-    makeVSlider(row, {
-      states: tSliders(prefix + "_" + sfx), cur: curTone, h: 62, letter: l,
-      touch: () => title + " " + l,
-    });
-  });
-  const t = el("div", "banktitle");
-  const tl = el("div", "bttl");
-  tl.textContent = title + " ENV";
-  t.appendChild(tl);
-  bank.appendChild(t);
-  return t;
-}
-makeBank("bankTvf", "tvf", "TVF");
-makeBank("bankTva", "tva", "TVA");
-const auxTitleRow = makeBank("bankAux", "aux", "AUX");
-// AUX dest button (cycles PITCH/START/SHAPE/PAN/NOISE) beside the AUX ENV title
-const auxDestBtn = el("div", "cbtn");
-auxDestBtn.style.width = "44px";
-auxTitleRow.appendChild(auxDestBtn);
-const auxDestStates = tCombos("aux_dest");
-comboDraw(auxDestStates, true, () => {
-  auxDestBtn.textContent = AUXDESTS[idx(auxDestStates[SEL.i], AUXDESTS.length)];
-});
-auxDestBtn.addEventListener("click", () => {
-  const s = auxDestStates[SEL.i];
-  s.setChoiceIndex((idx(s, AUXDESTS.length) + 1) % AUXDESTS.length);
-});
-
-// TONE LFO + per-tone VECTOR knobs
-makeKnob($("lfoDepthMount"), { states: tSliders("lfo_depth"), cur: curTone, label: "DEPTH", size: 30, touch: "LFO DEPTH" });
-const lfoDestStates = tCombos("lfo_dest");
-comboDraw(lfoDestStates, true, () => {
-  $("lfoDestBtn").textContent = LFODESTS[idx(lfoDestStates[SEL.i], LFODESTS.length)];
-});
-$("lfoDestBtn").addEventListener("click", () => {
-  const s = lfoDestStates[SEL.i];
-  s.setChoiceIndex((idx(s, LFODESTS.length) + 1) % LFODESTS.length);
-});
-const dirStates = tSliders("dir"), intStates = tSliders("vint");
-makeKnob($("vecMount"), { states: dirStates, cur: curTone, label: "DIR", size: 30, ptr: "#ffd23f", touch: "DIR" });
-makeKnob($("vecMount"), { states: intStates, cur: curTone, label: "INT", size: 30, ptr: "#ffd23f", touch: "INT" });
-
-//==============================================================================
-// FILTERS: two strips + SER/PAR routing.
+// FILTERS: two strips + SER/PAR routing + v7 BAL 1<->2 balance knob.
 function filterStrip(lcdId, decId, incId, typeId, knobDefs, knobMountId, menuTitle) {
   const state = comboState(typeId);
   comboDraw([state], false, () => {
@@ -610,9 +1067,14 @@ comboDraw([routeState], false, () => {
 });
 $("routeBtn").addEventListener("click", () => routeState.setChoiceIndex(1 - idx(routeState, 2)));
 
+makeKnob($("fbalMount"), {   // v7 filter output balance (bipolar)
+  states: [sliderState("flt_bal")], label: "BAL 1↔2", size: 26, inset: 4,
+  w: 38, lblCls: "plab7", ptr: "#ffd23f", touch: "FLT BAL", fmt: "bip", quant: detent,
+});
+
 //==============================================================================
-// DREAM VECTOR: PHASE/RATE knobs, SHAPE stepper, ORBIT/P-ENV toggles,
-// P-ENV mini page, signal-flow display.
+// DREAM VECTOR: PHASE/RATE knobs, SHAPE select, ORBIT/P-ENV toggles,
+// P-ENV mini page, signal-flow display, per-tone DIR/INT knob rows.
 const vecPhaseState = sliderState("vec_phase");
 const orbitRateState = sliderState("vec_orbit_rate");
 const orbitState = toggleState("vec_orbit_on");
@@ -628,29 +1090,54 @@ function bindToggleRow(ledId, btnId, state) {
 bindToggleRow("orbitLed", "orbitBtn", orbitState);
 bindToggleRow("penvLed", "penvBtn", penvState);
 
-// ORBIT SHAPE stepper (wraps SAW/TRI/SIN/SQR/S+H)
+// ORBIT SHAPE select below the display (menu, prototype behavior)
 const orbitShapeState = comboState("vec_orbit_shape");
 comboDraw([orbitShapeState], false, () => {
   $("orbitShapeBtn").textContent = ORBSHAPES[idx(orbitShapeState, ORBSHAPES.length)];
 });
 $("orbitShapeBtn").addEventListener("click", () =>
-  orbitShapeState.setChoiceIndex((idx(orbitShapeState, ORBSHAPES.length) + 1) % ORBSHAPES.length));
+  openMenu("ORBIT SHAPE", rowsOf(ORBSHAPES), idx(orbitShapeState, ORBSHAPES.length),
+    (i) => orbitShapeState.setChoiceIndex(i)));
 
-// P-ENV mini page: START/END angle + TIME knobs, LOOP toggle. LCD page on
-// the scrim like the wave menu, instant open/close (no easing).
+// v7 per-tone DIR + INT rows (all four tones bound directly, 22px yellow
+// knobs; selected tone letter red).
+const dirStates = tSliders("dir"), intStates = tSliders("vint");
+const vtLetters = [];
+{
+  const mount = $("vecTones");
+  TONES.forEach((name, i) => {
+    const row = el("div", "vtrow");
+    const lt = el("div", "vtletter"); lt.textContent = name;
+    vtLetters.push(lt);
+    row.appendChild(lt);
+    makeKnob(row, { states: [dirStates[i]], label: "DIR " + name, size: 22,
+      inset: 4, ptrTop: 1, ptr: "#ffd23f", horiz: true, lblCls: "lbl7", touch: "DIR " + name });
+    makeKnob(row, { states: [intStates[i]], label: "INT " + name, size: 22,
+      inset: 4, ptrTop: 1, ptr: "#ffd23f", horiz: true, lblCls: "lbl7", touch: "INT " + name });
+    mount.appendChild(row);
+  });
+  const cap = el("div"); cap.id = "vecCap";
+  cap.textContent = "DIR · INT";
+  mount.appendChild(cap);
+  const drawSel = () => vtLetters.forEach((l, j) => l.classList.toggle("sel", j === SEL.i));
+  rebinds.push(drawSel);
+  drawSel();
+}
+
+// P-ENV mini page: START/END angle + TIME knobs, LOOP toggle. Page on the
+// scrim like the wave menu, instant open/close (no easing).
 let penvOpen = false;
 function openPenv() { penvOpen = true; $("penvOverlay").style.display = "flex"; }
 function closePenv() { penvOpen = false; $("penvOverlay").style.display = "none"; }
 $("penvEditBtn").addEventListener("click", openPenv);
 $("penvOverlay").addEventListener("click", (e) => { if (e.target === $("penvOverlay")) closePenv(); });
-makeKnob($("penvKnobs"), { states: [sliderState("vec_penv_start")], label: "START", size: 32, ptr: "#ffd23f", touch: "P-ENV START" });
-makeKnob($("penvKnobs"), { states: [sliderState("vec_penv_end")], label: "END", size: 32, ptr: "#ffd23f", touch: "P-ENV END" });
-makeKnob($("penvKnobs"), { states: [sliderState("vec_penv_time")], label: "TIME", size: 32, touch: "P-ENV TIME" });
+makeKnob($("penvKnobs"), { states: [sliderState("vec_penv_start")], label: "START", size: 38, ptr: "#ffd23f", touch: "PENV START" });
+makeKnob($("penvKnobs"), { states: [sliderState("vec_penv_end")], label: "END", size: 38, ptr: "#ffd23f", touch: "PENV END" });
+makeKnob($("penvKnobs"), { states: [sliderState("vec_penv_time")], label: "TIME", size: 38, touch: "PENV TIME" });
 bindToggleRow("penvLoopLed", "penvLoopBtn", toggleState("vec_penv_loop"));
 
 // Params with no panel control stay wired (hidden states; report note):
-// aux env depth, global humanize drift, per-voice orbit free-run.
-SFX.forEach((sx) => sliderState("aux_amt" + sx));
+// global humanize drift, per-voice orbit free-run.
 sliderState("drift");
 toggleState("vec_orbit_voice");
 
@@ -759,7 +1246,7 @@ setInterval(() => {
 }, 40);
 
 //==============================================================================
-// MOD MATRIX: 3 slots (SRC > DST, Ø26 BIPOLAR AMT knob w/ center detent,
+// MOD MATRIX: 3 slots (SRC > DST, 26px BIPOLAR AMT knob w/ center detent,
 // |amt| bar yellow=positive / red=negative) + G-LFO.
 for (let n = 1; n <= 3; n++) {
   const row = el("div", "mrowline");
@@ -781,7 +1268,7 @@ for (let n = 1; n <= 3; n++) {
     openMenu("MOD DEST — SLOT " + n, rowsOf(MDST), idx(dstState, MDST.length),
       (i) => dstState.setChoiceIndex(i)));
 
-  // Ø26 AMT knob (20px cap, 4px centre inset, 7px yellow pointer, no label)
+  // 26px AMT knob (20px cap, 4px centre inset, 7px yellow pointer, no label)
   const skirt = el("div", "kskirt");
   skirt.style.width = skirt.style.height = "26px";
   const cap = el("div", "kcap");
@@ -811,7 +1298,7 @@ for (let n = 1; n <= 3; n++) {
   amtState.propertiesChangedEvent.addListener(drawAmt);
   drawAmt();
   bindVDrag(skirt, () => amtState, () => "AMT " + n, drawAmt,
-    { fmt: "bip", quant: (v) => (Math.abs(v - .5) < .015 ? .5 : v) });   // ±.03 amt detent
+    { fmt: "bip", quant: detent });
 
   $("mtxRows").appendChild(row);
 }
@@ -877,6 +1364,7 @@ function select(i) {
   drawGlyph();
 }
 select(0);
+drawPresetLbl();            // boot: P001 ETHEREAL DAWN (index is UI-side)
 setTouched("MORPH", .52);   // boot readout, matches the handoff PNG
 
 //==============================================================================
@@ -891,14 +1379,23 @@ if (infoPromise)
 
 // Tooling flags (mock/dev only, house pattern like rubber-rhino's ?about;
 // never triggered inside the plugin):
-//   ?menu  boots with the wave menu open (headless overlay screenshot)
-//   ?penv  boots with the P-ENV mini page open
-//   ?ens   demo state: tone A on an [ENS] loop + MOD FX on ENSEMBLE
+//   ?menu    boots with the wave menu open (headless overlay screenshot)
+//   ?presets boots with the preset browser open
+//   ?penv    boots with the P-ENV mini page open
+//   ?ens     demo state: tone A on an [ENS] loop + MOD FX on ENSEMBLE
+//   ?preset=N  boots with factory preset N (1-based) applied
+//   ?flat    faceplate finish off   ?stars  star-field variant on
+const presetFlag = location.search.match(/preset=(\d+)/);
+if (presetFlag) applyPreset(parseInt(presetFlag[1], 10) - 1);
 if (location.search.indexOf("ens") >= 0) {
   waveStates[0].setChoiceIndex(82);              // Ens: SOLINA_DREAM
   comboState("modfx_type").setChoiceIndex(3);    // ENSEMBLE
 }
-if (location.search.indexOf("menu") >= 0)
+if (location.search.indexOf("flat") >= 0) $("plate").style.display = "none";
+if (location.search.indexOf("stars") >= 0) $("stars").style.display = "block";
+if (location.search.indexOf("presets") >= 0)
+  $("presetLbl").dispatchEvent(new MouseEvent("click"));
+else if (location.search.indexOf("menu") >= 0)
   $("waveLcd").dispatchEvent(new MouseEvent("click"));
 if (location.search.indexOf("penv") >= 0)
   openPenv();

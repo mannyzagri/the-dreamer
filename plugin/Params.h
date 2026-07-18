@@ -38,6 +38,7 @@ inline constexpr auto kVecPenvEnd    = "vec_penv_end";
 inline constexpr auto kVecPenvTime   = "vec_penv_time";
 inline constexpr auto kVecPenvLoop   = "vec_penv_loop";     // flagged (s6)
 inline constexpr auto kFltRoute      = "flt_route";
+inline constexpr auto kFltBal        = "flt_bal";    // v7: filter 1<->2 balance
 inline constexpr auto kFlt1Type      = "flt1_type";
 inline constexpr auto kFlt1Cut       = "flt1_cut";
 inline constexpr auto kFlt1Res       = "flt1_res";
@@ -135,8 +136,15 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         layout.add(uni(tid("noise_color", t), P + "Noise Color", 0.0f));
         layout.add(uni(tid("dir", t), P + "Vec Dir", 0.25f * (float)t));
         layout.add(uni(tid("vint", t), P + "Vec Int", 0.0f));
-        layout.add(uni(tid("lfo_depth", t), P + "LFO Depth", 0.0f));
-        layout.add(choice(tid("lfo_dest", t), P + "LFO Dest", lfoDests, 0));
+        // v7: two per-tone LFOs (rate free-Hz or tempo-synced to 12 divisions)
+        for (int lf = 1; lf <= 2; ++lf) {
+            const String LB = "lfo" + String(lf) + "_";
+            const String LN = P + "LFO " + String(lf) + " ";
+            layout.add(uni(tid((LB + "rate").toRawUTF8(), t), LN + "Rate", 0.5f));
+            layout.add(uni(tid((LB + "depth").toRawUTF8(), t), LN + "Depth", 0.0f));
+            layout.add(boolean(tid((LB + "sync").toRawUTF8(), t), LN + "Sync", false));
+            layout.add(choice(tid((LB + "dest").toRawUTF8(), t), LN + "Dest", lfoDests, 0));
+        }
         layout.add(choice(tid("aux_dest", t), P + "Aux Dest", auxDests, 0));
         layout.add(bip(tid("aux_amt", t), P + "Aux Amt", 0.0f));   // flagged
         layout.add(choice(tid("tvf_type", t), P + "TVF Type", tvfTypes, 0));
@@ -172,6 +180,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add(boolean(kVecPenvLoop, "P-Env Loop", false));
 
     layout.add(choice(kFltRoute, "Filter Routing", StringArray { "Ser", "Par" }, 0));
+    layout.add(bip(kFltBal, "Filter Balance", 0.0f));
     layout.add(choice(kFlt1Type, "Filter 1 Type", filterTypes, 0));
     layout.add(uni(kFlt1Cut, "Filter 1 Cutoff", 1.0f));
     layout.add(uni(kFlt1Res, "Filter 1 Reso", 0.0f));
