@@ -80,6 +80,7 @@ void TheDreamerProcessor::cacheTonePtrs(TonePtrs& dst, int t)
         };
         dst.lfo[lf].rate = q("rate"); dst.lfo[lf].depth = q("depth");
         dst.lfo[lf].sync = q("sync"); dst.lfo[lf].dest = q("dest");
+        dst.lfo[lf].shape = q("shape");
     }
     dst.auxDest = p("aux_dest"); dst.auxAmt = p("aux_amt");
     dst.tvfType = p("tvf_type"); dst.tvfCut = p("tvf_cut");
@@ -95,6 +96,7 @@ void TheDreamerProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     synth.prepare(sampleRate);
     synth.killAll();
     lastOversample = 0;
+    guiFifo.reset();                // discard any GUI MIDI queued before prepare
 
     for (int ch = 0; ch < 2; ++ch) {
         f1[ch].setSampleRate(sampleRate);
@@ -172,6 +174,7 @@ void TheDreamerProcessor::buildPatch(dreamer::DreamPatch& patch) const
             o.depth  = q.depth->load();
             o.sync   = q.sync->load() > 0.5f;
             o.dest   = (int)q.dest->load();
+            o.shape  = (int)q.shape->load();
         };
         fillLfo(d.lfo1, s.lfo[0]);
         fillLfo(d.lfo2, s.lfo[1]);
@@ -228,6 +231,8 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     }
 
     numEvents = 0;
+    drainGuiMidi();                 // GUI keyboard/wheels first: offset-0 events,
+                                    // keeping events[] monotonically sorted
     for (const auto meta : midi) {
         const auto msg = meta.getMessage();
         const int  ofs = meta.samplePosition;
@@ -477,6 +482,58 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     }
     meterL.store(peakL, std::memory_order_relaxed);
     meterR.store(peakR, std::memory_order_relaxed);
+}
+
+//==============================================================================
+// GUI keyboard/wheels -> engine (lock-free SPSC; producer = editor native fns
+// on the message thread, consumer = drainGuiMidi at the top of processBlock).
+void TheDreamerProcessor::pushGui(GuiMidiEvent e) noexcept
+{
+    int s1, n1, s2, n2;
+    guiFifo.prepareToWrite(1, s1, n1, s2, n2);
+    if (n1 > 0) { guiEvents[s1] = e; guiFifo.finishedWrite(1); }
+    // n1 == 0 -> FIFO full: drop the event (never block, never grow)
+}
+
+void TheDreamerProcessor::guiNoteOn(int note, float vel01) noexcept
+{
+    pushGui({ (uint8_t)GuiMidi::on, (uint8_t)juce::jlimit(0, 127, note),
+              juce::jlimit(0.0f, 1.0f, vel01) });
+}
+void TheDreamerProcessor::guiNoteOff(int note) noexcept
+{
+    pushGui({ (uint8_t)GuiMidi::off, (uint8_t)juce::jlimit(0, 127, note), 0.0f });
+}
+void TheDreamerProcessor::guiPitchBend(float bendNorm) noexcept
+{
+    // -1..+1 -> +/-2 semitones (same span as the host pitch-wheel path)
+    pushGui({ (uint8_t)GuiMidi::bend, 0, juce::jlimit(-1.0f, 1.0f, bendNorm) * 2.0f });
+}
+void TheDreamerProcessor::guiModWheel(float w01) noexcept
+{
+    pushGui({ (uint8_t)GuiMidi::modWheel, 0, juce::jlimit(0.0f, 1.0f, w01) });
+}
+void TheDreamerProcessor::guiAllNotesOff() noexcept
+{
+    pushGui({ (uint8_t)GuiMidi::allNotesOff, 0, 0.0f });
+}
+
+void TheDreamerProcessor::drainGuiMidi() noexcept
+{
+    int s1, n1, s2, n2;
+    guiFifo.prepareToRead(guiFifo.getNumReady(), s1, n1, s2, n2);
+    auto apply = [this](const GuiMidiEvent& e) {
+        switch ((GuiMidi)e.type) {
+        case GuiMidi::on:          pushEvent({ 0, NoteEvent::Type::on,  e.note, e.value }); break;
+        case GuiMidi::off:         pushEvent({ 0, NoteEvent::Type::off, e.note, 0.0f });    break;
+        case GuiMidi::bend:        pushEvent({ 0, NoteEvent::Type::bend, 0, e.value });     break;
+        case GuiMidi::modWheel:    synth.setWheel(e.value);                                 break;
+        case GuiMidi::allNotesOff: pushEvent({ 0, NoteEvent::Type::allNotesOff, 0, 0.0f }); break;
+        }
+    };
+    for (int i = 0; i < n1; ++i) apply(guiEvents[s1 + i]);
+    for (int i = 0; i < n2; ++i) apply(guiEvents[s2 + i]);
+    guiFifo.finishedRead(n1 + n2);
 }
 
 //==============================================================================

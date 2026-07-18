@@ -56,6 +56,18 @@ public:
     float getMeterL() const noexcept { return meterL.load(std::memory_order_relaxed); }
     float getMeterR() const noexcept { return meterR.load(std::memory_order_relaxed); }
 
+    // v11: on-screen keyboard + pitch/mod wheels -> engine. Called by the
+    // editor's WebView native functions on the MESSAGE thread; each just
+    // enqueues onto a lock-free SPSC FIFO drained at the top of processBlock
+    // (never touch synth/DSP state from here -- that would race the audio
+    // thread). bendNorm is bipolar -1..+1 (mapped to the same +/-2 semitone
+    // span as host pitch-wheel); w01 and vel01 are 0..1.
+    void guiNoteOn (int note, float vel01) noexcept;
+    void guiNoteOff(int note)              noexcept;
+    void guiPitchBend(float bendNorm)      noexcept;
+    void guiModWheel(float w01)            noexcept;
+    void guiAllNotesOff()                  noexcept;
+
 private:
     struct NoteEvent {
         int   offset = 0;
@@ -67,6 +79,19 @@ private:
     NoteEvent events[kMaxEvents];
     int numEvents = 0;
     void pushEvent(const NoteEvent& e) { if (numEvents < kMaxEvents) events[numEvents++] = e; }
+
+    // GUI-originated MIDI (v11 on-screen keyboard + wheels). SPSC ring buffer:
+    // producer = message-thread editor native fns (guiNoteOn/... above),
+    // consumer = processBlock (drainGuiMidi). Lock-free (juce::AbstractFifo,
+    // no CriticalSection) to honour rule 5; fixed POD backing store, allocated
+    // once. Owned by the processor so it outlives repeated editor create/destroy.
+    struct GuiMidiEvent { uint8_t type = 0; uint8_t note = 0; float value = 0.0f; };
+    enum class GuiMidi : uint8_t { on, off, bend, modWheel, allNotesOff };
+    static constexpr int kGuiFifoSize = 256;
+    juce::AbstractFifo guiFifo { kGuiFifoSize };
+    GuiMidiEvent       guiEvents[kGuiFifoSize];
+    void pushGui(GuiMidiEvent e) noexcept;     // message thread
+    void drainGuiMidi() noexcept;              // audio thread, top of processBlock
 
     void buildPatch(dreamer::DreamPatch& p) const;
 
@@ -101,7 +126,7 @@ private:
 
     juce::SmoothedValue<float> masterSmoothed;
 
-    struct LfoPtrs { std::atomic<float> *rate, *depth, *sync, *dest; };
+    struct LfoPtrs { std::atomic<float> *rate, *depth, *sync, *dest, *shape; };
     struct TonePtrs {
         std::atomic<float> *wave, *on, *level, *oct, *fine, *start, *startRandom,
                            *velo, *pan, *shape, *shapeDepth, *noise, *noiseColor,

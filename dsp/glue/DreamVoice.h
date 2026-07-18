@@ -80,6 +80,8 @@ struct ToneParams {
         double depth  = 0.0;
         bool   sync   = false;
         int    dest   = 0;         // 0 PITCH, 1 CUTOFF, 2 SHAPE, 3 LEVEL
+        int    shape  = 1;         // v11: panel TRI/SIN/SAW/SQR/S+H; default SIN
+                                   //  -> Lfo::sine (bit-neutral vs pre-v11 fixed sine)
     };
     ToneLfo lfo1, lfo2;
 };
@@ -141,6 +143,15 @@ inline double toneLfoRateHz(const ToneParams::ToneLfo& p, double bpm) noexcept {
         return (double)Lfo::rateHzFromParam((float)(p.rate01 * 100.0));
     const int idx = (int)(p.rate01 * 11.0 + 0.5);
     return (bpm / 60.0) / toneLfoDivisionBeats(idx);
+}
+
+// Panel LFO-shape order (TRI/SIN/SAW/SQR/S+H, shared by per-tone LFOs and the
+// global LFO) -> Lfo::Shape enum {sine=0,tri=1,ramp=2,square=3,sh=4}. One map,
+// used by both the voice and updateLive() so display and DSP always agree.
+inline int panelLfoShapeToLfo(int s) noexcept {
+    static constexpr int m[5] = { 1, 0, 2, 3, 4 };
+    if (s < 0) s = 0; if (s > 4) s = 4;
+    return m[s];
 }
 
 // deterministic per-instance RNG (glue idiom)
@@ -266,6 +277,7 @@ public:
             for (int i = 0; i < 2; ++i) {
                 const auto& lp = i == 0 ? params_.lfo1 : params_.lfo2;
                 lfo_[i].setRateHz((float)toneLfoRateHz(lp, (double)m.bpm));
+                lfo_[i].setShape(panelLfoShapeToLfo(lp.shape));
                 const float v = lfo_[i].value();
                 const float d = (float)lp.depth;
                 if (d <= 0.0f) continue;
@@ -337,7 +349,7 @@ private:
     PcmOsc3                osc_;
     rompler::EnvelopeAdsr  tvfEnv_, tvaEnv_, auxEnv_;
     ToneSvf                svf_;
-    Lfo                    lfo_[2];      // v7 per-tone LFO pair (sine)
+    Lfo                    lfo_[2];      // v7 per-tone LFO pair (v11: per-LFO shape)
     ToneParams             params_;
     GlueRng                rng_;
     double sr_ = 44100.0;
@@ -474,10 +486,7 @@ public:
     DreamPatch& patch() noexcept { return patch_; }
 
     void updateLive() noexcept {
-        static constexpr int shapeMap[5] = { 1, 0, 2, 3, 4 };   // panel->Lfo
-        int s = patch_.glfoShape01;
-        if (s < 0) s = 0; if (s > 4) s = 4;
-        glfo_.setShape(shapeMap[s]);
+        glfo_.setShape(panelLfoShapeToLfo(patch_.glfoShape01));
         glfo_.setRateHz(Lfo::rateHzFromParam((float)patch_.glfoRate01));
         orbitHz_ = orbitRateHz(patch_.vec.orbitRate01);
         for (auto& v : voices_) v.updateLive(patch_);

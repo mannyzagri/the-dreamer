@@ -101,6 +101,9 @@ const GLFOWAVES = ["TRI", "SIN", "SAW", "SQR", "S+H"];
 const ORBSHAPES = ["SAW", "TRI", "SIN", "SQR", "S+H"];
 const AUXDESTS  = ["PITCH", "START", "SHAPE", "PAN", "NOISE"];
 const LFODESTS  = ["PITCH", "CUTOFF", "SHAPE", "LEVEL"];
+// v11 per-tone LFO SHAPE (lfo1_shape_[t]/lfo2_shape_[t]); order = Params.h
+// lfoShapes choice index [Tri, Sin, Saw, Sqr, S+H] = 0..4 (default SIN).
+const LFOSHAPES = ["TRI", "SIN", "SAW", "SQR", "S+H"];
 const SYNCDIVS  = ["4/1", "2/1", "1/1", "1/2", "1/2T", "1/4",   // lfoN_sync lit:
                    "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"];  // idx=round(v*11)
 const MSRC      = ["G-LFO", "VEC PHS", "AUX", "VELO", "WHEEL"];
@@ -133,7 +136,8 @@ const TONE_SLIDER_BASE = {   // per-tone base (suffixed _a.._d on apply)
   lfo1_rate: .4, lfo1_depth: .15, lfo2_rate: .25, lfo2_depth: 0,
 };
 const TONE_TOGGLE_BASE = { on: false, start_random: false, lfo1_sync: false, lfo2_sync: false };
-const TONE_COMBO_BASE  = { wave: 0, shape: 0, tvf_type: 0, aux_dest: 0, lfo1_dest: 0, lfo2_dest: 1 };
+const TONE_COMBO_BASE  = { wave: 0, shape: 0, tvf_type: 0, aux_dest: 0, lfo1_dest: 0, lfo2_dest: 1,
+  lfo1_shape: 1, lfo2_shape: 1 };   // v11: per-tone LFO shape (default SIN)
 const GLOB_SLIDER_BASE = {
   master: .78, vec_phase: 0, vec_orbit_rate: .3,
   vec_penv_start: 0, vec_penv_end: .5, vec_penv_time: .4, flt_bal: .5,
@@ -379,6 +383,7 @@ const MOCK = { sliders: {}, toggles: {}, combos: {} };
     Object.assign(MOCK.combos, {
       ["wave" + sx]: wv[i], ["shape" + sx]: 0, ["tvf_type" + sx]: 0,
       ["aux_dest" + sx]: 0, ["lfo1_dest" + sx]: 0, ["lfo2_dest" + sx]: 1,
+      ["lfo1_shape" + sx]: 1, ["lfo2_shape" + sx]: 1,   // v11 per-tone LFO shape
     });
   });
   Object.assign(MOCK.sliders, {
@@ -662,32 +667,21 @@ function makeVSlider(mount, o) {   // {states, cur, h, letter, touch}
   plate.appendChild(el("div", "grad2"));   // 122deg sheen
   plate.appendChild(el("div", "grad3"));   // vignette
 
-  const screws = svgEl("svg");
-  screws.setAttribute("viewBox", "0 0 1140 660");
-  const defs = svgEl("defs");
-  const grad = svgEl("radialGradient");
-  grad.setAttribute("id", "scrG");
-  grad.setAttribute("cx", ".38"); grad.setAttribute("cy", ".38"); grad.setAttribute("r", ".75");
-  [[0, "#6b708f"], [.7, "#292b42"], [1, "#0d0d1a"]].forEach(([off, col]) => {
-    const s = svgEl("stop");
-    s.setAttribute("offset", off); s.setAttribute("stop-color", col);
-    grad.appendChild(s);
+  // v11 corner screws: 4 separate heads on their OWN layer (#screws, z-index
+  // 6) so they render over the finish but the header's 26px logo/POWER margins
+  // keep every label clear of them (breakpoint #1/#4). Centered 22px from each
+  // corner of the CONTROL panel (top corners + the corners just above the
+  // keyboard strip). Fixed slot angles match the PNG master.
+  const screwLayer = $("screws");
+  [["left:14px;top:14px", 37], ["right:14px;top:14px", 112],
+   ["left:14px;bottom:200px", 74], ["right:14px;bottom:200px", 155]].forEach(([pos, ang]) => {
+    const sc = el("div", "screw");
+    sc.style.cssText = pos;
+    const slot = el("i");
+    slot.style.transform = "rotate(" + ang + "deg)";
+    sc.appendChild(slot);
+    screwLayer.appendChild(sc);
   });
-  defs.appendChild(grad);
-  screws.appendChild(defs);
-  [[22, 22], [1118, 22], [22, 638], [1118, 638]].forEach(([cx, cy]) => {
-    const rot = Math.floor(mr() * 180);
-    const head = svgEl("circle");
-    head.setAttribute("cx", cx); head.setAttribute("cy", cy);
-    head.setAttribute("r", 8); head.setAttribute("fill", "url(#scrG)");
-    const slot = svgEl("rect");
-    slot.setAttribute("x", cx - 4.5); slot.setAttribute("y", cy - 0.8);
-    slot.setAttribute("width", 9); slot.setAttribute("height", 1.6);
-    slot.setAttribute("rx", 0.6); slot.setAttribute("fill", "#05050c");
-    slot.setAttribute("transform", "rotate(" + rot + " " + cx + " " + cy + ")");
-    screws.append(head, slot);
-  });
-  plate.appendChild(screws);
 
   // star-field variant (80 seeded 1-2px dots), off by default
   const stars = $("stars");
@@ -954,6 +948,17 @@ function makeLfoRow(mountId, n) {
     states: depthStates, cur: curTone, label: "DEPTH", size: 26, inset: 4,
     w: 38, lblCls: "plab7", touch: "LFO" + n + " DEPTH",
   });
+
+  // v11 per-tone SHAPE mini-LCD (lfo{n}_shape_[t]): click = menu, no arrows.
+  const shapeStates = tCombos("lfo" + n + "_shape");
+  const shapeLcd = el("div", "lcd ctr sm shapeLcd");
+  mount.appendChild(shapeLcd);
+  comboDraw(shapeStates, true, () => {
+    shapeLcd.textContent = LFOSHAPES[idx(shapeStates[SEL.i], LFOSHAPES.length)];
+  });
+  shapeLcd.addEventListener("click", () =>
+    openMenu("LFO" + n + " SHAPE — TONE " + letter(), rowsOf(LFOSHAPES),
+      idx(shapeStates[SEL.i], LFOSHAPES.length), (i) => shapeStates[SEL.i].setChoiceIndex(i)));
 
   const sync = el("div", "ledlbl");
   const led = el("div", "led");
@@ -1509,11 +1514,15 @@ setTouched("MORPH", .52);   // boot readout, matches the handoff PNG
 //==============================================================================
 // Version/build stamp via the getInfo native function (guarded: in the
 // standalone mock the promise never resolves and the stamp stays empty).
+// v11: bottom-right silkscreen VER stamp reads the REAL built version (breakpoint
+// #4). Default "VER 1.0" (HTML) matches the PNG for the standalone mock, where
+// the promise never resolves; in-plugin getInfo overrides it with the built
+// version string (e.g. "0.7.2" -> "VER 0.7.2").
 let infoPromise = null;
 try { infoPromise = Juce.getNativeFunction("getInfo")(); } catch (e) {}
 if (infoPromise)
   infoPromise.then((info) => {
-    if (info) $("verStamp").textContent = "v" + info.version + " " + info.build;
+    if (info && info.version) $("verStamp").textContent = "VER " + info.version;
   }).catch(() => {});
 
 // Tooling flags (mock/dev only, house pattern like rubber-rhino's ?about;
@@ -1534,7 +1543,10 @@ if (location.search.indexOf("ens") >= 0) {
 const modfxFlag = location.search.match(/modfx=(\d+)/);   // dev: force MOD FX algorithm (0..6)
 if (modfxFlag) comboState("modfx_type").setChoiceIndex(parseInt(modfxFlag[1], 10));
 if (location.search.indexOf("dlysync") >= 0) toggleState("dly_sync").setValue(true);   // v9
-if (location.search.indexOf("flat") >= 0) $("plate").style.display = "none";
+if (location.search.indexOf("flat") >= 0) {   // faceplate finish + screws off
+  $("plate").style.display = "none";
+  $("screws").style.display = "none";
+}
 if (location.search.indexOf("stars") >= 0) $("stars").style.display = "block";
 if (location.search.indexOf("presets") >= 0)
   $("presetLbl").dispatchEvent(new MouseEvent("click"));
@@ -1544,11 +1556,139 @@ if (location.search.indexOf("penv") >= 0)
   openPenv();
 
 //==============================================================================
-// Uniform scaling of the fixed 1140x660 canvas (no scrollbars, centered). The
+// v11 KEYBOARD + PITCH/MOD WHEELS. Wired to the native bridge functions the
+// SAME way getInfo is (Juce.getNativeFunction): noteOn(note 0-127, vel 0..1),
+// noteOff(note), pitchBend(norm -1..+1, center 0), modWheel(w 0..1). Calls are
+// fire-and-forget (the returned promise is ignored). In the standalone mock the
+// backend is the check_native_interop placeholder, so the calls are harmless
+// no-ops -- the keybed/wheels still animate + echo the main LCD.
+const nativeFn = (name) => { try { return Juce.getNativeFunction(name); } catch (e) { return null; } };
+const nfNoteOn = nativeFn("noteOn"), nfNoteOff = nativeFn("noteOff");
+const nfPitchBend = nativeFn("pitchBend"), nfModWheel = nativeFn("modWheel");
+const callNative = (fn, ...args) => { if (fn) { try { fn(...args); } catch (e) {} } };
+
+// Keybed note map: leftmost white key = C2 (MIDI 36), ~4 octaves (30 white /
+// 21 black => C2..D6, MIDI 36..86, all in range). White keys walk the diatonic
+// scale; a black key at white index i is the sharp ABOVE that white (whiteMidi
+// (i)+1). Black keys sit at white degrees C/D/F/G/A (i%7 in {0,1,3,4,5}).
+const KB_BASE = 36;                                 // C2 = leftmost white
+const WHITE_SEMI = [0, 2, 4, 5, 7, 9, 11];          // C D E F G A B
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const whiteMidi = (i) => KB_BASE + Math.floor(i / 7) * 12 + WHITE_SEMI[i % 7];
+const noteName  = (m) => NOTE_NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
+const KB_VEL = 0.8;                                 // fixed velocity (no aftertouch surface)
+{
+  const keybed = $("keybed");
+  const held = new Map();   // key element -> midi note currently sounding
+
+  const press = (elm, midi) => {
+    if (held.has(elm)) return;
+    held.set(elm, midi);
+    elm.classList.add("held");
+    callNative(nfNoteOn, midi, KB_VEL);
+    setTouched(noteName(midi), clamp01(midi / 127));
+  };
+  const release = (elm) => {
+    const midi = held.get(elm);
+    if (midi === undefined) return;
+    held.delete(elm);
+    elm.classList.remove("held");
+    callNative(nfNoteOff, midi);
+  };
+  const keyDown = (elm, midi) => (e) => {
+    e.preventDefault();
+    try { elm.setPointerCapture(e.pointerId); } catch (err) {}
+    press(elm, midi);
+    const up = () => {
+      elm.removeEventListener("pointerup", up);
+      elm.removeEventListener("pointercancel", up);
+      release(elm);
+    };
+    elm.addEventListener("pointerup", up);
+    elm.addEventListener("pointercancel", up);
+  };
+
+  // 30 white keys (32.662px pitch); black keys layer on top (CSS z-index).
+  for (let i = 0; i < 30; i++) {
+    const k = el("div", "wkey");
+    k.style.left = (i * 32.662).toFixed(2) + "px";
+    k.addEventListener("pointerdown", keyDown(k, whiteMidi(i)));
+    keybed.appendChild(k);
+  }
+  Array.from({ length: 30 }, (_, i) => i)
+    .filter((i) => [0, 1, 3, 4, 5].includes(i % 7) && i < 29).slice(0, 21)
+    .forEach((i) => {
+      const k = el("div", "bkey");
+      k.style.left = (i * 32.662 + 22.5).toFixed(2) + "px";
+      k.addEventListener("pointerdown", keyDown(k, whiteMidi(i) + 1));
+      keybed.appendChild(k);
+    });
+
+  // ---- PITCH + MOD wheels: ribs scroll with wheel position -----------------
+  const pitchWheel = $("pitchWheel"), modWheelEl = $("modWheel");
+  const pitchRibs = [], modRibs = [];
+  for (let i = 0; i < 19; i++) { const r = el("div", "rib"); pitchWheel.appendChild(r); pitchRibs.push(r); }
+  for (let i = 0; i < 18; i++) { const r = el("div", "rib"); modWheelEl.appendChild(r); modRibs.push(r); }
+  let pitchVal = 0, modVal = 0;
+  const drawPitchRibs = () => pitchRibs.forEach((r, i) => { r.style.top = (2 + i * 6.2 + pitchVal * 20) + "px"; });
+  const drawModRibs   = () => modRibs.forEach((r, i) => { r.style.top = (2 + i * 6.5 - modVal * 40) + "px"; });
+  drawPitchRibs(); drawModRibs();
+
+  // PITCH: bipolar -1..+1 over 59px; SPRINGS back to 0 on release -> pitchBend(0).
+  pitchWheel.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    try { pitchWheel.setPointerCapture(e.pointerId); } catch (err) {}
+    const y0 = e.clientY;
+    const mv = (ev) => {
+      pitchVal = Math.max(-1, Math.min(1, (y0 - ev.clientY) / 59));
+      callNative(nfPitchBend, pitchVal);
+      drawPitchRibs();
+      setTouched("PITCH BEND", (pitchVal + 1) / 2, "bip");
+    };
+    const up = () => {
+      pitchWheel.removeEventListener("pointermove", mv);
+      pitchWheel.removeEventListener("pointerup", up);
+      pitchWheel.removeEventListener("pointercancel", up);
+      pitchVal = 0; callNative(nfPitchBend, 0); drawPitchRibs();
+      setTouched("PITCH BEND", .5, "bip");
+    };
+    pitchWheel.addEventListener("pointermove", mv);
+    pitchWheel.addEventListener("pointerup", up);
+    pitchWheel.addEventListener("pointercancel", up);
+  });
+
+  // MOD: unipolar 0..1 over 118px; HOLDS position on release -> modWheel(w).
+  modWheelEl.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    try { modWheelEl.setPointerCapture(e.pointerId); } catch (err) {}
+    const y0 = e.clientY, m0 = modVal;
+    const mv = (ev) => {
+      modVal = Math.max(0, Math.min(1, m0 + (y0 - ev.clientY) / 118));
+      callNative(nfModWheel, modVal);
+      drawModRibs();
+      setTouched("MOD WHEEL", modVal);
+    };
+    const up = () => {
+      modWheelEl.removeEventListener("pointermove", mv);
+      modWheelEl.removeEventListener("pointerup", up);
+      modWheelEl.removeEventListener("pointercancel", up);
+    };
+    modWheelEl.addEventListener("pointermove", mv);
+    modWheelEl.addEventListener("pointerup", up);
+    modWheelEl.addEventListener("pointercancel", up);
+  });
+}
+
+//==============================================================================
+// Uniform scaling of the fixed 1140x864 canvas (no scrollbars, centered). The
 // native plugin window is the AUTHORITATIVE resize (JUCE fixes the aspect and
 // fires resize -> fit(), which scales to innerWidth/innerHeight); the v8 grip
 // adds a cosmetic in-page zoom (uiScale) composed on top, so both paths agree.
-const BASE_W = 1140, BASE_H = 660;
+// v11: canvas is now 1140x864 (control panel + keyboard strip). The C++ editor
+// fixes the 1140:864 aspect + limits (570x432..2280x1728) and fires resize ->
+// fit(), which scales the WHOLE #frame -- screws, finish and keyboard included,
+// as one unit (breakpoint #3: no more letterbox, nothing slides under a screw).
+const BASE_W = 1140, BASE_H = 864;
 let uiScale = 1;
 function fit() {
   const s = Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H) * uiScale;

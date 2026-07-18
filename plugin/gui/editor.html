@@ -3,10 +3,12 @@
 <link rel="stylesheet" href="style.css">
 </head><body>
 
-<!-- Fixed 1140x660 design canvas, uniformly scaled by app.js fit().
-     Static skeleton only: repetitive controls (knobs, sliders, matrix/FX
-     rows, tone columns, LFO rows, faceplate finish) are built by app.js
-     into the mount points below (house pattern, see rubber-rhino gui). -->
+<!-- Fixed 1140x864 design canvas (660 control panel + 190 keyboard/wheel
+     strip at y=662), uniformly scaled by app.js fit() as ONE frame (screws
+     included). Static skeleton only: repetitive controls (knobs, sliders,
+     matrix/FX rows, tone columns, LFO rows, faceplate finish, keybed, wheel
+     ribs, corner screws) are built by app.js into the mount points below
+     (house pattern, see rubber-rhino gui). -->
 <div id="frame">
   <div id="panel">
 
@@ -158,13 +160,31 @@
       </div>
     </div>
 
-    <!-- version/build stamp, filled by the getInfo native call -->
-    <div id="verStamp"></div>
+    <!-- ============ v11 keyboard + pitch/mod wheel strip (y=662) ========== -->
+    <!-- Wheel bay + PITCH/MOD wheels (ribs built by app.js) and ~4-octave
+         keybed (30 white / 21 black, built by app.js). Wired to the native
+         noteOn/noteOff/pitchBend/modWheel bridge functions. -->
+    <div id="kbStrip">
+      <div id="wheelBay"></div>
+      <div class="wheelSlot" style="left:24px"></div>
+      <div class="wheel" id="pitchWheel" style="left:28px"></div>
+      <div class="wheelSlot" style="left:76px"></div>
+      <div class="wheel" id="modWheel" style="left:80px"></div>
+      <div class="wheelLbl" style="left:22px">PITCH</div>
+      <div class="wheelLbl" style="left:81px">MOD</div>
+      <div id="keybed"></div>
+    </div>
 
-    <!-- faceplate finish overlays (built by app.js): seeded star-field
-         variant (off by default) + brushed-metal finish (default ON) -->
+    <!-- version stamp (getInfo), just left of the bottom-right corner screw -->
+    <div id="verStamp">VER 1.0</div>
+
+    <!-- faceplate finish (built by app.js): seeded star-field variant (off by
+         default) + brushed-metal finish (default ON, z-index 0 = behind
+         controls). The 4 corner screws render on their own layer (#screws,
+         z-index 6) above content, cleared by the header 26px margins. -->
     <div id="stars"></div>
     <div id="plate"></div>
+    <div id="screws"></div>
 
     <!-- v8 window resize grip: visual affordance (15x15, diagonal lines).
          The native plugin window is the authoritative resize; drag = cosmetic

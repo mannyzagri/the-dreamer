@@ -56,7 +56,7 @@
         "dir": "plugin\\gui",
         "entry": "editor.html",
         "checks": ["load", "screenshot"],
-        "windowSize": "1180,700",
+        "windowSize": "1180,920",
         "bridgeResults": { "getInfo": { "version": "validator", "build": "validator" } } }
     ]
   },
