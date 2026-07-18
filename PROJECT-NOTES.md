@@ -4,18 +4,18 @@
 > block. STATE is OVERWRITE-ONLY: update it in place as the last act of a work
 > pass — never append a second STATE block.
 
-## STATE (updated 2026-07-18, RC 0.5.0 — v7 handoff, validator 14/14 PASS)
+## STATE (updated 2026-07-18, RC 0.6.0 — FX v1.5 + v8 GUI, validator all-stages PASS)
 
 | Item | Value |
 |---|---|
-| Deployed version | **0.5.0 RC (v7)** — `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root); validator 14/14 (dsp×5, bundle, deploy×2, gui×2, pluginval strictness 8) |
-| Contracts | design-handoff/v7/ (README + GUI_SPEC) supersedes v6 where it conflicts; DSP_BUILD.md §9 remains the base param contract (v7 adds per-tone dual LFOs). ~220 params → Cubase FULL re-scan again |
-| Engine | v3 base (bank v3 104 waves, PcmOsc3, noise, drift, orbit shapes, Ensemble, MASTER) + v7: per-tone DUAL LFOs (lfo1_/lfo2_ rate/depth/sync/dest, suffix _a.._d; SYNC = 12 tempo divisions off host BPM via dreamer::toneLfoRateHz — replaces the single G-LFO tap; the G-LFO itself remains as the matrix source), flt_bal (PAR-mode weighted balance, SER-inert) |
-| GUI | v7 face: procedural brushed faceplate + corner screws (seeded, prototype-verbatim), preset ▲/▼ + browser (24 factory presets), TONES mixer strip w/ Ø24 pan mini-knobs, TONE EDIT reflow (RND, NOISE/NS COL, FILTER/AMPLITUDE/AUX banks), LFO1/LFO2 rows (synced RATE = yellow pointer + division label), AUX AMT± row, BAL 1↔2, DREAM VECTOR 420px w/ per-tone DIR/INT rows |
-| ⚠ Preset payloads | The v7 prototype's PRESETS array carries NAMES ONLY — the 24 factory patch payloads were AUTHORED during the GUI pass (base patch + per-preset overrides in app.js; P001 = boot state). Placeholder sound design pending real patches from the design track |
-| Flagged spec deviations | carried from v3 (tvf_env/flt1_env unipolar; loop-seam body-relative; aux_amt now on-panel per v7) + flt_bal defined PAR-only (SER identity preserved) |
-| Pending | user Cubase ear+eye pass; real factory preset sound design; V1.1 filters (entries 8-13 bypass); V2 DreamPlane (flt2_morph inert) |
-| Git | main pushed; share the-dreamer-src\ export refreshed |
+| Deployed version | **0.6.0 RC (FX v1.5 + v8)** — `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root); validator PASS all stages (staging×3, dsp×6, bundle, deploy×2, gui×2, pluginval strictness 8) |
+| Contracts | design-handoff/v8/ (DSP_BUILD/FEATURES §11 + GUI_2 README) is newest; supersedes v7 where it conflicts. ~250 params → Cubase FULL re-scan |
+| Engine | v3+v7 base + **FX v1.5**: modfx 7 modes (+Dimension/Rotary/Barberpole; extras p0..p3 drive them), standalone LO-FI/WIDTH/TALK stages (host-automatable only, not on panel), per-slot PARAMS (modfx/dly/rev p0..p3+pfocus; **dly/rev extras RESERVED/inert** — ports can't take knobs under rule 1), fx_prepost (LO-FI PRE/POST; WIDTH fixed POST), output peak meters. Bus order + RT-safety per architect review (see CLAUDE.md v1.5 decisions) |
+| GUI | v8 face on v7: header MIDI LEARN (**NON-FUNCTIONAL — deferred**) + stereo L/R meters (window.uiMeters, 30 Hz C++ feed); FX rows RATE/DEPTH/**PARAM**/MIX (PARAM binds modfx/dly/rev _p0, type-dependent label); modfx stepper 7 modes; Global-LFO + Vector SHAPE gain <> steppers; native proportional resize 50–200% + grip |
+| ⚠ Preset payloads | 24 factory patch payloads still AUTHORED placeholders (app.js) — real sound design pending from the design track |
+| Flagged deviations | dly/rev PARAMS reserved/inert (ports); FXPARAM matrix dest DEFERRED (no slot-selector in v8 matrix); MIDI learn deferred (button is a visual no-op); WIDTH fixed POST (F4); + carried v3/v7 (tvf_env/flt1_env unipolar, loop-seam body-relative, flt_bal PAR-only) |
+| Pending | user Cubase ear+eye pass; real factory presets; MIDI learn wiring; dly/rev PARAMS wiring (needs non-ported delay/reverb); FXPARAM matrix dest + pfocus GUI; V1.1 filters; V2 DreamPlane |
+| Git | committed via ship.ps1; share the-dreamer-src\ export refreshed |
 
 ### Phase-gate checklist (every phase, before merge)
 - [ ] cl.exe test harness(es) for the phase compile and print ALL CHECKS PASSED
@@ -56,6 +56,16 @@
 
 ## STATUS log (newest first)
 
+- 2026-07-18 (v1.5/v8) — FX v1.5 + v8 GUI (RC 0.6.0). Architect-reviewed FX
+  bus restructure: 3 new modfx modes (Dimension/Rotary/Barberpole) + LO-FI/
+  WIDTH/TALK stages + per-slot PARAMS extras + LO-FI pre/post; RT-safety
+  fixes (Barberpole feedback tanh+DC clamp, quadrature LFOs, quantize-on-hold,
+  fixed Haas, discrete de-click). test_fx_v15 harness. v8 GUI: 7-mode stepper,
+  FX PARAM knobs (p0), header meters + resize; MIDI learn button non-functional
+  (deferred). Full validator PASS; built+deployed via release.ps1, committed
+  via ship.ps1. Gotchas: dly/rev PARAMS extras are inert (ports can't take
+  knobs, rule 1); staging parser needs the CMake closing `)` on its own line;
+  bus is already stereo from per-tone pan (architect premise correction).
 - 2026-07-18 (v3) — DSP_BUILD phases 11-14 + GUI_SPEC renovation (RC 0.4.0).
   Bank v3 (loops baked from delivered WAVs via C++ tool, shots synthesized),
   PcmOsc3, noise, drift, vector upgrades, Ensemble, MASTER, §9 param relock

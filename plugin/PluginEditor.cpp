@@ -18,7 +18,7 @@ juce::StringArray makeSliderIds() {
                                "shape_depth", "noise", "noise_color",
                                "dir", "vint", "aux_amt",
                                "lfo1_rate", "lfo1_depth", "lfo2_rate", "lfo2_depth",
-                               "tvf_cut", "tvf_res", "tvf_env", "tvf_kf",
+                               "tvf_cut", "tvf_res", "tvf_env", "tvf_kf",  // (per-tone)
                                "tvf_a", "tvf_d", "tvf_s", "tvf_r",
                                "tva_a", "tva_d", "tva_s", "tva_r",
                                "aux_a", "aux_d", "aux_s", "aux_r" })
@@ -30,9 +30,9 @@ juce::StringArray makeSliderIds() {
                            "mtx1_amt", "mtx2_amt", "mtx3_amt",
                            "flt1_cut", "flt1_res", "flt1_env",
                            "flt2_cut", "flt2_res", "flt2_morph", "flt_bal",
-                           "modfx_rate", "modfx_depth", "modfx_mix",
-                           "dly_time", "dly_fb", "dly_mix",
-                           "rev_size", "rev_damp", "rev_mix",
+                           "modfx_rate", "modfx_depth", "modfx_mix", "modfx_p0",
+                           "dly_time", "dly_fb", "dly_mix", "dly_p0",
+                           "rev_size", "rev_damp", "rev_mix", "rev_p0",
                            "drift" })
         ids.add(s);
     return ids;
@@ -111,10 +111,25 @@ TheDreamerEditor::TheDreamerEditor(TheDreamerProcessor& p)
     addAndMakeVisible(*webView);
     webView->goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
 
+    // Cubase-style proportional resize (v8): 50%..200% of the design canvas,
+    // fixed aspect; the page's fit() scales the 1140x660 layout to the window.
     setResizable(true, true);
     getConstrainer()->setFixedAspectRatio((double)kBaseW / kBaseH);
-    setResizeLimits(kBaseW / 2, kBaseH / 2, kBaseW * 5 / 2, kBaseH * 5 / 2);
+    setResizeLimits(kBaseW / 2, kBaseH / 2, kBaseW * 2, kBaseH * 2);
     setSize(kBaseW, kBaseH);
+
+    startTimerHz(30);   // output-meter feed
+}
+
+//==============================================================================
+void TheDreamerEditor::timerCallback()
+{
+    // push the processor's per-block output peak to the page's header meters;
+    // peak-hold + decay live in the GUI (window.uiMeters).
+    if (webView != nullptr)
+        webView->evaluateJavascript(
+            "window.uiMeters && window.uiMeters({l:" + juce::String(processor.getMeterL(), 4)
+            + ",r:" + juce::String(processor.getMeterR(), 4) + "});");
 }
 
 //==============================================================================

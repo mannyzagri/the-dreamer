@@ -30,6 +30,14 @@
         "expect": ["ALL CHECKS PASSED"] }
     ]
   },
+  "staging": {
+    "binaryData": [
+      { "name": "assets",
+        "cmake": "CMakeLists.txt",
+        "required": ["check_native_interop.js", "index.js", "editor.html", "app.js", "style.css"],
+        "pages": ["plugin\\gui\\editor.html"] }
+    ]
+  },
   "bundle": {
     "built": "build\\TheDreamer_artefacts\\Release\\VST3\\The Dreamer.vst3",
     "versionFrom": { "file": "CMakeLists.txt", "regex": "project\\(TheDreamer VERSION ([0-9.]+)" },

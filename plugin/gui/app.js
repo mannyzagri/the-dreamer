@@ -100,7 +100,11 @@ const SYNCDIVS  = ["4/1", "2/1", "1/1", "1/2", "1/2T", "1/4",   // lfoN_sync lit
                    "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"];  // idx=round(v*11)
 const MSRC      = ["G-LFO", "VEC PHS", "AUX", "VELO", "WHEEL"];
 const MDST      = ["PITCH", "CUT 1", "CUT 2", "MORPH", "SHAPE", "VEC PHS", "PAN", "NOISE"];
-const MODFX     = ["CHORUS", "FLANGER", "PHASER", "ENSEMBLE"];
+const MODFX     = ["CHORUS", "FLANGER", "PHASER", "ENSEMBLE",   // v8: 7 entries,
+                   "DIMENSION", "ROTARY", "BARBERPOLE"];        // matches Params.h modfx_type
+// v8: MOD FX PARAM (p0) knob label tracks the algorithm's p0 meaning; modes
+// with no p0 meaning read "PARAM". Index = modfx_type choice index.
+const MODFXPARAM = ["PARAM", "PARAM", "PARAM", "SPREAD", "MODE", "SPEED", "DIR"];
 const DLYMODES  = ["DIGITAL", "TAPE", "PONG"];
 const REVTYPES  = ["ROOM", "HALL", "PLATE"];
 const TONES     = ["A", "B", "C", "D"];
@@ -378,9 +382,9 @@ const MOCK = { sliders: {}, toggles: {}, combos: {} };
     lfo_rate: .4, mtx1_amt: .8, mtx2_amt: .35, mtx3_amt: .5,
     flt1_cut: .52, flt1_res: .35, flt1_env: .5,
     flt2_cut: .7, flt2_res: .2, flt2_morph: .4, flt_bal: .5,
-    modfx_rate: .3, modfx_depth: .5, modfx_mix: .45,
-    dly_time: .5, dly_fb: .35, dly_mix: .3,
-    rev_size: .6, rev_damp: .4, rev_mix: .35, master: .78, drift: 0,
+    modfx_rate: .3, modfx_depth: .5, modfx_p0: .6, modfx_mix: .45,
+    dly_time: .5, dly_fb: .35, dly_p0: .4, dly_mix: .3,
+    rev_size: .6, rev_damp: .4, rev_p0: .62, rev_mix: .35, master: .78, drift: 0,
   });
   Object.assign(MOCK.toggles, {
     vec_orbit_on: true, vec_penv_on: false, vec_penv_loop: false,
@@ -559,10 +563,11 @@ function makeKnob(mount, o) {
   cap.append(capin, rot);
   skirt.appendChild(cap);
   wrap.appendChild(skirt);
+  let lblEl = null;
   if (o.label) {
-    const l = el("div", o.lblCls || "lbl");
-    l.textContent = o.label;
-    wrap.appendChild(l);
+    lblEl = el("div", o.lblCls || "lbl");
+    lblEl.textContent = o.label;
+    wrap.appendChild(lblEl);
   }
   mount.appendChild(wrap);
 
@@ -571,6 +576,7 @@ function makeKnob(mount, o) {
   const draw = () => {
     rot.style.transform = "rotate(" + (-135 + st().getNormalisedValue() * 270) + "deg)";
   };
+  draw.lblEl = lblEl;   // v8: exposed so a caller can retitle (MOD FX PARAM tracks the algorithm)
   o.states.forEach((s) => {
     s.valueChangedEvent.addListener(draw);
     s.propertiesChangedEvent.addListener(draw);
@@ -706,6 +712,18 @@ function drawGlyph() {
   });
 }
 makeKnob($("masterMount"), { states: [sliderState("master")], label: "MASTER", size: 40, touch: "MASTER" });
+
+// v8 MIDI LEARN button -- feature DEFERRED in this build. Rendered for visual
+// fidelity but purely cosmetic: clicking only toggles the "armed" LED. It maps
+// no CCs and calls no native function; it is intentionally NOT wired to params.
+{
+  const midiLed = $("midiLed");
+  let armed = false;
+  $("midiBtn").addEventListener("click", () => {
+    armed = !armed;
+    midiLed.classList.toggle("on", armed);
+  });
+}
 
 //==============================================================================
 // Preset apply: writes the complete patch (base + preset overrides) through
@@ -1090,11 +1108,12 @@ function bindToggleRow(ledId, btnId, state) {
 bindToggleRow("orbitLed", "orbitBtn", orbitState);
 bindToggleRow("penvLed", "penvBtn", penvState);
 
-// ORBIT SHAPE select below the display (menu, prototype behavior)
+// ORBIT SHAPE below the display: v8 <> stepper (center button opens the menu).
 const orbitShapeState = comboState("vec_orbit_shape");
 comboDraw([orbitShapeState], false, () => {
   $("orbitShapeBtn").textContent = ORBSHAPES[idx(orbitShapeState, ORBSHAPES.length)];
 });
+bindStep($("orbitShapeDec"), $("orbitShapeInc"), () => orbitShapeState, ORBSHAPES.length);
 $("orbitShapeBtn").addEventListener("click", () =>
   openMenu("ORBIT SHAPE", rowsOf(ORBSHAPES), idx(orbitShapeState, ORBSHAPES.length),
     (i) => orbitShapeState.setChoiceIndex(i)));
@@ -1246,6 +1265,43 @@ setInterval(() => {
 }, 40);
 
 //==============================================================================
+// Output meters (v8): the processor calls window.uiMeters({l, r}) at 30 Hz with
+// per-channel LINEAR peak (0..1). The receiver applies peak-hold with a x.82/
+// tick decay and paints the two header bars (fill height = held level). In the
+// standalone mock (no backend) a local animation synthesizes activity so the
+// meters are visibly lit for a headless screenshot.
+const meterFillL = $("meterFillL"), meterFillR = $("meterFillR");
+let mHoldL = 0, mHoldR = 0;
+window.uiMeters = function (o) {
+  const l = clamp01((o && o.l) || 0), r = clamp01((o && o.r) || 0);
+  mHoldL = Math.max(mHoldL * .82, l);          // peak-hold + decay
+  mHoldR = Math.max(mHoldR * .82, r);
+  meterFillL.style.height = Math.round(mHoldL * 100) + "%";
+  meterFillR.style.height = Math.round(mHoldR * 100) + "%";
+};
+// Mock driver only (no JUCE backend registered): master x summed active-tone
+// contribution along the vector + a little stereo noise, mirroring the proto.
+const IS_MOCK = !(Array.isArray(initData.__juce__sliders) && initData.__juce__sliders.includes("master"));
+if (IS_MOCK) {
+  const masterState = sliderState("master");
+  const levelStates = tSliders("level");
+  const synth = () => {
+    const m = masterState.getNormalisedValue();
+    let act = 0;
+    for (let i = 0; i < 4; i++)
+      if (toneOnStates[i].getValue()) {
+        const c = Math.max(0, Math.cos(uiPhase * 2 * Math.PI - dirStates[i].getNormalisedValue() * 2 * Math.PI));
+        act += levelStates[i].getNormalisedValue() * (.4 + .6 * c * c);
+      }
+    act /= 4;
+    const base = m * (.4 + act * .95);
+    window.uiMeters({ l: base * (.85 + Math.random() * .3), r: base * (.85 + Math.random() * .3) });
+  };
+  synth();                     // prime, so a single-frame headless capture is lit
+  setInterval(synth, 33);      // ~30 Hz
+}
+
+//==============================================================================
 // MOD MATRIX: 3 slots (SRC > DST, 26px BIPOLAR AMT knob w/ center detent,
 // |amt| bar yellow=positive / red=negative) + G-LFO.
 for (let n = 1; n <= 3; n++) {
@@ -1303,33 +1359,58 @@ for (let n = 1; n <= 3; n++) {
   $("mtxRows").appendChild(row);
 }
 
-// GLOBAL LFO: RATE knob + wave cycle button
+// GLOBAL LFO: RATE knob + v8 <> shape stepper (center button opens the menu).
 makeKnob($("glfoRateMount"), { states: [sliderState("lfo_rate")], label: "RATE", size: 30, touch: "G-LFO RATE" });
 const glfoWaveState = comboState("lfo_shape");
 comboDraw([glfoWaveState], false, () => {
   $("glfoWaveBtn").textContent = GLFOWAVES[idx(glfoWaveState, GLFOWAVES.length)];
 });
+bindStep($("glfoWaveDec"), $("glfoWaveInc"), () => glfoWaveState, GLFOWAVES.length);
 $("glfoWaveBtn").addEventListener("click", () =>
-  glfoWaveState.setChoiceIndex((idx(glfoWaveState, GLFOWAVES.length) + 1) % GLFOWAVES.length));
+  openMenu("GLOBAL LFO SHAPE", rowsOf(GLFOWAVES), idx(glfoWaveState, GLFOWAVES.length),
+    (i) => glfoWaveState.setChoiceIndex(i)));
 
 //==============================================================================
-// FX: MOD / DELAY / REVERB rows (type button opens menu, 3 knobs, LED+on).
+// FX: MOD / DELAY / REVERB rows. v8: <> type stepper (center button opens the
+// menu; arrows step with wrap), FOUR knobs O30 at 36px pitch where the 3rd is
+// a yellow-pointer PARAM bound to the slot's p0 relay (modfx_p0 / dly_p0 /
+// rev_p0 -- they exist in Params.h). For MOD FX the PARAM label tracks the
+// algorithm's p0 meaning (MODFXPARAM); DELAY/REVERB extras are reserved in this
+// build and simply read "PARAM". LED + on/off at the right.
 function fxRow(name, typeId, typeArr, menuTitle, knobDefs, onId, divider) {
   const row = el("div", "fxrow");
   const nm = el("div", "fxname"); nm.textContent = name;
-  const typeBtn = el("div", "cbtn"); typeBtn.style.width = "56px";
-  row.append(nm, typeBtn);
+  const dec = el("div", "step stepn"); dec.textContent = "<";
+  const typeBtn = el("div", "cbtn fxtype");
+  const inc = el("div", "step stepn"); inc.textContent = ">";
+  row.append(nm, dec, typeBtn, inc);
 
   const typeState = comboState(typeId);
+  const isMod = typeId === "modfx_type";
   comboDraw([typeState], false, () => {
     typeBtn.textContent = typeArr[idx(typeState, typeArr.length)];
   });
+  bindStep(dec, inc, () => typeState, typeArr.length);
   typeBtn.addEventListener("click", () =>
     openMenu(menuTitle, rowsOf(typeArr), idx(typeState, typeArr.length),
       (i) => typeState.setChoiceIndex(i)));
 
-  knobDefs.forEach(([id, lbl]) => {
-    makeKnob(row, { states: [sliderState(id)], label: lbl, size: 32, touch: name + " " + lbl });
+  // PARAM (p0) label: dynamic for MOD FX (algorithm p0 name), else "PARAM".
+  const paramLbl = () => (isMod ? MODFXPARAM[idx(typeState, typeArr.length)] : "PARAM");
+  knobDefs.forEach(([id, lbl], ki) => {
+    const isParam = ki === 2;
+    const kd = makeKnob(row, {
+      states: [sliderState(id)], size: 30, w: 36,
+      label: isParam ? paramLbl() : lbl,
+      ptr: isParam ? "#ffd23f" : null,
+      touch: isParam ? (() => name + " " + paramLbl()) : (name + " " + lbl),
+    });
+    if (isParam && isMod) {   // retitle the PARAM knob when the algorithm changes
+      const relabel = () => { if (kd.lblEl) kd.lblEl.textContent = paramLbl(); };
+      typeState.valueChangedEvent.addListener(relabel);
+      typeState.propertiesChangedEvent.addListener(relabel);
+      relabel();
+    }
   });
 
   const right = el("div", "fxright");
@@ -1347,11 +1428,14 @@ function fxRow(name, typeId, typeArr, menuTitle, knobDefs, onId, divider) {
   if (divider) $("fxRows").appendChild(el("div", "fxdiv"));
 }
 fxRow("MOD", "modfx_type", MODFX, "MOD FX TYPE",
-  [["modfx_rate", "RATE"], ["modfx_depth", "DEPTH"], ["modfx_mix", "MIX"]], "modfx_on", true);
+  [["modfx_rate", "RATE"], ["modfx_depth", "DEPTH"], ["modfx_p0", "PARAM"], ["modfx_mix", "MIX"]],
+  "modfx_on", true);
 fxRow("DELAY", "dly_mode", DLYMODES, "DELAY MODE",
-  [["dly_time", "TIME"], ["dly_fb", "FB"], ["dly_mix", "MIX"]], "dly_on", true);
+  [["dly_time", "TIME"], ["dly_fb", "FB"], ["dly_p0", "PARAM"], ["dly_mix", "MIX"]],
+  "dly_on", true);
 fxRow("REVERB", "rev_type", REVTYPES, "REVERB TYPE",
-  [["rev_size", "SIZE"], ["rev_damp", "DAMP"], ["rev_mix", "MIX"]], "rev_on", false);
+  [["rev_size", "SIZE"], ["rev_damp", "DAMP"], ["rev_p0", "PARAM"], ["rev_mix", "MIX"]],
+  "rev_on", false);
 
 //==============================================================================
 // Tone selection (UI-only): rebinds the TONE EDIT group + LCD tone label.
@@ -1391,6 +1475,8 @@ if (location.search.indexOf("ens") >= 0) {
   waveStates[0].setChoiceIndex(82);              // Ens: SOLINA_DREAM
   comboState("modfx_type").setChoiceIndex(3);    // ENSEMBLE
 }
+const modfxFlag = location.search.match(/modfx=(\d+)/);   // dev: force MOD FX algorithm (0..6)
+if (modfxFlag) comboState("modfx_type").setChoiceIndex(parseInt(modfxFlag[1], 10));
 if (location.search.indexOf("flat") >= 0) $("plate").style.display = "none";
 if (location.search.indexOf("stars") >= 0) $("stars").style.display = "block";
 if (location.search.indexOf("presets") >= 0)
@@ -1401,10 +1487,14 @@ if (location.search.indexOf("penv") >= 0)
   openPenv();
 
 //==============================================================================
-// Uniform scaling of the fixed 1140x660 canvas (no scrollbars, centered).
+// Uniform scaling of the fixed 1140x660 canvas (no scrollbars, centered). The
+// native plugin window is the AUTHORITATIVE resize (JUCE fixes the aspect and
+// fires resize -> fit(), which scales to innerWidth/innerHeight); the v8 grip
+// adds a cosmetic in-page zoom (uiScale) composed on top, so both paths agree.
 const BASE_W = 1140, BASE_H = 660;
+let uiScale = 1;
 function fit() {
-  const s = Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H);
+  const s = Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H) * uiScale;
   const f = $("frame");
   f.style.transform = "scale(" + s + ")";
   f.style.left = Math.max(0, (window.innerWidth - BASE_W * s) / 2) + "px";
@@ -1412,3 +1502,28 @@ function fit() {
 }
 window.addEventListener("resize", fit);
 fit();
+
+// v8 resize grip: drag = cosmetic zoom (.5..2) via uiScale (LCD shows GUI SIZE);
+// double-click returns to the native fit. Calls no native function -- the real
+// window size is driven by the host/JUCE, and fit() reasserts on the next
+// resize event so the grip and the native path never disagree.
+{
+  const grip = $("grip");
+  grip.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const y0 = e.clientY, u0 = uiScale;
+    try { grip.setPointerCapture(e.pointerId); } catch (err) {}
+    const mv = (ev) => {
+      uiScale = Math.min(2, Math.max(.5, u0 + (ev.clientY - y0) / 660));
+      setTouched("GUI SIZE", (uiScale - .5) / 1.5);
+      fit();
+    };
+    const up = () => {
+      grip.removeEventListener("pointermove", mv);
+      grip.removeEventListener("pointerup", up);
+    };
+    grip.addEventListener("pointermove", mv);
+    grip.addEventListener("pointerup", up);
+  });
+  grip.addEventListener("dblclick", () => { uiScale = 1; fit(); });
+}
