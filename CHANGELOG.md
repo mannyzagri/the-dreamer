@@ -3,6 +3,26 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-18 (V1.1 filters) — **RC 1.1.0**. User report: "except LP/BP/HP/
+  LADDER, no filter modes work." Measured first (3 cl.exe probes driving
+  GlobalFilter exactly like the processor): LIQUID/CLASSIC filter correctly
+  with unity passband and full cutoff/res response; LADDER is authentically
+  gentle; and the real "don't work" is that **types 7-13 were bypass
+  placeholders**. Implemented the V1.1 set as new glue `dsp/glue/FilterExtra.h`
+  (rule-1 safe — no ported code touched): NOTCH (RBJ band-reject), COMB+/COMB−
+  (delay-line feedback comb, ±feedback), N+LP (notch → 12 dB LP), FORMANT
+  (3 vowel-bandpass resonators sweeping A→U by CUT, 2.2× makeup), ALLPASS
+  (4× cascaded allpass 50/50 dry mix → swept phase notches). Routed from
+  GlobalFilter for type 7-12; DreamPln(13) stays V2 bypass. Also put the Rhino
+  path (LIQUID/CLASSIC/LADDER) through the same output `safety()` clamp it had
+  been skipping (latent runaway fix). New harness `test_filter_extra`
+  (notch rejects centre, comb combs, N+LP low-passes, formant peaks, allpass
+  ~flat, all bounded < 1.6 at max res; regression that 0-6 still filter).
+  **No new parameters** (the 14 filter choices already existed) → moduleinfo
+  byte-identical, no forced re-scan. NOT done: LIQUID/CLASSIC "never filters"
+  could not be reproduced — flagged for the user to re-check after a FULL
+  Cubase restart (WebView2 cache). Validator 19/19 PASS (pluginval 8).
+
 - 2026-07-18 (v11 GUI) — **RC 1.0.0**. Design-handoff GUI_4 (v11) integrated +
   two engine additions. (1) **On-screen keyboard + pitch/mod wheel strip**:
   panel 1140×660→1140×864; keys→noteOn/off, PITCH wheel→pitch-bend (±2 st,
