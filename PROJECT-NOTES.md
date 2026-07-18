@@ -4,11 +4,12 @@
 > block. STATE is OVERWRITE-ONLY: update it in place as the last act of a work
 > pass — never append a second STATE block.
 
-## STATE (updated 2026-07-18, RC 0.6.0 — FX v1.5 + v8 GUI, validator all-stages PASS)
+## STATE (updated 2026-07-18, RC 0.7.0 — loops v2 (26 loops), validator all-stages PASS)
 
 | Item | Value |
 |---|---|
-| Deployed version | **0.6.0 RC (FX v1.5 + v8)** — `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root); validator PASS all stages (staging×3, dsp×6, bundle, deploy×2, gui×2, pluginval strictness 8) |
+| Deployed version | **0.7.0 RC (FX v1.5 + v8 + loops v2)** — `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root); validator PASS all stages (pluginval 8) |
+| Bank | **114 waves** = 78 cycles + **26 Ens loops** (v1's 16 at indices 78-93 held stable + v2 batch2's 10 string/choir/vox at 94-103) + 10 Shot (104-113). Loops baked from assets/loops/*.wav by tools/bake_loops_header.cpp; recipes tools/bake_loops.py + bake_loops2.py. LoopBankData.h = 6.13 MB int16 (exceeds §1's <5 MB soft target — consequence of 26 loops; not blocking). NOTE: "bank2"/rompler-bank-v2 (the 78 cycles) was already fully in since v1 — the share copy only differed by CRLF. |
 | Contracts | design-handoff/v8/ (DSP_BUILD/FEATURES §11 + GUI_2 README) is newest; supersedes v7 where it conflicts. ~250 params → Cubase FULL re-scan |
 | Engine | v3+v7 base + **FX v1.5**: modfx 7 modes (+Dimension/Rotary/Barberpole; extras p0..p3 drive them), standalone LO-FI/WIDTH/TALK stages (host-automatable only, not on panel), per-slot PARAMS (modfx/dly/rev p0..p3+pfocus; **dly/rev extras RESERVED/inert** — ports can't take knobs under rule 1), fx_prepost (LO-FI PRE/POST; WIDTH fixed POST), output peak meters. Bus order + RT-safety per architect review (see CLAUDE.md v1.5 decisions) |
 | GUI | v8 face on v7: header MIDI LEARN (**NON-FUNCTIONAL — deferred**) + stereo L/R meters (window.uiMeters, 30 Hz C++ feed); FX rows RATE/DEPTH/**PARAM**/MIX (PARAM binds modfx/dly/rev _p0, type-dependent label); modfx stepper 7 modes; Global-LFO + Vector SHAPE gain <> steppers; native proportional resize 50–200% + grip |
@@ -56,6 +57,13 @@
 
 ## STATUS log (newest first)
 
+- 2026-07-18 (loops v2) — loop bank v1→v2 (RC 0.7.0). Added the 10 batch2
+  string/choir/vox loops (dreamer-loops-v2.zip / bake_loops2.py) appended
+  after v1's 16 (indices 94-103; v1 78-93 byte-identical, shots shift to
+  104-113). Re-baked LoopBankData.h (26 loops, 6.13 MB), Bank3.h kNumLoops
+  26, kNumWaveforms 114, test_bank3 + wave-list + app.js WAVES all to 114.
+  Found: "bank2" (rompler-bank-v2, the 78 cycles) was ALREADY incorporated —
+  the share copy differed only by CRLF. Full validator PASS; released 0.7.0.
 - 2026-07-18 (v1.5/v8) — FX v1.5 + v8 GUI (RC 0.6.0). Architect-reviewed FX
   bus restructure: 3 new modfx modes (Dimension/Rotary/Barberpole) + LO-FI/
   WIDTH/TALK stages + per-slot PARAMS extras + LO-FI pre/post; RT-safety

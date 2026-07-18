@@ -94,14 +94,24 @@ const WAVES = [
   { cat: "Ens", name: "VOICE_OF_STEEL", tag: "ENS" },   // 91
   { cat: "Ens", name: "BELL_GARDEN", tag: "ENS" },   // 92
   { cat: "Ens", name: "ACID_MIRAGE", tag: "ENS" },   // 93
-  { cat: "Shot", name: "CHIFF", tag: "SHOT" },   // 94
-  { cat: "Shot", name: "BREATH", tag: "SHOT" },   // 95
-  { cat: "Shot", name: "CLICK", tag: "SHOT" },   // 96
-  { cat: "Shot", name: "MALLET_TICK", tag: "SHOT" },   // 97
-  { cat: "Shot", name: "NOISE_SWELL", tag: "SHOT" },   // 98
-  { cat: "Shot", name: "GLASS_TICK", tag: "SHOT" },   // 99
-  { cat: "Shot", name: "VOX_PLOSIVE", tag: "SHOT" },   // 100
-  { cat: "Shot", name: "METAL_HIT", tag: "SHOT" },   // 101
-  { cat: "Shot", name: "SUB_THUMP", tag: "SHOT" },   // 102
-  { cat: "Shot", name: "TAPE_START", tag: "SHOT" },   // 103
+  { cat: "Ens", name: "ETHEREAL_CHOIR", tag: "ENS" },   // 94
+  { cat: "Ens", name: "OPERA_VIOLA", tag: "ENS" },   // 95
+  { cat: "Ens", name: "CELLO_CHOIR", tag: "ENS" },   // 96
+  { cat: "Ens", name: "STEEL_CHOIR", tag: "ENS" },   // 97
+  { cat: "Ens", name: "CHROME_VOICES", tag: "ENS" },   // 98
+  { cat: "Ens", name: "ORACLE", tag: "ENS" },   // 99
+  { cat: "Ens", name: "STRING_OCTAVES", tag: "ENS" },   // 100
+  { cat: "Ens", name: "GHOST_ORCHESTRA", tag: "ENS" },   // 101
+  { cat: "Ens", name: "VIOLIN_SERAPH", tag: "ENS" },   // 102
+  { cat: "Ens", name: "CATHEDRAL_STRINGS", tag: "ENS" },   // 103
+  { cat: "Shot", name: "CHIFF", tag: "SHOT" },   // 104
+  { cat: "Shot", name: "BREATH", tag: "SHOT" },   // 105
+  { cat: "Shot", name: "CLICK", tag: "SHOT" },   // 106
+  { cat: "Shot", name: "MALLET_TICK", tag: "SHOT" },   // 107
+  { cat: "Shot", name: "NOISE_SWELL", tag: "SHOT" },   // 108
+  { cat: "Shot", name: "GLASS_TICK", tag: "SHOT" },   // 109
+  { cat: "Shot", name: "VOX_PLOSIVE", tag: "SHOT" },   // 110
+  { cat: "Shot", name: "METAL_HIT", tag: "SHOT" },   // 111
+  { cat: "Shot", name: "SUB_THUMP", tag: "SHOT" },   // 112
+  { cat: "Shot", name: "TAPE_START", tag: "SHOT" },   // 113
 ];
