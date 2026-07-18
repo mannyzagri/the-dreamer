@@ -1,17 +1,18 @@
-// The Dreamer v2 -- 24-voice 4-tone vector ROMpler, VST3 (FEATURES.md CORE).
-// Engine: dsp/glue/DreamVoice.h (4 tones: PcmOscillator -> Waveshaper ->
-// ToneSvf -> TVA, AUX env, G-LFO taps, Dream Vector v4, pan; single global
-// LFO; 3-slot mod matrix). Bus per FEATURES section 5/8:
-//   stereo tone sum -> GLOBAL FILTERS 1/2 (SER/PAR) -> [vintage Truncate16]
-//   -> volume -> MOD FX (chorus|flanger|phaser) -> DELAY (mono-sum in,
-//   stereo wet) -> REVERB (room/hall/plate) -> output.
-// Rubber-Rhino stages beyond the panel (dist, comp, clip, instability,
-// spring) run at their bit-transparent defaults and are OMITTED (documented).
+// The Dreamer v3 -- 24-voice 4-tone vector ROMpler, VST3.
+// Engine: dsp/glue/DreamVoice.h (bank v3 Cycle/Loop/OneShot, noise,
+// humanize drift, Dream Vector w/ orbit shapes, mod matrix). Bus:
+//   stereo tone sum -> GLOBAL FILTERS 1/2 (SER/PAR) -> dcblock ->
+//   [vintage Truncate16] -> fixed pre-FX headroom -> MOD FX (chorus |
+//   flanger | phaser | ENSEMBLE) -> DELAY (mono-sum in) -> REVERB ->
+//   MASTER (post-FX, smoothed -- the mapped output parameter).
+// Parameters: DSP_BUILD.md section 9 canonical table (see Params.h for the
+// flagged additions). Normalized 0..1 -> unit maps live in this file.
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include "dsp/glue/DreamVoice.h"
 #include "dsp/glue/GlobalFilter.h"
+#include "dsp/glue/Ensemble.h"
 #include "dsp/ported/fx/Effects.h"      // DCBlocker, Truncate16, StereoDelay
 #include "dsp/ported/fx/ModFx.h"        // ModDelayFx, Phaser
 
@@ -59,13 +60,12 @@ private:
 
     void buildPatch(dreamer::DreamPatch& p) const;
 
-    // ---- engine -------------------------------------------------------------
     dreamer::DreamSynth   synth;
     int lastOversample = 0;
 
-    // ---- bus ---------------------------------------------------------------
     dreamer::GlobalFilter f1[2], f2[2];         // [L, R] per slot
     dreamer::DCBlocker    dcBlock[2];
+    dreamer::Ensemble     ensemble;
     dreamer::StereoDelay  delay;
     dreamer::ModDelayFx   chorus, flanger;
     dreamer::Phaser       phaser;
@@ -73,34 +73,36 @@ private:
     std::vector<float>    reverbWetL, reverbWetR;
     struct RevCache { int type = -1; float size = -1.0f, damp = -1.0f; } revCache;
     bool reverbWasActive = false;
-    int  gfCtrl = 0;                            // global-filter control counter
+    int  gfCtrl = 0;
 
-    juce::SmoothedValue<float> volumeSmoothed, outputSmoothed;
+    juce::SmoothedValue<float> masterSmoothed;
 
-    // ---- cached raw parameter pointers -------------------------------------
     struct TonePtrs {
-        std::atomic<float> *on, *wave, *coarse, *fine, *level, *velsens, *start,
-                           *pan, *dir, *vint, *shapeType, *shapeDepth,
-                           *tvfType, *cutoff, *reso, *envAmt, *keyfollow,
-                           *tvfA, *tvfD, *tvfS, *tvfR, *tvaA, *tvaD, *tvaS, *tvaR,
-                           *auxA, *auxD, *auxS, *auxR, *auxDest, *auxAmt,
-                           *lfoDepth, *lfoDest;
+        std::atomic<float> *wave, *on, *level, *oct, *fine, *start, *startRandom,
+                           *velo, *pan, *shape, *shapeDepth, *noise, *noiseColor,
+                           *dir, *vint, *lfoDepth, *lfoDest, *auxDest, *auxAmt,
+                           *tvfType, *tvfCut, *tvfRes, *tvfEnv, *tvfKf,
+                           *tvfA, *tvfD, *tvfS, *tvfR,
+                           *tvaA, *tvaD, *tvaS, *tvaR,
+                           *auxA, *auxD, *auxS, *auxR;
     };
     TonePtrs pTone[4] {};
 
-    std::atomic<float> *pInterp, *pEngine, *pVolume, *pOutput,
-                       *pVecPhase, *pOrbitOn, *pOrbitRate,
-                       *pPenvOn, *pPenvLoop, *pPenvStart, *pPenvEnd, *pPenvTime,
-                       *pGlfoShape, *pGlfoRate,
-                       *pMtxSrc[3], *pMtxDest[3], *pMtxAmt[3],
-                       *pF1Type, *pF1Cutoff, *pF1Reso, *pF1Env,
-                       *pF2Type, *pF2Cutoff, *pF2Reso, *pF2Morph,
-                       *pFiltRouting,
-                       *pModfxOn, *pModfxType, *pModfxRate, *pModfxDepth, *pModfxMix,
-                       *pDelayOn, *pDelayMode, *pDelayTime, *pDelayFb, *pDelayMix,
-                       *pRevOn, *pRevType, *pRevSize, *pRevDamp, *pRevMix;
+    std::atomic<float> *pMaster,
+                       *pVecPhase, *pVecOrbitOn, *pVecOrbitRate, *pVecOrbitShape,
+                       *pVecOrbitVoice, *pVecPenvOn, *pVecPenvStart, *pVecPenvEnd,
+                       *pVecPenvTime, *pVecPenvLoop,
+                       *pFltRoute,
+                       *pFlt1Type, *pFlt1Cut, *pFlt1Res, *pFlt1Env,
+                       *pFlt2Type, *pFlt2Cut, *pFlt2Res, *pFlt2Morph,
+                       *pLfoRate, *pLfoShape,
+                       *pMtxSrc[3], *pMtxDst[3], *pMtxAmt[3],
+                       *pModfxType, *pModfxRate, *pModfxDepth, *pModfxMix, *pModfxOn,
+                       *pDlyMode, *pDlyTime, *pDlyFb, *pDlyMix, *pDlyOn,
+                       *pRevType, *pRevSize, *pRevDamp, *pRevMix, *pRevOn,
+                       *pDrift, *pInterp, *pEngine;
 
-    void cacheTonePtrs(TonePtrs& dst, const char* prefix);
+    void cacheTonePtrs(TonePtrs& dst, int toneIdx);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TheDreamerProcessor)
 };

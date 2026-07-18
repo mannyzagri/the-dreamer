@@ -1,6 +1,6 @@
-/* The Dreamer -- GUI v5 production stylesheet (design-handoff/gui-v5).
-   Fixed 1140x660 logical canvas, uniformly scaled by app.js fit().
-   Tokens + component specs verbatim from the v5 README / prototype. */
+/* The Dreamer -- GUI v6 production stylesheet (v5 face + v6 renovation,
+   design-handoff/v6/GUI_SPEC.md). Fixed 1140x660 logical canvas, uniformly
+   scaled by app.js fit(). Tokens + component specs verbatim from v5. */
 
 /* Fonts served from BinaryData by bare filename (fully offline). */
 @font-face{font-family:'Barlow Semi Condensed';font-style:normal;font-weight:600;
@@ -62,6 +62,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:#15172e}
 .step{width:20px;height:18px;flex:none;background:#181b34;border:1px solid #464e94;border-radius:2px;
   color:#c9cdf2;font:700 10px 'Barlow Semi Condensed';display:flex;align-items:center;justify-content:center;cursor:pointer}
 .step:active{background:#2c3160}
+.step.tiny{width:16px;height:12px;font-size:8px}
+.steprow{display:flex;gap:3px}
 .cbtn{height:18px;flex:none;background:#181b34;border:1px solid #464e94;border-radius:2px;color:#c9cdf2;
   font:700 8px 'Barlow Semi Condensed';display:flex;align-items:center;justify-content:center;cursor:pointer}
 .cbtn:active{background:#2c3160}
@@ -102,6 +104,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:#15172e}
 #gToneEdit{padding:16px 12px 8px;display:flex;flex-direction:column;gap:9px}
 .terow{display:flex;align-items:center;gap:6px}
 #teKnobs{display:flex;justify-content:space-between}
+.rndcol{display:flex;flex-direction:column;align-items:center;gap:3px;align-self:center;flex:none}
+.rndcol .pbtn{width:16px;height:12px}
 #teTvfRow{display:flex;align-items:flex-start;gap:10px}
 #tvfVert{font:700 9px 'Barlow Semi Condensed';color:#ff5b6e;letter-spacing:.14em;
   writing-mode:vertical-rl;transform:rotate(180deg);height:56px;display:flex;align-items:center}
@@ -165,7 +169,18 @@ html,body{width:100%;height:100%;overflow:hidden;background:#15172e}
 .mrow.cur{background:#ffd23f;color:#07070a}
 .mrow .mnum{width:20px;flex:none}
 .mrow .mcat{width:44px;flex:none}
+.mrow .mtag{margin-left:auto;flex:none;color:#7d84c0}   /* dim silkscreen entry-type tag */
+.mrow.cur .mtag{color:#07070a;opacity:.65}
 .lcd-scroll{scrollbar-width:thin;scrollbar-color:#3a3410 #07070a}
 .lcd-scroll::-webkit-scrollbar{width:6px}
 .lcd-scroll::-webkit-scrollbar-track{background:#07070a}
 .lcd-scroll::-webkit-scrollbar-thumb{background:#3a3410;border-radius:3px}
+
+/* ============ P-ENV mini page (small LCD page on scrim, wave-menu style) */
+#penvOverlay{position:absolute;inset:0;background:rgba(7,7,10,.82);display:none;
+  align-items:center;justify-content:center;z-index:10}
+#penvBox{width:250px;background:#07070a;border:1px solid #464e94;border-radius:4px;
+  box-shadow:0 8px 40px #000;padding:12px;display:flex;flex-direction:column;gap:10px}
+#penvHead{display:flex;justify-content:space-between;font:800 12px 'Doto';color:#ffd23f}
+#penvKnobs{display:flex;justify-content:space-around}
+#penvLoopRow{display:flex;align-items:center;gap:5px;justify-content:center}

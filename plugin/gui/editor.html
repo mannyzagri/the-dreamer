@@ -58,6 +58,10 @@
           <div id="tvfVert">TVF</div>
           <div id="tvfTypeCol">
             <div class="lcd ctr sm" id="tvfTypeLcd" style="width:36px;height:18px"></div>
+            <div class="steprow">
+              <div class="step tiny" id="tvfTypeDec">&lt;</div>
+              <div class="step tiny" id="tvfTypeInc">&gt;</div>
+            </div>
             <div class="plab7" style="letter-spacing:.08em">TYPE</div>
           </div>
           <div id="tvfKnobs"></div>
@@ -115,8 +119,10 @@
         <div id="vecRight">
           <div id="phaseMount"></div>
           <div id="rateMount"></div>
+          <div class="togrow"><div class="plab7">SHAPE</div><div class="cbtn" id="orbitShapeBtn" style="width:34px"></div></div>
           <div class="togrow"><div class="led" id="orbitLed"></div><div class="pbtn tog" id="orbitBtn"></div><div class="plab7">ORBIT</div></div>
-          <div class="togrow"><div class="led" id="penvLed"></div><div class="pbtn tog" id="penvBtn"></div><div class="plab7">P-ENV</div></div>
+          <div class="togrow"><div class="led" id="penvLed"></div><div class="pbtn tog" id="penvBtn"></div><div class="plab7" style="white-space:nowrap">P-ENV</div></div>
+          <div class="togrow"><div class="cbtn" id="penvEditBtn" style="width:34px">EDIT</div></div>
         </div>
       </div>
 
@@ -145,6 +151,19 @@
     <div id="menuBox">
       <div id="menuHead"><span id="menuTitle"></span><span>ESC=EXIT</span></div>
       <div id="menuList" class="lcd-scroll"></div>
+    </div>
+  </div>
+
+  <!-- ============ P-ENV mini page (small LCD page on scrim) ============ -->
+  <div id="penvOverlay">
+    <div id="penvBox">
+      <div id="penvHead"><span>P-ENV &mdash; VECTOR PATH</span><span>ESC=EXIT</span></div>
+      <div id="penvKnobs"></div>
+      <div id="penvLoopRow">
+        <div class="led" id="penvLoopLed"></div>
+        <div class="pbtn tog" id="penvLoopBtn"></div>
+        <div class="plab7">LOOP</div>
+      </div>
     </div>
   </div>
 </div>
