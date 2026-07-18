@@ -77,14 +77,16 @@ private:
 
     juce::SmoothedValue<float> masterSmoothed;
 
+    struct LfoPtrs { std::atomic<float> *rate, *depth, *sync, *dest; };
     struct TonePtrs {
         std::atomic<float> *wave, *on, *level, *oct, *fine, *start, *startRandom,
                            *velo, *pan, *shape, *shapeDepth, *noise, *noiseColor,
-                           *dir, *vint, *lfoDepth, *lfoDest, *auxDest, *auxAmt,
+                           *dir, *vint, *auxDest, *auxAmt,
                            *tvfType, *tvfCut, *tvfRes, *tvfEnv, *tvfKf,
                            *tvfA, *tvfD, *tvfS, *tvfR,
                            *tvaA, *tvaD, *tvaS, *tvaR,
                            *auxA, *auxD, *auxS, *auxR;
+        LfoPtrs lfo[2];
     };
     TonePtrs pTone[4] {};
 
@@ -92,7 +94,7 @@ private:
                        *pVecPhase, *pVecOrbitOn, *pVecOrbitRate, *pVecOrbitShape,
                        *pVecOrbitVoice, *pVecPenvOn, *pVecPenvStart, *pVecPenvEnd,
                        *pVecPenvTime, *pVecPenvLoop,
-                       *pFltRoute,
+                       *pFltRoute, *pFltBal,
                        *pFlt1Type, *pFlt1Cut, *pFlt1Res, *pFlt1Env,
                        *pFlt2Type, *pFlt2Cut, *pFlt2Res, *pFlt2Morph,
                        *pLfoRate, *pLfoShape,

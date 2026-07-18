@@ -5,22 +5,26 @@
 
 <!-- Fixed 1140x660 design canvas, uniformly scaled by app.js fit().
      Static skeleton only: repetitive controls (knobs, sliders, matrix/FX
-     rows, tone columns) are built by app.js into the mount points below
-     (house pattern, see rubber-rhino gui). -->
+     rows, tone columns, LFO rows, faceplate finish) are built by app.js
+     into the mount points below (house pattern, see rubber-rhino gui). -->
 <div id="frame">
   <div id="panel">
 
-    <!-- ============ header: logo / main LCD / MASTER / POWER ============ -->
+    <!-- ============ header: logo / preset steppers / main LCD / MASTER ==== -->
     <div id="hdr">
       <div id="logo">
         <div id="logoName">THE DREAMER</div>
         <div id="logoSub">12-BIT ROM VECTOR SYNTHESIZER</div>
       </div>
       <div id="lcdWrap">
+        <div id="pstep">
+          <div class="pstepbtn" id="presetUp">&#9650;</div>
+          <div class="pstepbtn" id="presetDn">&#9660;</div>
+        </div>
         <div id="mainLcd">
           <div id="waveGlyph"></div>
           <div id="lcdLines">
-            <div id="lcdRow1"><span>P042 ETHEREAL DAWN</span><span id="lcdTone">TONE A</span></div>
+            <div id="lcdRow1"><span id="presetLbl"></span><span id="lcdTone">TONE A</span></div>
             <div id="lcdRow2"><span id="lcdTouched"></span><span id="lcdMeter"></span></div>
           </div>
         </div>
@@ -32,7 +36,7 @@
       </div>
     </div>
 
-    <!-- ============ row 1: TONES / TONE EDIT / FILTERS ============ -->
+    <!-- ============ row 1: TONES (mixer) / TONE EDIT / FILTERS ============ -->
     <div id="row1">
 
       <div class="group" id="gTones">
@@ -58,28 +62,19 @@
           <div id="tvfVert">TVF</div>
           <div id="tvfTypeCol">
             <div class="lcd ctr sm" id="tvfTypeLcd" style="width:36px;height:18px"></div>
-            <div class="steprow">
-              <div class="step tiny" id="tvfTypeDec">&lt;</div>
-              <div class="step tiny" id="tvfTypeInc">&gt;</div>
-            </div>
             <div class="plab7" style="letter-spacing:.08em">TYPE</div>
           </div>
           <div id="tvfKnobs"></div>
+          <div class="bankdiv"></div>
           <div class="bank" id="bankTvf"></div>
+          <div class="bankdiv"></div>
           <div class="bank" id="bankTva"></div>
+          <div class="bankdiv"></div>
           <div class="bank" id="bankAux"></div>
         </div>
-        <div id="teLfoRow">
-          <div class="bttl">TONE LFO</div>
-          <div id="lfoDepthMount"></div>
-          <div class="plbl">DEST</div>
-          <div class="cbtn" id="lfoDestBtn" style="width:56px"></div>
-          <div style="width:16px"></div>
-          <div class="bttl">VECTOR</div>
-          <div id="vecMount" style="display:flex;gap:8px"></div>
-          <div style="flex:1"></div>
-          <div id="footnote">SHAPER + TVF + AUX + LFO + VECTOR + PAN ARE PER-TONE</div>
-        </div>
+        <div class="lfor" id="lfo1Row"></div>
+        <div class="lfor" id="lfo2Row"></div>
+        <div class="lfor" id="auxEnvRow"></div>
       </div>
 
       <div class="group" id="gFilters">
@@ -103,6 +98,7 @@
           <div class="ledlbl"><div class="led" id="serLed"></div><div class="plab8">SER</div></div>
           <div class="pbtn" id="routeBtn" style="width:34px;height:18px"></div>
           <div class="ledlbl"><div class="led" id="parLed"></div><div class="plab8">PAR</div></div>
+          <div id="fbalMount"></div>
         </div>
       </div>
     </div>
@@ -115,15 +111,20 @@
         <div id="vecLeft">
           <div id="flowBox"><svg id="flowSvg" viewBox="0 0 150 132"></svg></div>
           <div id="flowCap">SIGNAL FLOW &middot; PHASE</div>
+          <div class="togrow">
+            <div class="plab8" style="letter-spacing:.08em">SHAPE</div>
+            <div class="cbtn" id="orbitShapeBtn" style="width:40px;height:16px"></div>
+          </div>
         </div>
         <div id="vecRight">
           <div id="phaseMount"></div>
           <div id="rateMount"></div>
-          <div class="togrow"><div class="plab7">SHAPE</div><div class="cbtn" id="orbitShapeBtn" style="width:34px"></div></div>
           <div class="togrow"><div class="led" id="orbitLed"></div><div class="pbtn tog" id="orbitBtn"></div><div class="plab7">ORBIT</div></div>
           <div class="togrow"><div class="led" id="penvLed"></div><div class="pbtn tog" id="penvBtn"></div><div class="plab7" style="white-space:nowrap">P-ENV</div></div>
-          <div class="togrow"><div class="cbtn" id="penvEditBtn" style="width:34px">EDIT</div></div>
+          <div class="togrow"><div class="cbtn" id="penvEditBtn" style="width:40px;height:14px">EDIT</div></div>
         </div>
+        <div id="vecDiv"></div>
+        <div id="vecTones"></div>
       </div>
 
       <div class="group" id="gMatrix">
@@ -144,6 +145,11 @@
 
     <!-- version/build stamp, filled by the getInfo native call -->
     <div id="verStamp"></div>
+
+    <!-- faceplate finish overlays (built by app.js): seeded star-field
+         variant (off by default) + brushed-metal finish (default ON) -->
+    <div id="stars"></div>
+    <div id="plate"></div>
   </div>
 
   <!-- ============ menu overlay (scrim + LCD page) ============ -->
@@ -157,11 +163,11 @@
   <!-- ============ P-ENV mini page (small LCD page on scrim) ============ -->
   <div id="penvOverlay">
     <div id="penvBox">
-      <div id="penvHead"><span>P-ENV &mdash; VECTOR PATH</span><span>ESC=EXIT</span></div>
+      <div id="penvHead"><span>P-ENV &mdash; VECTOR PHASE ENVELOPE</span><span>ESC=EXIT</span></div>
       <div id="penvKnobs"></div>
       <div id="penvLoopRow">
-        <div class="led" id="penvLoopLed"></div>
-        <div class="pbtn tog" id="penvLoopBtn"></div>
+        <div class="led big" id="penvLoopLed"></div>
+        <div class="pbtn tog" id="penvLoopBtn" style="width:34px;height:22px"></div>
         <div class="plab7">LOOP</div>
       </div>
     </div>

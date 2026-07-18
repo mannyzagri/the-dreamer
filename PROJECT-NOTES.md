@@ -4,17 +4,17 @@
 > block. STATE is OVERWRITE-ONLY: update it in place as the last act of a work
 > pass — never append a second STATE block.
 
-## STATE (updated 2026-07-18, RC 0.4.0 — v3 engine + GUI_SPEC face, validator 14/14 PASS)
+## STATE (updated 2026-07-18, RC 0.5.0 — v7 handoff, validator 14/14 PASS)
 
 | Item | Value |
 |---|---|
-| Deployed version | **0.4.0 RC (DSP_BUILD phases 11-14 + GUI_SPEC renovation)** — `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root); validator PASS all stages (dsp×5 incl. bank3, bundle, deploy×2, gui×2, pluginval strictness 8) |
-| Contracts | design-handoff/v6/DSP_BUILD.md (WINS over FEATURES.md) + GUI_SPEC.md; §9 = canonical param table, implemented in plugin/Params.h (~192 params, suffix _a.._d, normalized 0..1; unit maps documented in PluginProcessor.cpp) |
-| Engine | v3: bank v3 (104 waves: 78 cycles + 16 Ens loops + 10 Shot one-shots, all 12-bit), PcmOsc3 (cycle bit-parity w/ v2, Loop/OneShot 32.32, START 0..1 + RANDOM), per-tone noise (level/color) + AUX/matrix NOISE dest, humanize drift (±3 cents), vector ORBIT SHAPE (5) + rate 0.02-8Hz + per-voice free-run, P-ENV loop, ENSEMBLE modfx (new glue), MASTER post-FX (0..1 def 0.78; fixed 0.5 pre-FX headroom) |
-| GUI | Renovated to GUI_SPEC: §9 rebind 100%, NOISE/NOISE COL/RND controls, TVF type stepper, vector SHAPE + P-ENV mini page, ENSEMBLE entry, bipolar matrix AMT (yellow/red bars), 104-wave overlay with [ENS]/[SHOT] tags. State-only (no panel): drift, vec_orbit_voice, aux_amt_[t], interp, engine |
-| Flagged spec deviations | aux_amt_[t] kept (user-approved §9 omission); vec_penv_loop + vec_orbit_voice added (§6); tvf_env/flt1_env UNIPOLAR per §9 (negative env unreachable — raise with spec track); loop-seam test body-relative (literal <2-quant-steps unsatisfiable on delivered WAVs) |
-| Plugin identity | `Mnsh`/`Drmr` — param LIST changed again → Cubase FULL re-scan |
-| Pending | user Cubase ear+eye pass; V1.1 filters (entries 8-13 bypass); V2 DreamPlane (flt2_morph inert) |
+| Deployed version | **0.5.0 RC (v7)** — `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root); validator 14/14 (dsp×5, bundle, deploy×2, gui×2, pluginval strictness 8) |
+| Contracts | design-handoff/v7/ (README + GUI_SPEC) supersedes v6 where it conflicts; DSP_BUILD.md §9 remains the base param contract (v7 adds per-tone dual LFOs). ~220 params → Cubase FULL re-scan again |
+| Engine | v3 base (bank v3 104 waves, PcmOsc3, noise, drift, orbit shapes, Ensemble, MASTER) + v7: per-tone DUAL LFOs (lfo1_/lfo2_ rate/depth/sync/dest, suffix _a.._d; SYNC = 12 tempo divisions off host BPM via dreamer::toneLfoRateHz — replaces the single G-LFO tap; the G-LFO itself remains as the matrix source), flt_bal (PAR-mode weighted balance, SER-inert) |
+| GUI | v7 face: procedural brushed faceplate + corner screws (seeded, prototype-verbatim), preset ▲/▼ + browser (24 factory presets), TONES mixer strip w/ Ø24 pan mini-knobs, TONE EDIT reflow (RND, NOISE/NS COL, FILTER/AMPLITUDE/AUX banks), LFO1/LFO2 rows (synced RATE = yellow pointer + division label), AUX AMT± row, BAL 1↔2, DREAM VECTOR 420px w/ per-tone DIR/INT rows |
+| ⚠ Preset payloads | The v7 prototype's PRESETS array carries NAMES ONLY — the 24 factory patch payloads were AUTHORED during the GUI pass (base patch + per-preset overrides in app.js; P001 = boot state). Placeholder sound design pending real patches from the design track |
+| Flagged spec deviations | carried from v3 (tvf_env/flt1_env unipolar; loop-seam body-relative; aux_amt now on-panel per v7) + flt_bal defined PAR-only (SER identity preserved) |
+| Pending | user Cubase ear+eye pass; real factory preset sound design; V1.1 filters (entries 8-13 bypass); V2 DreamPlane (flt2_morph inert) |
 | Git | main pushed; share the-dreamer-src\ export refreshed |
 
 ### Phase-gate checklist (every phase, before merge)

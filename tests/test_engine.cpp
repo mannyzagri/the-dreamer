@@ -298,20 +298,19 @@ int main(int argc, char** argv) {
         CHECK(c > 780 && c < 805, "aux env pitch +12 st");
     }
 
-    // ---- [glfo] ---------------------------------------------------------
-    std::printf("[glfo]\n");
+    // ---- [tonelfo] (v7 dual per-tone LFOs) ------------------------------
+    std::printf("[tonelfo]\n");
     {
         dreamer::DreamPatch pa = sinePatch();
         dreamer::DreamPatch pb = sinePatch();
-        pb.tone[0].lfoDepth = 0.0;   // depth 0, exotic settings
-        pb.tone[0].lfoDest  = 0;
+        pb.tone[0].lfo1 = { 0.95, 0.0, false, 0 };   // depth 0, exotic settings
+        pb.tone[0].lfo2 = { 0.10, 0.0, true, 2 };
         pb.glfoShape01 = 4; pb.glfoRate01 = 95.0;
         auto ra = render1s(pa), rb = render1s(pb);
-        CHECK(ra == rb, "depth-0 G-LFO tap is a bit-exact no-op");
+        CHECK(ra == rb, "depth-0 tone LFOs are a bit-exact no-op");
 
-        dreamer::DreamPatch pt = sinePatch();    // tremolo bounded
-        pt.tone[0].lfoDepth = 1.0; pt.tone[0].lfoDest = 3;
-        pt.glfoShape01 = 1;                       // SIN
+        dreamer::DreamPatch pt = sinePatch();        // tremolo bounded (LFO2)
+        pt.tone[0].lfo2 = { 0.6, 1.0, false, 3 };
         auto rt = render1s(pt);
         float peakA = 0, peakT = 0;
         for (size_t i = SR / 10; i < ra.size(); ++i) {
@@ -320,6 +319,22 @@ int main(int argc, char** argv) {
         }
         CHECK(peakT <= peakA * 1.0001f, "tremolo never exceeds dry");
         CHECK(peakT > 0.0f, "tremolo not silent");
+
+        // sync division map at 120 BPM: 1/1 (idx 2) = 0.5 Hz, 1/4 (idx 5) =
+        // 2 Hz, 1/16 (idx 9) = 8 Hz, 4/1 (idx 0) = 0.125 Hz
+        dreamer::ToneParams::ToneLfo s;
+        s.sync = true;
+        auto hzAt = [&](int idx) {
+            s.rate01 = idx / 11.0;
+            return dreamer::toneLfoRateHz(s, 120.0);
+        };
+        CHECK(std::fabs(hzAt(0) - 0.125) < 1e-9, "sync 4/1 = 0.125 Hz @120");
+        CHECK(std::fabs(hzAt(2) - 0.5)   < 1e-9, "sync 1/1 = 0.5 Hz @120");
+        CHECK(std::fabs(hzAt(5) - 2.0)   < 1e-9, "sync 1/4 = 2 Hz @120");
+        CHECK(std::fabs(hzAt(9) - 8.0)   < 1e-9, "sync 1/16 = 8 Hz @120");
+        s.sync = false; s.rate01 = 0.0;
+        CHECK(std::fabs(dreamer::toneLfoRateHz(s, 120.0) - 0.05) < 1e-4,
+              "free rate low end 0.05 Hz");
     }
 
     // ---- [matrix] -------------------------------------------------------
@@ -566,7 +581,7 @@ int main(int argc, char** argv) {
             t.tvfA = 0.6; t.tvfS = 0.7; t.tvfR = 0.8;
             t.tvaA = 0.4; t.tvaS = 0.9; t.tvaR = 1.0;
             t.shapeMode = (i == 3) ? 3 : 0; t.shapeDepth = 0.3;
-            t.lfoDepth = 0.12; t.lfoDest = 0;
+            t.lfo1 = { 0.45, 0.12, false, 0 };
         }
         p.vec.orbitOn = true; p.vec.orbitRate01 = 18.0;
         p.glfoShape01 = 1; p.glfoRate01 = 42.0;
