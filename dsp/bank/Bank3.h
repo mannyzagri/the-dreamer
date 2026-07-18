@@ -30,7 +30,7 @@ struct Waveform {
 };
 
 inline constexpr int kNumCycles    = rompler::bank::kNumWaveforms;   // 78
-inline constexpr int kNumLoops     = 16;
+inline constexpr int kNumLoops     = 26;   // v1 16 (indices 78-93) + v2 batch2 10 (94-103)
 inline constexpr int kNumShots     = 10;
 inline constexpr int kNumWaveforms = kNumCycles + kNumLoops + kNumShots;
 

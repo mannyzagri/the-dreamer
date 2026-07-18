@@ -5,7 +5,7 @@
 //     /Fo:tests\bin\ /Fe:tests\bin\test_bank3.exe
 //
 // Checks:
-//   [table]  104 entries (78 cycle + 16 Ens loops + 10 Shot), types/lengths
+//   [table]  114 entries (78 cycle + 26 Ens loops + 10 Shot), types/lengths
 //            sane, 12-bit low-nibble invariant across ALL entry types
 //   [parity] PcmOsc3 cycle path bit-identical to v2 PcmOscillator (several
 //            frequencies and sample rates, both interp modes)
@@ -40,7 +40,7 @@ int main() {
     // ---- [table] --------------------------------------------------------
     std::printf("[table]\n");
     {
-        CHECK(bank3::kNumWaveforms == 104, "104 waveforms total");
+        CHECK(bank3::kNumWaveforms == 114, "114 waveforms total");
         int badNibble = 0, badLen = 0;
         int nCycle = 0, nLoop = 0, nShot = 0;
         for (int w = 0; w < bank3::kNumWaveforms; ++w) {
@@ -63,7 +63,7 @@ int main() {
                 if (e.samples[i] & 0xF) { ++badNibble; break; }
         }
         std::printf("  cycles=%d loops=%d shots=%d\n", nCycle, nLoop, nShot);
-        CHECK(nCycle == 78 && nLoop == 16 && nShot == 10, "type counts");
+        CHECK(nCycle == 78 && nLoop == 26 && nShot == 10, "type counts");
         CHECK(badLen == 0, "lengths/roots sane");
         CHECK(badNibble == 0, "12-bit low-nibble invariant, all types");
     }

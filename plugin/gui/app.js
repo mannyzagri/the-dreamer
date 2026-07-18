@@ -29,7 +29,7 @@ const initData = window.__JUCE__.initialisationData;
 
 //==============================================================================
 // Choice lists -- order = APVTS choice index (LOCKED, Params.h). The wave
-// list is bank3 VERBATIM (104, bank3 order: 78 cycles + 16 [ENS] loops +
+// list is bank3 VERBATIM (114, bank3 order: 78 cycles + 26 [ENS] loops +
 // 10 [SHOT] one-shots); display uppercases at render time, tag shows
 // right-aligned in the overlay. (The v7 README's "0-77" line is stale --
 // the 104-wave bank3 freeze in Params.h is authoritative.)
@@ -81,6 +81,11 @@ const WAVES = [
   { cat: "Ens", name: "SAW_CLOUD", tag: "ENS" },       { cat: "Ens", name: "TANNERIN_GHOST", tag: "ENS" },
   { cat: "Ens", name: "ORGAN_MASS", tag: "ENS" },      { cat: "Ens", name: "VOICE_OF_STEEL", tag: "ENS" },
   { cat: "Ens", name: "BELL_GARDEN", tag: "ENS" },     { cat: "Ens", name: "ACID_MIRAGE", tag: "ENS" },
+  { cat: "Ens", name: "ETHEREAL_CHOIR", tag: "ENS" },  { cat: "Ens", name: "OPERA_VIOLA", tag: "ENS" },
+  { cat: "Ens", name: "CELLO_CHOIR", tag: "ENS" },     { cat: "Ens", name: "STEEL_CHOIR", tag: "ENS" },
+  { cat: "Ens", name: "CHROME_VOICES", tag: "ENS" },   { cat: "Ens", name: "ORACLE", tag: "ENS" },
+  { cat: "Ens", name: "STRING_OCTAVES", tag: "ENS" },  { cat: "Ens", name: "GHOST_ORCHESTRA", tag: "ENS" },
+  { cat: "Ens", name: "VIOLIN_SERAPH", tag: "ENS" },   { cat: "Ens", name: "CATHEDRAL_STRINGS", tag: "ENS" },
   { cat: "Shot", name: "CHIFF", tag: "SHOT" },         { cat: "Shot", name: "BREATH", tag: "SHOT" },
   { cat: "Shot", name: "CLICK", tag: "SHOT" },         { cat: "Shot", name: "MALLET_TICK", tag: "SHOT" },
   { cat: "Shot", name: "NOISE_SWELL", tag: "SHOT" },   { cat: "Shot", name: "GLASS_TICK", tag: "SHOT" },

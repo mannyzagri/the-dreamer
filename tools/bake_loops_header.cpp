@@ -21,12 +21,17 @@
 #include <vector>
 
 static const char* kLoopNames[] = {
+    // v1 batch (bake_loops.py order) -- indices 0..15 held STABLE
     "STRINGBOX_ENS", "CATHEDRAL", "CHOIR_MORPH", "GLASS_CHOIR",
     "SOLINA_DREAM", "CELLO_SECTION", "THEREMIN_SWARM", "DARK_BREATH",
     "FM_HALO", "SPECTRAL_TIDE", "SAW_CLOUD", "TANNERIN_GHOST",
     "ORGAN_MASS", "VOICE_OF_STEEL", "BELL_GARDEN", "ACID_MIRAGE",
+    // v2 batch2 (bake_loops2.py order) -- appended 16..25
+    "ETHEREAL_CHOIR", "OPERA_VIOLA", "CELLO_CHOIR", "STEEL_CHOIR",
+    "CHROME_VOICES", "ORACLE", "STRING_OCTAVES", "GHOST_ORCHESTRA",
+    "VIOLIN_SERAPH", "CATHEDRAL_STRINGS",
 };
-static const int kNumLoops = 16;
+static const int kNumLoops = 26;
 
 // minimal RIFF/WAVE reader: 16-bit mono PCM, chunk-walks to "data"
 static bool readWav(const std::string& path, std::vector<int16_t>& out, uint32_t& sr) {
