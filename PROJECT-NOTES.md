@@ -4,18 +4,18 @@
 > block. STATE is OVERWRITE-ONLY: update it in place as the last act of a work
 > pass — never append a second STATE block.
 
-## STATE (updated 2026-07-18, RC 0.3.0 — v2 engine + WebView GUI, validator 13/13 PASS)
+## STATE (updated 2026-07-18, RC 0.4.0 — v3 engine + GUI_SPEC face, validator 14/14 PASS)
 
 | Item | Value |
 |---|---|
-| Deployed version | **0.3.0 RC (v2 engine + v5 WebView GUI)** — `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root), built 2026-07-18; validator PASS all stages (dsp×4, bundle, deploy×2, gui×2, pluginval strictness 8 incl. editor tests) |
-| Engine | v2 per design-handoff/FEATURES.md CORE: 4 tones/voice (osc→shaper→SVF TVF→TVA, AUX env, G-LFO taps, pan), Dream Vector v4, 3-slot mod matrix, 2 global filters (frozen 14-type list, 7 live) SER/PAR, FX = modfx→delay→reverb. 24 voices |
-| GUI | **WebView2 editor SHIPPED** (design handoff v5, pixel-faithful): plugin/gui/ editor.html+style.css+app.js + JUCE helpers + 4 committed fonts; ~185 relay bindings by APVTS ID; 1140×660 fixed-aspect; standalone-mock mode for headless-Chrome checks; MASTER knob = volume. No-panel params (penv start/end/time/loop, aux_amt, output, interp, engine) are host-automatable only — flag to design track for a future GUI rev (aux_amt especially: AUX env has no amount knob on the v5 panel) |
-| Plugin identity | "The Dreamer", VST3, `Mnsh`/`Drmr` — param LIST changed vs 0.1.0 → Cubase FULL re-scan; WebView2 runtime needed on the host (evergreen, Cubase machine has it) |
-| Current phase | gui/webview-v5 merged; awaiting user Cubase ear+eye pass |
-| Pending | user Cubase pass; V1.1 filters (global list entries 8-13 currently bypass); V2 DreamPlane (f2_morph inert until then) |
-| Git | main pushed to mannyzagri/the-dreamer; share the-dreamer-src\ export refreshed |
-| Build plan | design-handoff/FEATURES.md §9 phases + gui-v5 README |
+| Deployed version | **0.4.0 RC (DSP_BUILD phases 11-14 + GUI_SPEC renovation)** — `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root); validator PASS all stages (dsp×5 incl. bank3, bundle, deploy×2, gui×2, pluginval strictness 8) |
+| Contracts | design-handoff/v6/DSP_BUILD.md (WINS over FEATURES.md) + GUI_SPEC.md; §9 = canonical param table, implemented in plugin/Params.h (~192 params, suffix _a.._d, normalized 0..1; unit maps documented in PluginProcessor.cpp) |
+| Engine | v3: bank v3 (104 waves: 78 cycles + 16 Ens loops + 10 Shot one-shots, all 12-bit), PcmOsc3 (cycle bit-parity w/ v2, Loop/OneShot 32.32, START 0..1 + RANDOM), per-tone noise (level/color) + AUX/matrix NOISE dest, humanize drift (±3 cents), vector ORBIT SHAPE (5) + rate 0.02-8Hz + per-voice free-run, P-ENV loop, ENSEMBLE modfx (new glue), MASTER post-FX (0..1 def 0.78; fixed 0.5 pre-FX headroom) |
+| GUI | Renovated to GUI_SPEC: §9 rebind 100%, NOISE/NOISE COL/RND controls, TVF type stepper, vector SHAPE + P-ENV mini page, ENSEMBLE entry, bipolar matrix AMT (yellow/red bars), 104-wave overlay with [ENS]/[SHOT] tags. State-only (no panel): drift, vec_orbit_voice, aux_amt_[t], interp, engine |
+| Flagged spec deviations | aux_amt_[t] kept (user-approved §9 omission); vec_penv_loop + vec_orbit_voice added (§6); tvf_env/flt1_env UNIPOLAR per §9 (negative env unreachable — raise with spec track); loop-seam test body-relative (literal <2-quant-steps unsatisfiable on delivered WAVs) |
+| Plugin identity | `Mnsh`/`Drmr` — param LIST changed again → Cubase FULL re-scan |
+| Pending | user Cubase ear+eye pass; V1.1 filters (entries 8-13 bypass); V2 DreamPlane (flt2_morph inert) |
+| Git | main pushed; share the-dreamer-src\ export refreshed |
 
 ### Phase-gate checklist (every phase, before merge)
 - [ ] cl.exe test harness(es) for the phase compile and print ALL CHECKS PASSED
@@ -56,6 +56,15 @@
 
 ## STATUS log (newest first)
 
+- 2026-07-18 (v3) — DSP_BUILD phases 11-14 + GUI_SPEC renovation (RC 0.4.0).
+  Bank v3 (loops baked from delivered WAVs via C++ tool, shots synthesized),
+  PcmOsc3, noise, drift, vector upgrades, Ensemble, MASTER, §9 param relock
+  (~192 params, tid() suffix style), GUI rebound + renovated
+  (frontend-developer agent, 100% id coverage). Validator 14/14 incl. new
+  bank3 harness. Gotchas: delivered loop WAVs are full 16-bit (12-bit
+  quantization happens at header-bake); §9 has no aux amount / penv loop /
+  orbit-voice params (flagged additions); compile of the 3.7MB LoopBankData
+  header is fine (~1 min).
 - 2026-07-18 (later) — WebView GUI shipped (RC 0.3.0): design_handoff_dreamer_gui
   v5 recreated as plugin/gui/ (frontend-developer subagent pass; the handoff
   HTML is a claude.ai artifact bundle — real source extracted from the

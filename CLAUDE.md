@@ -13,6 +13,36 @@ Read this file fully before any task. When in doubt: ask, don't improvise.
 
 ---
 
+## Scope decisions v3 (user, 2026-07-18 — DSP_BUILD.md WINS over FEATURES.md)
+
+design-handoff/v6/DSP_BUILD.md + GUI_SPEC.md are the current contracts
+(section 9 = the canonical parameter table). Executed phases 11-14:
+
+1. **Bank v3**: 104 waves — 78 cycles (v2, untouched) + 16 "Ens" loops
+   (assets/loops WAVs + bake_loops.py recipes committed; header baked by
+   tools/bake_loops_header.cpp) + 10 "Shot" one-shots (tools/bake_shots.cpp,
+   synthesized deterministic). All 12-bit left-justified. dsp/bank/Bank3.h;
+   PcmOsc3 (dsp/glue): v2 cycle path bit-parity, Loop/OneShot via 32.32
+   phase, rootHz 220 stretch (chipmunk intentional), START 0..1 + RANDOM.
+2. **Per-tone noise** (level/color, 12-bit, pre-shaper; AUX + matrix dest
+   NOISE), **humanize drift** (per-voice S&H walk, global depth → ±3 cents),
+   explicit 12-bit requant chain stage (section 5 order).
+3. **Vector**: ORBIT SHAPE SAW/TRI/SIN/SQR/S+H, rate 0.02..8 Hz, per-voice
+   free-run flag; P-ENV start/end/time/loop.
+4. **ENSEMBLE** mod-fx mode (new glue, 3-tap modulated delay, spread LFO
+   phases); **MASTER** = the post-FX mapped output param (0..1, def 0.78);
+   fixed pre-FX headroom 0.5 replaces the old volume param.
+5. **Param relock to section 9** (suffix _a.._d style, normalized 0..1;
+   maps documented in PluginProcessor.cpp). FLAGGED deviations, all
+   documented in Params.h: aux_amt_[t] kept (user-approved; section-9
+   omission), vec_penv_loop + vec_orbit_voice added (section-6 features),
+   interp/engine kept as host-only carryovers, tvf_env/flt1_env read as
+   UNIPOLAR per the table (negative env unreachable — flag to spec track),
+   loop-seam test criterion re-based to body-relative (the literal
+   "<2 quant steps" is unsatisfiable for the delivered loop material).
+6. Old validation demos (test_bank/test_mode2 renders) still pass on the
+   untouched v2 bank files.
+
 ## Scope decisions v2 (user, 2026-07-18 — the FEATURES handoff supersedes v1)
 
 The design track delivered design-handoff/FEATURES.md (+ ENVIRONMENT.md, GUI

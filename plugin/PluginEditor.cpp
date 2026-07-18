@@ -10,52 +10,56 @@ constexpr int kBaseH = 660;
 // GUI-bound parameter IDs by relay type. IDs = APVTS IDs (plugin/Params.h);
 // the page JS asks for the same ids via getSliderState/getToggleState/
 // getComboBoxState. Built by loop (4 tone blocks a_-d_ share suffixes).
+// DSP_BUILD.md section-9 ids; per-tone params take suffixes _a.._d
 juce::StringArray makeSliderIds() {
     juce::StringArray ids;
-    for (const char* px : { "a_", "b_", "c_", "d_" })
-        for (const char* s : { "coarse", "fine", "level", "velsens", "start",
-                               "pan", "dir", "int", "shape_depth",
-                               "cutoff", "reso", "env_amt", "keyfollow",
-                               "tvf_att", "tvf_dec", "tvf_sus", "tvf_rel",
-                               "tva_att", "tva_dec", "tva_sus", "tva_rel",
-                               "aux_att", "aux_dec", "aux_sus", "aux_rel",
-                               "aux_amt", "lfo_depth" })
-            ids.add(juce::String(px) + s);
-    for (const char* s : { "vec_phase", "orbit_rate",
-                           "penv_start", "penv_end", "penv_time",
-                           "glfo_rate",
-                           "mod1_amt", "mod2_amt", "mod3_amt",
-                           "f1_cutoff", "f1_reso", "f1_env",
-                           "f2_cutoff", "f2_reso", "f2_morph",
+    for (const char* sx : { "_a", "_b", "_c", "_d" })
+        for (const char* s : { "level", "oct", "fine", "start", "velo", "pan",
+                               "shape_depth", "noise", "noise_color",
+                               "dir", "vint", "lfo_depth", "aux_amt",
+                               "tvf_cut", "tvf_res", "tvf_env", "tvf_kf",
+                               "tvf_a", "tvf_d", "tvf_s", "tvf_r",
+                               "tva_a", "tva_d", "tva_s", "tva_r",
+                               "aux_a", "aux_d", "aux_s", "aux_r" })
+            ids.add(juce::String(s) + sx);
+    for (const char* s : { "master",
+                           "vec_phase", "vec_orbit_rate",
+                           "vec_penv_start", "vec_penv_end", "vec_penv_time",
+                           "lfo_rate",
+                           "mtx1_amt", "mtx2_amt", "mtx3_amt",
+                           "flt1_cut", "flt1_res", "flt1_env",
+                           "flt2_cut", "flt2_res", "flt2_morph",
                            "modfx_rate", "modfx_depth", "modfx_mix",
-                           "delay_time", "delay_fb", "delay_mix",
+                           "dly_time", "dly_fb", "dly_mix",
                            "rev_size", "rev_damp", "rev_mix",
-                           "volume", "output" })
+                           "drift" })
         ids.add(s);
     return ids;
 }
 
 juce::StringArray makeToggleIds() {
     juce::StringArray ids;
-    for (const char* px : { "a_", "b_", "c_", "d_" })
-        ids.add(juce::String(px) + "on");
-    for (const char* s : { "orbit_on", "penv_on", "penv_loop",
-                           "modfx_on", "delay_on", "rev_on" })
+    for (const char* sx : { "_a", "_b", "_c", "_d" })
+        for (const char* s : { "on", "start_random" })
+            ids.add(juce::String(s) + sx);
+    for (const char* s : { "vec_orbit_on", "vec_orbit_voice",
+                           "vec_penv_on", "vec_penv_loop",
+                           "modfx_on", "dly_on", "rev_on" })
         ids.add(s);
     return ids;
 }
 
 juce::StringArray makeComboIds() {
     juce::StringArray ids;
-    for (const char* px : { "a_", "b_", "c_", "d_" })
-        for (const char* s : { "wave", "shape_type", "tvf_type",
+    for (const char* sx : { "_a", "_b", "_c", "_d" })
+        for (const char* s : { "wave", "shape", "tvf_type",
                                "aux_dest", "lfo_dest" })
-            ids.add(juce::String(px) + s);
-    for (const char* s : { "glfo_shape",
-                           "mod1_src", "mod2_src", "mod3_src",
-                           "mod1_dest", "mod2_dest", "mod3_dest",
-                           "f1_type", "f2_type", "filt_routing",
-                           "modfx_type", "delay_mode", "rev_type",
+            ids.add(juce::String(s) + sx);
+    for (const char* s : { "vec_orbit_shape", "lfo_shape",
+                           "mtx1_src", "mtx2_src", "mtx3_src",
+                           "mtx1_dst", "mtx2_dst", "mtx3_dst",
+                           "flt_route", "flt1_type", "flt2_type",
+                           "modfx_type", "dly_mode", "rev_type",
                            "interp", "engine" })
         ids.add(s);
     return ids;
