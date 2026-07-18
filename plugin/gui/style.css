@@ -1,8 +1,10 @@
-/* The Dreamer -- GUI v11 production stylesheet (v9 face + v11 handoff,
+/* The Dreamer -- GUI v12 production stylesheet (v11 face + v12 handoff,
    GUI_4/design_handoff_dreamer_gui). Fixed 1140x864 logical canvas (660
-   control panel + 190 keyboard/wheel strip below at y=662), uniformly scaled
-   by app.js fit() as ONE frame (screws included). Tokens + component specs
-   verbatim from the handoff README + prototype. */
+   control panel + rubber-band separator at y=646 + 190 keyboard/wheel strip
+   below at y=664), uniformly scaled by app.js fit() as ONE frame (screws
+   included). v12 adds the KEYS fold (collapsed logical height 664 / expanded
+   864), the rubber-band separator, and the PITCH center groove. Tokens +
+   component specs verbatim from the handoff README + prototype. */
 
 /* Fonts served from BinaryData by bare filename (fully offline). */
 @font-face{font-family:'Barlow Semi Condensed';font-style:normal;font-weight:600;
@@ -239,8 +241,26 @@ html,body{width:100%;height:100%;overflow:hidden;background:#15172e}
   box-shadow:0 1px 2px rgba(0,0,0,.6)}
 .screw i{position:absolute;left:3.5px;top:7.2px;width:9px;height:1.6px;border-radius:1px;background:#05050c}
 
-/* ============ v11 keyboard + pitch/mod wheel strip (y=662, 1140x190) ====== */
-#kbStrip{left:0;top:662px;width:1140px;height:190px;overflow:hidden;border-radius:8px;
+/* ============ v12 rubber-band separator + KEYS fold button =============== */
+/* Full-width 1140x18 strip at y=646 (just under the bottom screws): dark
+   gradient + drop shadow + 1px top highlight, a separator between the metal
+   panel and the key bed. Lives INSIDE the scaled #frame like everything else.
+   The screws (#screws, z-index 6) render over its ends. */
+#rubberBand{position:absolute;left:0;top:646px;width:1140px;height:18px;z-index:1;
+  background:linear-gradient(180deg,#101018 0%,#1c1c26 30%,#14141c 70%,#08080e 100%);
+  box-shadow:0 3px 6px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.08)}
+/* KEYS fold pill (56x12), centered on the rubber band. "\25BC KEYS" expanded /
+   "\25B2 KEYS" collapsed. Toggles the whole keyboard/wheels strip + resizes
+   the plugin window via keyboardFold(folded) (app.js). Stays visible when
+   collapsed so it can re-expand. */
+#keysFold{position:absolute;left:542px;top:649px;width:56px;height:12px;z-index:2;
+  background:#181b34;border:1px solid #464e94;border-radius:6px;cursor:pointer;
+  color:#c9cdf2;font:700 7px 'Barlow Semi Condensed';letter-spacing:.1em;
+  display:flex;align-items:center;justify-content:center;white-space:nowrap}
+#keysFold:active{background:#10122a}
+
+/* ============ v11 keyboard + pitch/mod wheel strip (y=664, 1140x190) ====== */
+#kbStrip{left:0;top:664px;width:1140px;height:190px;overflow:hidden;border-radius:8px;
   background:#1a1c38;box-shadow:inset 0 1px 1px rgba(255,255,255,.1),inset 0 4px 8px rgba(0,0,0,.6)}
 #wheelBay{position:absolute;left:8px;top:10px;width:128px;height:170px;border-radius:6px;
   background:linear-gradient(180deg,#0d0d1c 0%,#171a2e 100%);box-shadow:inset 0 3px 6px rgba(0,0,0,.7)}
@@ -250,6 +270,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:#15172e}
   background:linear-gradient(180deg,#121426 0%,#383d61 35%,#454a73 50%,#383d61 65%,#121426 100%);
   box-shadow:0 2px 4px rgba(0,0,0,.6);cursor:ns-resize;overflow:hidden}
 .wheel .rib{position:absolute;left:0;width:32px;height:2px;background:rgba(0,0,0,.55)}
+/* v12 PITCH red center groove stripe (32x3): travels with the bend position,
+   painted on top of the ribs. */
+.pgroove{position:absolute;left:0;width:32px;height:3px;background:#ff2b3e;
+  box-shadow:0 0 4px rgba(255,43,62,.7);pointer-events:none}
 .wheelLbl{position:absolute;top:12px;font:600 7px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.14em}
 #keybed{position:absolute;left:144px;top:0;right:0;bottom:0}
 .wkey{position:absolute;top:0;width:32.662px;height:170px;border-radius:0 0 3px 3px;

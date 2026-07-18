@@ -50,6 +50,7 @@ public:
         for (auto& a : ap_) a.reset();
         for (auto& s : comb_) s = 0.0f;
         combIdx_ = 0;
+        combDf_ = combDfTarget_;                 // snap (no glide across type/reset)
     }
 
     float process(float x) noexcept {
@@ -114,9 +115,13 @@ private:
             bq_[1].a2 = (float)((1.0 - all) / a0l);
         }
 
-        // COMB: delay length from cutoff (comb fundamental = fs / D)
-        combD_ = (int)std::lround(fs_ / std::max(hz_, 20.0));
-        combD_ = std::min(std::max(combD_, 2), kCombMax - 1);
+        // COMB: FRACTIONAL delay length from cutoff (comb fundamental = fs/D).
+        // Kept fractional + linearly interpolated on read so the comb tuning
+        // glides continuously with CUT instead of snapping to fs/integer
+        // (the audible stepping). combDf_ is one-pole smoothed toward this
+        // target in comb() so a CUT sweep flanges smoothly.
+        combDfTarget_ = (float)std::min(std::max(fs_ / std::max(hz_, 20.0), 2.0),
+                                        (double)kCombMax - 2.0);
         combG_ = (float)(0.5 + res_ * 0.48);                 // 0.5 .. 0.98 feedback
 
         // FORMANT: CUT position (log 60..4000) sweeps the vowel set + scale
@@ -144,9 +149,14 @@ private:
     }
 
     float comb(float x, float sign) noexcept {
-        const int rd = (combIdx_ - combD_ + kCombMax) % kCombMax;
-        const float d = comb_[rd];
-        const float y = x + sign * combG_ * d;
+        combDf_ += 0.0015f * (combDfTarget_ - combDf_);      // glide delay length
+        float rd = (float)combIdx_ - combDf_;                // fractional read pos
+        while (rd < 0.0f) rd += (float)kCombMax;
+        const int   i0 = (int)rd;
+        const float fr = rd - (float)i0;
+        const int   i1 = (i0 + 1) % kCombMax;
+        const float d  = comb_[i0] + fr * (comb_[i1] - comb_[i0]);   // linear interp
+        const float y  = x + sign * combG_ * d;
         comb_[combIdx_] = y;
         combIdx_ = (combIdx_ + 1) % kCombMax;
         return 0.7f * y;                                     // headroom vs the feedback peak
@@ -184,8 +194,8 @@ private:
     Biquad fbq_[3];                                          // formant resonators
     Allpass1 ap_[4];
     float  comb_[kCombMax] = {};
-    int    combIdx_ = 0, combD_ = 100;
-    float  combG_ = 0.5f;
+    int    combIdx_ = 0;
+    float  combDf_ = 100.0f, combDfTarget_ = 100.0f, combG_ = 0.5f;
 };
 
 } // namespace dreamer

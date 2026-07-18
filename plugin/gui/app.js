@@ -1629,18 +1629,26 @@ const KB_VEL = 0.8;                                 // fixed velocity (no aftert
   const pitchRibs = [], modRibs = [];
   for (let i = 0; i < 19; i++) { const r = el("div", "rib"); pitchWheel.appendChild(r); pitchRibs.push(r); }
   for (let i = 0; i < 18; i++) { const r = el("div", "rib"); modWheelEl.appendChild(r); modRibs.push(r); }
+  // v12: PITCH red center groove stripe (32x3), appended AFTER the ribs so it
+  // paints on top. It travels with the bend using the same 20px scroll as the
+  // ribs; the wheel is 118px tall so the centered rest top is (118-3)/2 = 57.5.
+  const pitchGroove = el("div", "pgroove"); pitchWheel.appendChild(pitchGroove);
   let pitchVal = 0, modVal = 0;
-  const drawPitchRibs = () => pitchRibs.forEach((r, i) => { r.style.top = (2 + i * 6.2 + pitchVal * 20) + "px"; });
+  const drawPitchRibs = () => {
+    pitchRibs.forEach((r, i) => { r.style.top = (2 + i * 6.2 + pitchVal * 20) + "px"; });
+    pitchGroove.style.top = (57.5 + pitchVal * 20) + "px";
+  };
   const drawModRibs   = () => modRibs.forEach((r, i) => { r.style.top = (2 + i * 6.5 - modVal * 40) + "px"; });
   drawPitchRibs(); drawModRibs();
 
-  // PITCH: bipolar -1..+1 over 59px; SPRINGS back to 0 on release -> pitchBend(0).
+  // PITCH: bipolar -1..+1 over 59px; INVERTED (drag DOWN = bend up, hardware-
+  // style); SPRINGS back to 0 on release -> pitchBend(0).
   pitchWheel.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     try { pitchWheel.setPointerCapture(e.pointerId); } catch (err) {}
     const y0 = e.clientY;
     const mv = (ev) => {
-      pitchVal = Math.max(-1, Math.min(1, (y0 - ev.clientY) / 59));
+      pitchVal = Math.max(-1, Math.min(1, (ev.clientY - y0) / 59));   // v12 inverted: down = up
       callNative(nfPitchBend, pitchVal);
       drawPitchRibs();
       setTouched("PITCH BEND", (pitchVal + 1) / 2, "bip");
@@ -1688,14 +1696,20 @@ const KB_VEL = 0.8;                                 // fixed velocity (no aftert
 // fixes the 1140:864 aspect + limits (570x432..2280x1728) and fires resize ->
 // fit(), which scales the WHOLE #frame -- screws, finish and keyboard included,
 // as one unit (breakpoint #3: no more letterbox, nothing slides under a screw).
+// v12: currentBaseH is the LIVE logical height fit() scales against -- 864 when
+// the keyboard is expanded, 664 when folded (control panel + rubber band + fold
+// button only). The KEYS fold handler (below) flips it and calls keyboardFold()
+// so the host window resizes to match; fit() then scales the whole #frame to
+// whatever innerWidth/innerHeight the host gives us against currentBaseH.
 const BASE_W = 1140, BASE_H = 864;
+let currentBaseH = BASE_H;
 let uiScale = 1;
 function fit() {
-  const s = Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H) * uiScale;
+  const s = Math.min(window.innerWidth / BASE_W, window.innerHeight / currentBaseH) * uiScale;
   const f = $("frame");
   f.style.transform = "scale(" + s + ")";
   f.style.left = Math.max(0, (window.innerWidth - BASE_W * s) / 2) + "px";
-  f.style.top = Math.max(0, (window.innerHeight - BASE_H * s) / 2) + "px";
+  f.style.top = Math.max(0, (window.innerHeight - currentBaseH * s) / 2) + "px";
 }
 window.addEventListener("resize", fit);
 fit();
@@ -1723,4 +1737,29 @@ fit();
     grip.addEventListener("pointerup", up);
   });
   grip.addEventListener("dblclick", () => { uiScale = 1; fit(); });
+}
+
+//==============================================================================
+// v12 KEYS fold: the pill centered on the rubber band collapses / expands the
+// whole keyboard+wheels strip. Toggling it (a) hides/shows #kbStrip (keybed +
+// wheels + wheel bay; the rubber band + fold pill stay visible so it can
+// re-expand), (b) flips currentBaseH between 664 (collapsed) and 864
+// (expanded) -- fit() uses that as BASE_H, (c) calls the native keyboardFold
+// (folded) so the C++ side resizes the host window and re-fits, and (d) re-runs
+// fit() locally so the page updates immediately. Fire-and-forget: in the
+// standalone mock (no bridge) nfKeyboardFold is null and callNative is a
+// harmless no-op. Boot state = EXPANDED (folded=false, height 864); no native
+// call is made on load, matching the default window size.
+const nfKeyboardFold = nativeFn("keyboardFold");
+{
+  const foldBtn = $("keysFold"), kbStrip = $("kbStrip");
+  let folded = false;
+  foldBtn.addEventListener("click", () => {
+    folded = !folded;
+    kbStrip.style.display = folded ? "none" : "";
+    foldBtn.textContent = (folded ? "▲" : "▼") + " KEYS";   // ▲ collapsed / ▼ expanded
+    currentBaseH = folded ? 664 : BASE_H;
+    callNative(nfKeyboardFold, folded);   // C++ resizes the host window (+ its resized() re-fits)
+    fit();                                 // re-fit now so the page updates immediately
+  });
 }
