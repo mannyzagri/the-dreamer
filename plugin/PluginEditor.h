@@ -21,6 +21,8 @@ public:
 
 private:
     void timerCallback() override;   // 30 Hz output-meter feed to the page
+    void setKeyboardFolded(bool folded);   // v12 collapsible keyboard (host resize)
+    bool keyboardFolded_ = false;
     juce::WebBrowserComponent::Options makeOptions();
     std::optional<juce::WebBrowserComponent::Resource> getResource(const juce::String& url);
 

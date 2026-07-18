@@ -9,7 +9,8 @@ namespace {
 // still quotes the old 660 -- 864 is authoritative per the "Logical size"
 // line and the PNG dimensions.)
 constexpr int kBaseW = 1140;
-constexpr int kBaseH = 864;
+constexpr int kBaseH = 864;      // expanded (keyboard visible)
+constexpr int kFoldedH = 664;    // v12: keyboard collapsed (control panel + rubber band)
 
 // GUI-bound parameter IDs by relay type. IDs = APVTS IDs (plugin/Params.h);
 // the page JS asks for the same ids via getSliderState/getToggleState/
@@ -135,6 +136,17 @@ TheDreamerEditor::~TheDreamerEditor()
     processor.guiAllNotesOff();
 }
 
+void TheDreamerEditor::setKeyboardFolded(bool folded)
+{
+    if (folded == keyboardFolded_) return;
+    keyboardFolded_ = folded;
+    const int baseH = folded ? kFoldedH : kBaseH;   // new logical height
+    const int w = getWidth();
+    getConstrainer()->setFixedAspectRatio((double)kBaseW / (double)baseH);
+    setResizeLimits(kBaseW / 2, baseH / 2, kBaseW * 2, baseH * 2);
+    setSize(w, juce::roundToInt((double)w * (double)baseH / (double)kBaseW));
+}
+
 //==============================================================================
 void TheDreamerEditor::timerCallback()
 {
@@ -198,6 +210,16 @@ juce::WebBrowserComponent::Options TheDreamerEditor::makeOptions()
                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
             {
                 if (a.size() >= 1) processor.guiModWheel((float)(double)a[0]);
+                completion(juce::var());
+            })
+        // v12: KEYS fold button toggles the collapsible keyboard. Native fns
+        // run on the message thread, so resizing the editor here is safe; the
+        // host window follows via the constrainer + setSize.
+        .withNativeFunction("keyboardFold",
+            [this](const juce::Array<juce::var>& a,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                setKeyboardFolded(a.size() >= 1 && (bool)a[0]);
                 completion(juce::var());
             });
 

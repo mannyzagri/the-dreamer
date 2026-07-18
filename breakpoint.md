@@ -7,14 +7,17 @@
 
 ## Where things stand (deployed, green)
 
-- **RC 1.1.0** built, validated (19/19 all stages incl. pluginval 8),
+- **RC 1.2.0** built, validated (19/19 all stages incl. pluginval 8),
   deployed to `C:\the-dreamer\The Dreamer.vst3` AND `\\VBOXSVR\vagrant\The
   Dreamer.vst3` (share root). Committed + pushed + share `-src` refreshed.
-  1.1.0 implements the V1.1 global filters (types 7-12); **no param change vs
-  1.0.0** (moduleinfo byte-identical) — reload the instance / restart Cubase.
-- Face is design-handoff **GUI_4 (v11)**: 1140×864 keyboard/wheels, per-tone
-  LFO SHAPE LCDs, whole-frame resize, screw clearances, VER stamp. (GUI_4 on
-  the share is now **v12** — pending integration; see below.)
+  1.2.0 = GUI_4 **v12** integrated + comb-filter fractional-delay fix; **no
+  param change vs 1.1.0** (moduleinfo byte-identical) — reload the instance.
+- Face is design-handoff **GUI_4 v12**: v11 base + rubber-band strip,
+  collapsible keyboard (▼/▲ KEYS fold → host window resizes 864↔664 via the
+  `keyboardFold` native fn), pitch-wheel red stripe + inverted drag.
+- Two user bugs from the 1.1.0 pass resolved: **comb stepping** fixed
+  (fractional interpolated delay); **"live MIDI deselects the track"** was the
+  user's **hardware MIDI keyboard**, NOT the plugin — no plugin change.
 
 ## The four GUI_4 items — RESOLVED in 1.0.0
 1. **Labels behind the corner screws** → header logo/POWER given 26px screw
@@ -53,13 +56,11 @@ the actual param values reaching the processor (consider a temp on-screen
 readout of the engine-resolved filter type).
 
 ## Pending integrations (design track dropped these)
-- **GUI_4 is now v12** (share README, 18:33): adds a "rubber band" separator
-  strip, a collapsible keyboard (▼/▲ KEYS fold button; collapsed 664 / expanded
-  864, host resizes with it), and a pitch-wheel red center stripe + inverted
-  drag (down = bend up). Deployed face is still v11 — integrate v12 via
-  frontend-developer (gui-pass). Filter section unchanged.
+- **GUI_4 v12 — INTEGRATED in 1.2.0** (rubber-band strip, collapsible keyboard,
+  pitch-wheel stripe/inverted drag). The fold/host-resize needs the user's
+  Cubase eye-check (can't be fully exercised headless).
 - **Sounds at `\\VBOXSVR\vagrant\The Dreamer\files (5)`** (user pointer) — real
-  factory presets to replace the app.js placeholders. Not yet read.
+  factory presets to replace the app.js placeholders. STILL not read/integrated.
 
 ## Open loop now — the user's Cubase pass on 1.1.0
 Install on the HOST first (the recurring "old GUI" cause is host-side, NOT a

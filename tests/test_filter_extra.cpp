@@ -64,6 +64,19 @@ int main() {
     CHECK(toneRMS(8, 1000, 0.6, 1000.0) > IN * 1.1, "COMB+ reinforces the comb freq");
     CHECK(toneRMS(9, 1000, 0.6, 1000.0) < IN * 0.8, "COMB- is hollow at the comb freq");
     CHECK(peakAbs(8, 1000, 0.9, 1000.0) < 1.6, "COMB+ bounded at max res (safety)");
+    // fractional delay: fine cutoff steps must produce distinct responses --
+    // integer delay plateaued (many adjacent cutoffs -> same fs/N -> identical
+    // = the audible stepping). Expect ~all 20 steps distinct now.
+    {
+        int distinct = 0; double prev = -1e9;
+        for (int k = 0; k < 20; ++k) {
+            const double v = toneRMS(8, 980.0 + k * 3.0, 0.6, 1000.0);
+            if (std::fabs(v - prev) > 1e-5) ++distinct;
+            prev = v;
+        }
+        std::printf("  COMB+ distinct responses over 20 fine cutoff steps: %d/20\n", distinct);
+        CHECK(distinct >= 18, "COMB tuning is continuous (fractional delay, no plateaus)");
+    }
 
     std::printf("[nlp] type 10 = notch + lowpass\n");
     CHECK(toneRMS(10, 1000, 0.7, 1000.0) < 0.05, "N+LP notches the cutoff");

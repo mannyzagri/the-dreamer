@@ -3,6 +3,27 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-18 (GUI v12 + comb fix) — **RC 1.2.0**. Two user bugs + the v12 GUI.
+  (1) **Comb filters stepped** per cutoff value — my COMB+/COMB− used an
+  integer delay length (`round(fs/cut)`), so the comb fundamental snapped to
+  `fs/N` and the tuning quantized audibly. Fixed with a **fractional,
+  linearly-interpolated delay read** + a one-pole glide on the delay length
+  (dsp/glue/FilterExtra.h); test_filter_extra gained a continuity check
+  (20/20 distinct responses over 20 fine cutoff steps, where the integer
+  version plateaued). (2) **"Live MIDI deselects the Cubase track"** — turned
+  out to be the user's **hardware MIDI keyboard**, not the plugin (the plugin's
+  IS_SYNTH/NEEDS_MIDI_INPUT/output-only-bus config is correct). No plugin
+  change. (3) **GUI_4 v12** integrated (frontend-developer, editor.html/
+  style.css/app.js only): rubber-band separator strip; **collapsible keyboard**
+  — a ▼/▲ KEYS pill on the rubber band toggles the keyboard, the page flips its
+  logical height 864↔664 and calls a NEW native fn **`keyboardFold(folded)`**
+  so the C++ editor resizes the host window and updates the 1140:H aspect
+  ratio + resize limits; pitch-wheel red center stripe + **inverted drag**
+  (down = bend up, hardware-style), still springs to centre. No new params →
+  moduleinfo byte-identical, no forced re-scan. Validator 19/19 PASS
+  (pluginval 8). (Also: fixed mojibake in PROJECT-NOTES.md from a prior
+  PowerShell WriteAllLines by rewriting the file clean at 1.1.0.)
+
 - 2026-07-18 (V1.1 filters) — **RC 1.1.0**. User report: "except LP/BP/HP/
   LADDER, no filter modes work." Measured first (3 cl.exe probes driving
   GlobalFilter exactly like the processor): LIQUID/CLASSIC filter correctly

@@ -160,10 +160,19 @@
       </div>
     </div>
 
-    <!-- ============ v11 keyboard + pitch/mod wheel strip (y=662) ========== -->
+    <!-- ============ v12 rubber-band separator + KEYS fold button ========== -->
+    <!-- Full-width 1140x18 strip at y=646 (just under the bottom screws): a
+         visual separator between the metal panel and the key bed. The KEYS
+         fold pill sits centered on it. Both stay visible when the keyboard
+         strip is collapsed (the pill is how you expand again). -->
+    <div id="rubberBand"></div>
+    <div id="keysFold">&#9660; KEYS</div>
+
+    <!-- ============ v11 keyboard + pitch/mod wheel strip (y=664) ========== -->
     <!-- Wheel bay + PITCH/MOD wheels (ribs built by app.js) and ~4-octave
          keybed (30 white / 21 black, built by app.js). Wired to the native
-         noteOn/noteOff/pitchBend/modWheel bridge functions. -->
+         noteOn/noteOff/pitchBend/modWheel bridge functions. Collapsed by the
+         KEYS fold button (display:none => logical height 664). -->
     <div id="kbStrip">
       <div id="wheelBay"></div>
       <div class="wheelSlot" style="left:24px"></div>
