@@ -96,7 +96,7 @@ const SHAPES    = ["OFF", "SOFT FOLD", "HARD FOLD", "SINE FOLD", "ASYM", "DRIVE"
 const TVFTYPES  = ["LP24", "LP12", "BP", "HP"];              // LCD short form
 const TVFFULL   = ["LP 24", "LP 12", "BP", "HP"];            // menu rows
 const FTYPES    = ["LP 24", "LP 12", "BP", "HP", "LIQUID", "CLASSIC", "LADDER",
-                   "NOTCH", "COMB +", "COMB -", "NL3 N+LP", "FORMANT", "ALLPASS", "DREAMPLN"];
+                   "NOTCH", "COMB +", "COMB -", "N+LP", "FORMANT", "ALLPASS", "DREAMPLN"];
 const GLFOWAVES = ["TRI", "SIN", "SAW", "SQR", "S+H"];
 const ORBSHAPES = ["SAW", "TRI", "SIN", "SQR", "S+H"];
 const AUXDESTS  = ["PITCH", "START", "SHAPE", "PAN", "NOISE"];
@@ -143,7 +143,7 @@ const GLOB_SLIDER_BASE = {
   dly_time: .5, dly_fb: .35, dly_mix: .3, rev_size: .6, rev_damp: .4, rev_mix: .35,
 };
 const GLOB_TOGGLE_BASE = { vec_orbit_on: false, vec_penv_on: false, vec_penv_loop: false,
-  modfx_on: false, dly_on: false, rev_on: false };
+  modfx_on: false, dly_on: false, dly_sync: false, rev_on: false };
 const GLOB_COMBO_BASE  = { vec_orbit_shape: 2, lfo_shape: 0, flt_route: 0,
   flt1_type: 0, flt2_type: 0, mtx1_src: 0, mtx1_dst: 3, mtx2_src: 1, mtx2_dst: 4,
   mtx3_src: 2, mtx3_dst: 0, modfx_type: 0, dly_mode: 0, rev_type: 1 };
@@ -394,7 +394,7 @@ const MOCK = { sliders: {}, toggles: {}, combos: {} };
   Object.assign(MOCK.toggles, {
     vec_orbit_on: true, vec_penv_on: false, vec_penv_loop: false,
     vec_orbit_voice: false,
-    modfx_on: true, dly_on: true, rev_on: true,
+    modfx_on: true, dly_on: true, dly_sync: false, rev_on: true,
   });
   Object.assign(MOCK.combos, {
     lfo_shape: 0, vec_orbit_shape: 2,
@@ -1382,7 +1382,40 @@ $("glfoWaveBtn").addEventListener("click", () =>
 // rev_p0 -- they exist in Params.h). For MOD FX the PARAM label tracks the
 // algorithm's p0 meaning (MODFXPARAM); DELAY/REVERB extras are reserved in this
 // build and simply read "PARAM". LED + on/off at the right.
-function fxRow(name, typeId, typeArr, menuTitle, knobDefs, onId, divider) {
+// v9: DELAY TIME sync knob -- yellow pointer + tempo-division label when the
+// row's SYNC toggle is lit, otherwise a normal white-pointer TIME knob bound to
+// dly_time. Mirrors the per-tone LFO-sync idiom (makeLfoRow) exactly: same
+// SYNCDIVS table, idx = round(v * 11). Geometry matches the other 30px FX knobs.
+function makeFxSyncKnob(row, sliderId, baseLabel, syncState, touchName) {
+  const st = sliderState(sliderId);
+  const divOf = () => SYNCDIVS[Math.round(
+    clamp01(st.getNormalisedValue()) * (SYNCDIVS.length - 1))];   // round(dly_time*11)
+  const wrap = el("div", "kwrap"); wrap.style.width = "36px";
+  const skirt = el("div", "kskirt"); skirt.style.width = skirt.style.height = "30px";
+  const cap = el("div", "kcap"); cap.style.width = cap.style.height = "23px";
+  const capin = el("div", "kcapin");
+  const rot = el("div", "krot");
+  const ptr = el("div", "kptr"); ptr.style.height = "8px";
+  rot.appendChild(ptr);
+  cap.append(capin, rot);
+  skirt.appendChild(cap);
+  const lbl = el("div", "lbl");
+  wrap.append(skirt, lbl);
+  row.appendChild(wrap);
+  const draw = () => {
+    const syn = !!syncState.getValue();
+    rot.style.transform = "rotate(" + (-135 + st.getNormalisedValue() * 270) + "deg)";
+    ptr.style.background = syn ? "#ffd23f" : "#e8eaff";   // yellow pointer when synced
+    lbl.textContent = syn ? divOf() : baseLabel;          // division instead of ms
+  };
+  st.valueChangedEvent.addListener(draw);
+  st.propertiesChangedEvent.addListener(draw);
+  syncState.valueChangedEvent.addListener(draw);
+  draw();
+  bindVDrag(skirt, () => st,
+    () => touchName + " " + (syncState.getValue() ? divOf() : baseLabel), draw);
+}
+function fxRow(name, typeId, typeArr, menuTitle, knobDefs, onId, divider, syncId) {
   const row = el("div", "fxrow");
   const nm = el("div", "fxname"); nm.textContent = name;
   const dec = el("div", "step stepn"); dec.textContent = "<";
@@ -1392,6 +1425,7 @@ function fxRow(name, typeId, typeArr, menuTitle, knobDefs, onId, divider) {
 
   const typeState = comboState(typeId);
   const isMod = typeId === "modfx_type";
+  const syncState = syncId ? toggleState(syncId) : null;   // v9: DELAY tempo sync
   comboDraw([typeState], false, () => {
     typeBtn.textContent = typeArr[idx(typeState, typeArr.length)];
   });
@@ -1403,6 +1437,10 @@ function fxRow(name, typeId, typeArr, menuTitle, knobDefs, onId, divider) {
   // PARAM (p0) label: dynamic for MOD FX (algorithm p0 name), else "PARAM".
   const paramLbl = () => (isMod ? MODFXPARAM[idx(typeState, typeArr.length)] : "PARAM");
   knobDefs.forEach(([id, lbl], ki) => {
+    if (syncState && ki === 0) {   // v9 DELAY TIME: sync-aware knob (yellow ptr + division)
+      makeFxSyncKnob(row, id, lbl, syncState, name);
+      return;
+    }
     const isParam = ki === 2;
     const kd = makeKnob(row, {
       states: [sliderState(id)], size: 30, w: 36,
@@ -1417,6 +1455,18 @@ function fxRow(name, typeId, typeArr, menuTitle, knobDefs, onId, divider) {
       relabel();
     }
   });
+
+  if (syncState) {   // v9: SYNC btn + LED, compact column after the 4 knobs
+    const scol = el("div", "fxsync");
+    const sled = el("div", "led sled");
+    const sbtn = el("div", "fxsyncbtn"); sbtn.textContent = "SYNC";
+    scol.append(sled, sbtn);
+    row.appendChild(scol);
+    const drawSled = () => sled.classList.toggle("on", !!syncState.getValue());
+    syncState.valueChangedEvent.addListener(drawSled);
+    drawSled();
+    sbtn.addEventListener("click", () => syncState.setValue(!syncState.getValue()));
+  }
 
   const right = el("div", "fxright");
   const led = el("div", "led");
@@ -1437,7 +1487,7 @@ fxRow("MOD", "modfx_type", MODFX, "MOD FX TYPE",
   "modfx_on", true);
 fxRow("DELAY", "dly_mode", DLYMODES, "DELAY MODE",
   [["dly_time", "TIME"], ["dly_fb", "FB"], ["dly_p0", "PARAM"], ["dly_mix", "MIX"]],
-  "dly_on", true);
+  "dly_on", true, "dly_sync");   // v9: tempo-sync toggle (SYNC btn + LED)
 fxRow("REVERB", "rev_type", REVTYPES, "REVERB TYPE",
   [["rev_size", "SIZE"], ["rev_damp", "DAMP"], ["rev_p0", "PARAM"], ["rev_mix", "MIX"]],
   "rev_on", false);
@@ -1474,6 +1524,7 @@ if (infoPromise)
 //   ?ens     demo state: tone A on an [ENS] loop + MOD FX on ENSEMBLE
 //   ?preset=N  boots with factory preset N (1-based) applied
 //   ?flat    faceplate finish off   ?stars  star-field variant on
+//   ?dlysync boots with DELAY tempo-sync lit (TIME knob shows the division)
 const presetFlag = location.search.match(/preset=(\d+)/);
 if (presetFlag) applyPreset(parseInt(presetFlag[1], 10) - 1);
 if (location.search.indexOf("ens") >= 0) {
@@ -1482,6 +1533,7 @@ if (location.search.indexOf("ens") >= 0) {
 }
 const modfxFlag = location.search.match(/modfx=(\d+)/);   // dev: force MOD FX algorithm (0..6)
 if (modfxFlag) comboState("modfx_type").setChoiceIndex(parseInt(modfxFlag[1], 10));
+if (location.search.indexOf("dlysync") >= 0) toggleState("dly_sync").setValue(true);   // v9
 if (location.search.indexOf("flat") >= 0) $("plate").style.display = "none";
 if (location.search.indexOf("stars") >= 0) $("stars").style.display = "block";
 if (location.search.indexOf("presets") >= 0)
