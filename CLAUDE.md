@@ -13,6 +13,45 @@ Read this file fully before any task. When in doubt: ask, don't improvise.
 
 ---
 
+## Scope decisions v1.5 / v8 (user, 2026-07-18 — files(4) DSP spec + GUI_2 handoff)
+
+FX v1.5 expansion (design-handoff/v8/, FEATURES.md §11). Architect-reviewed
+bus restructure. User decisions: build the FULL v1.5 DSP (panel shows a
+subset); add output meters + window resize; MIDI learn DEFERRED.
+
+1. **New MOD FX modes** (modfx_type now 7): +DIMENSION (Dim-D 4-mode BBD
+   chorus), +ROTARY (Leslie horn/drum rotors), +BARBERPOLE (Shepard phaser).
+   Each modfx algorithm reads PARAMS extras p0..p3 (ENSEMBLE SPREAD/TONE,
+   DIM MODE/TONE, ROT SPEED/ACCEL/BAL/MICWIDTH, BARB DIR/STAGES/FB). New
+   glue in dsp/glue/ (not ports).
+2. **Standalone stages** (new glue): LO-FI (bit/rate/compand/alias, 12-bit
+   grid), WIDTH (M/S + Haas + bass-mono), TALK (3-formant vowel morph).
+   Named params per §9.
+3. **PARAMS model**: modfx/dly/rev each expose 4 host-automatable extras
+   p0..p3 + pfocus (choice). Panel binds p0. **dly/rev extras are RESERVED
+   (inert)** — the ported StereoDelay/juce::Reverb can't take extra knobs
+   under rule 1; wiring their TAPE/reverb extras needs non-ported replacements
+   (future). Documented, not silent.
+4. **Bus order** (architect F-review): [PRE: LoFi if fx_prepost] → FILTERS
+   (+BAL) → dcblock → [vintage trunc] → headroom → MOD FX(7) → DELAY →
+   REVERB → [POST: LoFi] → WIDTH(fixed POST) → TALK → MASTER. `fx_prepost`
+   governs LO-FI only; WIDTH is fixed POST (F4: pre-delay width only reaches
+   dry+reverb). The voice bus is already stereo (per-tone pan) — WIDTH/LoFi
+   operate on a real L/R pair.
+5. **RT-safety fixes applied** (architect): Barberpole feedback tanh+DC-blocked
+   (F1, no runaway); per-sample trig replaced by quadrature oscillators in
+   Dimension/Rotary (F2); LoFi quantizes on the held sample only; discrete
+   extras (Dim MODE, Barber STAGES) snap + de-click; Haas is fixed-length,
+   mix-crossfaded (F8). Continuous FX extras one-pole smoothed per block.
+6. **FXPARAM matrix dest DEFERRED** — the v8 matrix has 8 dests, no
+   slot-selector/focus stepper; a "focused param" dest that can only reach one
+   fixed param is a trap (F-review). Ships when the GUI gives it a target.
+7. **GUI v8**: 7-mode modfx stepper, one PARAM knob per FX slot (binds p0,
+   type-dependent label), header L/R output meters (30 Hz timer feed), native
+   proportional resize 50–200%. MIDI LEARN button rendered but NON-FUNCTIONAL
+   (deferred; flagged). LO-FI/WIDTH/TALK are host-automatable only (not on the
+   panel). Param count ~250 → Cubase FULL re-scan.
+
 ## Scope decisions v3 (user, 2026-07-18 — DSP_BUILD.md WINS over FEATURES.md)
 
 design-handoff/v6/DSP_BUILD.md + GUI_SPEC.md are the current contracts

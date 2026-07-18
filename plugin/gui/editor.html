@@ -29,6 +29,17 @@
           </div>
         </div>
       </div>
+      <!-- v8: MIDI LEARN (visual-only; feature deferred, no CC map / no native call) -->
+      <div id="midiCol">
+        <div class="led" id="midiLed"></div>
+        <div class="midiBtn" id="midiBtn">MIDI</div>
+        <div class="midiLab">LEARN</div>
+      </div>
+      <!-- v8: stereo L/R output meters (peak-hold, fed by window.uiMeters) -->
+      <div id="meters">
+        <div class="meterCol"><div class="meterBar"><div class="meterFill" id="meterFillL"></div></div><div class="meterLbl">L</div></div>
+        <div class="meterCol"><div class="meterBar"><div class="meterFill" id="meterFillR"></div></div><div class="meterLbl">R</div></div>
+      </div>
       <div id="masterMount"></div>
       <div id="powerWrap">
         <div class="led on big"></div>
@@ -113,7 +124,9 @@
           <div id="flowCap">SIGNAL FLOW &middot; PHASE</div>
           <div class="togrow">
             <div class="plab8" style="letter-spacing:.08em">SHAPE</div>
-            <div class="cbtn" id="orbitShapeBtn" style="width:40px;height:16px"></div>
+            <div class="step stepn" id="orbitShapeDec">&lt;</div>
+            <div class="cbtn" id="orbitShapeBtn" style="width:36px;height:16px"></div>
+            <div class="step stepn" id="orbitShapeInc">&gt;</div>
           </div>
         </div>
         <div id="vecRight">
@@ -133,7 +146,9 @@
         <div id="glfoRow">
           <div class="bttl">GLOBAL LFO</div>
           <div id="glfoRateMount"></div>
-          <div class="cbtn" id="glfoWaveBtn" style="width:44px"></div>
+          <div class="step stepn" id="glfoWaveDec">&lt;</div>
+          <div class="cbtn" id="glfoWaveBtn" style="width:40px"></div>
+          <div class="step stepn" id="glfoWaveInc">&gt;</div>
         </div>
       </div>
 
@@ -150,6 +165,11 @@
          variant (off by default) + brushed-metal finish (default ON) -->
     <div id="stars"></div>
     <div id="plate"></div>
+
+    <!-- v8 window resize grip: visual affordance (15x15, diagonal lines).
+         The native plugin window is the authoritative resize; drag = cosmetic
+         in-page zoom composed with fit(), double-click returns to pure fit. -->
+    <div id="grip" title="Drag to resize &middot; double-click resets"></div>
   </div>
 
   <!-- ============ menu overlay (scrim + LCD page) ============ -->

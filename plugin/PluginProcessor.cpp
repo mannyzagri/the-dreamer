@@ -47,6 +47,19 @@ TheDreamerProcessor::TheDreamerProcessor()
     pDlyFb = p(kDlyFb); pDlyMix = p(kDlyMix); pDlyOn = p(kDlyOn);
     pRevType = p(kRevType); pRevSize = p(kRevSize);
     pRevDamp = p(kRevDamp); pRevMix = p(kRevMix); pRevOn = p(kRevOn);
+    for (int i = 0; i < 4; ++i) {
+        const juce::String n(i);
+        pModfxP[i] = p("modfx_p" + n);
+        pDlyP[i]   = p("dly_p" + n);
+        pRevP[i]   = p("rev_p" + n);
+    }
+    pLofiOn = p(kLofiOn); pLofiBits = p(kLofiBits); pLofiSrate = p(kLofiSrate);
+    pLofiCompand = p(kLofiCompand); pLofiAlias = p(kLofiAlias);
+    pWidthOn = p(kWidthOn); pWidth = p(kWidth); pWidthHaas = p(kWidthHaas);
+    pWidthBassMono = p(kWidthBassMono);
+    pTalkOn = p(kTalkOn); pTalkVa = p(kTalkVa); pTalkVb = p(kTalkVb);
+    pTalkMorph = p(kTalkMorph); pTalkSens = p(kTalkSens);
+    pFxPrePost = p(kFxPrePost);
     pDrift = p(kDrift); pInterp = p(kInterp); pEngine = p(kEngine);
 }
 
@@ -91,17 +104,30 @@ void TheDreamerProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     gfCtrl = 0;
 
     ensemble.prepare(sampleRate);
+    dimension.prepare(sampleRate);
+    rotary.prepare(sampleRate);
+    barberpole.prepare(sampleRate);
     delay.prepare(sampleRate);
     chorus.prepare(sampleRate, 6.0f);
     flanger.prepare(sampleRate, 3.0f);
     phaser.prepare(sampleRate);
     reverb.setSampleRate(sampleRate);
     reverb.reset();
+    lofi.prepare(sampleRate);
+    stereoWidth.prepare(sampleRate);
+    talkbox.prepare(sampleRate);
     reverbWasActive = false;
     revCache = {};
 
     reverbWetL.assign((size_t)juce::jmax(1, samplesPerBlock), 0.0f);
     reverbWetR.assign((size_t)juce::jmax(1, samplesPerBlock), 0.0f);
+
+    // per-block one-pole for FX extra params (~20 ms). Recomputed exactly
+    // once per block from the actual numSamples in processBlock.
+    fxSmoothCoef_ = 1.0f;
+    for (int s = 0; s < 3; ++s) for (int i = 0; i < 4; ++i) fxP_[s][i] = 0.5f;
+
+    meterL.store(0.0f); meterR.store(0.0f);
 
     masterSmoothed.reset(sampleRate, 0.02);
     masterSmoothed.setCurrentAndTargetValue(pMaster->load());
@@ -245,12 +271,37 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     const float phaserRateHz   = 0.02f + mfRate01 * 1.98f;
     const float ensembleRateHz = 0.2f + mfRate01 * 5.8f;     // string-machine range
 
+    const float barberRateHz   = 0.02f + mfRate01 * 1.98f;   // barberpole sweep
+
     const bool dlyOn = pDlyOn->load() > 0.5f;
     static constexpr int delayTypeMap[3] = { 2, 0, 1 };      // DIG/TAPE/PONG -> donor enum
     delay.setType((dreamer::StereoDelay::Type)delayTypeMap[(int)pDlyMode->load()]);
     delay.setTimeFree((float)dlyMs(pDlyTime->load()));
     const float dfb  = pDlyFb->load() * 0.9f;                // 0..1 -> 0..0.9 (donor cap)
     const float dwet = dlyOn ? pDlyMix->load() : 0.0f;
+
+    // ---- FX v1.5 per-block reads (FEATURES.md 11) --------------------------
+    // Smooth the continuous PARAMS extras once per block (~20 ms one-pole).
+    // Discrete extras (Dim MODE, Barber STAGES/DIR, Rotary SPEED) snap and
+    // de-click inside their own effect. dly/rev extras are reserved (the
+    // ported StereoDelay/juce::Reverb can't take extra knobs under rule 1).
+    fxSmoothCoef_ = 1.0f - std::exp(-(float)numSamples / (0.02f * (float)getSampleRate()));
+    std::atomic<float>* const* pP[3] = { pModfxP, pDlyP, pRevP };
+    for (int s = 0; s < 3; ++s)
+        for (int i = 0; i < 4; ++i)
+            fxP_[s][i] += fxSmoothCoef_ * (pP[s][i]->load() - fxP_[s][i]);
+
+    const bool  lofiOn   = pLofiOn->load() > 0.5f;
+    const bool  lofiPre  = pFxPrePost->load() > 0.5f;        // Pre = 1
+    const float lofiBits = pLofiBits->load(), lofiSrate = pLofiSrate->load();
+    const float lofiComp = pLofiCompand->load();
+    const bool  lofiAlias = pLofiAlias->load() > 0.5f;
+    const bool  widthOn   = pWidthOn->load() > 0.5f;
+    const float widthAmt  = pWidth->load(), widthHaas = pWidthHaas->load();
+    const bool  widthBM   = pWidthBassMono->load() > 0.5f;
+    const bool  talkOn    = pTalkOn->load() > 0.5f;
+    const float talkVa = pTalkVa->load(), talkVb = pTalkVb->load();
+    const float talkMorph = pTalkMorph->load(), talkSens = pTalkSens->load();
 
     masterSmoothed.setTargetValue(pMaster->load());
 
@@ -275,6 +326,11 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
         float l = 0.0f, r = 0.0f;
         synth.process(l, r);
+
+        // LO-FI PRE-filter: crush INTO the resonant filter sweep (the
+        // musically valuable placement; architect F4)
+        if (lofiOn && lofiPre)
+            lofi.process(l, r, lofiBits, lofiSrate, lofiComp, lofiAlias);
 
         if (gfCtrl-- <= 0) {
             gfCtrl = 15;
@@ -313,11 +369,15 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         r *= kVoiceHeadroom;
 
         if (modfxOn) {
+            const float* p = fxP_[0];        // modfx PARAMS extras p0..p3
             switch (modfxType) {
             case 0:  chorus.process(l, r, 4.0f, chorusRangeMs, chorusRateHz, 0.0f, mfMix); break;
             case 1:  flanger.process(l, r, 0.5f, flangerRangeMs, flangerRateHz, flangerFb, mfMix); break;
             case 2:  phaser.process(l, r, mfDepth, phaserRateHz, mfMix); break;
-            default: ensemble.process(l, r, ensembleRateHz, mfDepth, mfMix); break;
+            case 3:  ensemble.process(l, r, ensembleRateHz, mfDepth, mfMix, p[0], p[1]); break;   // SPREAD, TONE
+            case 4:  dimension.process(l, r, p[0], p[1], mfMix); break;                            // MODE, TONE
+            case 5:  rotary.process(l, r, p[0], p[1], p[2], p[3], mfMix); break;                   // SPEED/ACCEL/BAL/WIDTH
+            default: barberpole.process(l, r, barberRateHz, p[0], p[1], p[2], mfMix); break;       // DIR/STAGES/FB
             }
         }
 
@@ -380,12 +440,31 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         revCache.type = -1;
     }
 
-    // ---- MASTER (post-FX, the mapped output parameter) ---------------------
+    // ---- POST stages (LO-FI if POST, WIDTH fixed POST, TALK) -> MASTER -----
+    // WIDTH is fixed POST-filter (architect F4: pre-delay width only reaches
+    // the dry + reverb, so POST widens the whole image predictably). TALK
+    // sits after the POST slot (F-review recommended order).
+    float peakL = 0.0f, peakR = 0.0f;
     for (int n = 0; n < numSamples; ++n) {
+        float l = left[n];
+        float r = right != nullptr ? right[n] : left[n];
+
+        if (lofiOn && !lofiPre)
+            lofi.process(l, r, lofiBits, lofiSrate, lofiComp, lofiAlias);
+        if (widthOn)
+            stereoWidth.process(l, r, widthAmt, widthHaas, widthBM);
+        if (talkOn)
+            talkbox.process(l, r, talkVa, talkVb, talkMorph, talkSens, 1.0f);
+
         const float g = masterSmoothed.getNextValue();
-        left[n] *= g;
-        if (right != nullptr) right[n] *= g;
+        l *= g; r *= g;
+        left[n] = l;
+        if (right != nullptr) right[n] = r;
+        peakL = std::fmax(peakL, std::fabs(l));
+        peakR = std::fmax(peakR, std::fabs(r));
     }
+    meterL.store(peakL, std::memory_order_relaxed);
+    meterR.store(peakR, std::memory_order_relaxed);
 }
 
 //==============================================================================

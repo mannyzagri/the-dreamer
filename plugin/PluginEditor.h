@@ -9,7 +9,8 @@
 #include "PluginProcessor.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 
-class TheDreamerEditor : public juce::AudioProcessorEditor {
+class TheDreamerEditor : public juce::AudioProcessorEditor,
+                         private juce::Timer {
 public:
     explicit TheDreamerEditor(TheDreamerProcessor&);
     ~TheDreamerEditor() override = default;
@@ -17,6 +18,7 @@ public:
     void resized() override;
 
 private:
+    void timerCallback() override;   // 30 Hz output-meter feed to the page
     juce::WebBrowserComponent::Options makeOptions();
     std::optional<juce::WebBrowserComponent::Resource> getResource(const juce::String& url);
 

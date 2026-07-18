@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(TheDreamer VERSION 0.5.0 LANGUAGES C CXX)
+project(TheDreamer VERSION 0.6.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -36,11 +36,13 @@ juce_add_binary_data(TheDreamerAssets SOURCES
     plugin/gui/BarlowSemiCondensed-SemiBold.ttf
     plugin/gui/BarlowSemiCondensed-Bold.ttf
     plugin/gui/Doto-Variable.ttf
-    plugin/gui/Michroma-Regular.ttf)
+    plugin/gui/Michroma-Regular.ttf
+)
 
 target_sources(TheDreamer PRIVATE
     plugin/PluginProcessor.cpp
-    plugin/PluginEditor.cpp)
+    plugin/PluginEditor.cpp
+)
 
 target_include_directories(TheDreamer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 

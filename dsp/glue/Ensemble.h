@@ -28,10 +28,13 @@ public:
     void reset() noexcept {
         std::fill(bufL_.begin(), bufL_.end(), 0.0f);
         std::fill(bufR_.begin(), bufR_.end(), 0.0f);
-        phase_ = 0.0f;
+        phase_ = 0.0f; toneL_ = toneR_ = 0.0f;
     }
 
-    void process(float& l, float& r, float rateHz, float depth01, float mix) noexcept {
+    // PARAMS extras: p0 = SPREAD (stereo tap offset), p1 = TONE (BBD HF loss).
+    // p2/spare unused. Overload keeps the old 5-arg call working (defaults).
+    void process(float& l, float& r, float rateHz, float depth01, float mix,
+                 float spread01 = 0.5f, float tone01 = 0.0f) noexcept {
         bufL_[(size_t)w_] = l;
         bufR_[(size_t)w_] = r;
 
@@ -41,10 +44,11 @@ public:
         const float baseMs  = 8.0f;
         const float rangeMs = 1.0f + depth01 * 6.0f;   // 1..7 ms swing
 
+        const float spreadOff = 0.05f + 0.45f * std::clamp(spread01, 0.0f, 1.0f);   // R tap phase offset
         float wetL = 0.0f, wetR = 0.0f;
         for (int t = 0; t < 3; ++t) {
             const float phL = phase_ + (float)t * (1.0f / 3.0f);
-            const float phR = phL + 0.25f;             // width: R taps offset
+            const float phR = phL + spreadOff;         // SPREAD: R taps offset
             const float ms  = baseMs + rangeMs * tri(phL);
             const float msR = baseMs + rangeMs * tri(phR);
             wetL += read(bufL_, ms);
@@ -52,6 +56,13 @@ public:
         }
         wetL *= (1.0f / 3.0f);
         wetR *= (1.0f / 3.0f);
+
+        // TONE: BBD HF loss one-pole (0 = bright .. 1 = dark)
+        if (tone01 > 0.0f) {
+            const float a = 1.0f - 0.9f * tone01;
+            toneL_ += a * (wetL - toneL_); wetL = toneL_;
+            toneR_ += a * (wetR - toneR_); wetR = toneR_;
+        }
 
         const float m = std::clamp(mix, 0.0f, 1.0f);
         const float dry = std::cos(m * 1.57079633f);   // equal-power (donor idiom)
@@ -81,7 +92,7 @@ private:
 
     std::vector<float> bufL_, bufR_;
     double fs_ = 44100.0;
-    float  phase_ = 0.0f;
+    float  phase_ = 0.0f, toneL_ = 0.0f, toneR_ = 0.0f;
     int    len_ = 1, w_ = 0;
 };
 

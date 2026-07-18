@@ -64,6 +64,26 @@ inline constexpr auto kRevSize       = "rev_size";
 inline constexpr auto kRevDamp       = "rev_damp";
 inline constexpr auto kRevMix        = "rev_mix";
 inline constexpr auto kRevOn         = "rev_on";
+// FX v1.5 (FEATURES.md 11): per-slot PARAMS (4 extras p0..p3 + focus),
+// standalone LO-FI / WIDTH / TALK stages, and the LO-FI PRE/POST switch.
+inline constexpr auto kModfxPFocus   = "modfx_pfocus";
+inline constexpr auto kDlyPFocus     = "dly_pfocus";
+inline constexpr auto kRevPFocus     = "rev_pfocus";
+inline constexpr auto kLofiOn        = "lofi_on";
+inline constexpr auto kLofiBits      = "lofi_bits";
+inline constexpr auto kLofiSrate     = "lofi_srate";
+inline constexpr auto kLofiCompand   = "lofi_compand";
+inline constexpr auto kLofiAlias     = "lofi_alias";
+inline constexpr auto kWidthOn       = "width_on";
+inline constexpr auto kWidth         = "width";
+inline constexpr auto kWidthHaas     = "width_haas";
+inline constexpr auto kWidthBassMono = "width_bassmono";
+inline constexpr auto kTalkOn        = "talk_on";
+inline constexpr auto kTalkVa        = "talk_va";
+inline constexpr auto kTalkVb        = "talk_vb";
+inline constexpr auto kTalkMorph     = "talk_morph";
+inline constexpr auto kTalkSens      = "talk_sens";
+inline constexpr auto kFxPrePost     = "fx_prepost";   // governs LO-FI placement (WIDTH fixed POST)
 inline constexpr auto kDrift         = "drift";
 inline constexpr auto kInterp        = "interp";            // flagged carryover
 inline constexpr auto kEngine        = "engine";            // flagged carryover
@@ -200,24 +220,58 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         layout.add(bip("mtx" + n + "_amt", "Mtx " + n + " Amt", 0.0f));
     }
 
+    // ---- FX slots with the PARAMS model (4 host-automatable extras p0..p3
+    //      + a focus selector; the v8 panel binds p0, deeper extras are
+    //      automation-only -- FEATURES.md 11.1). pfocus is host-only in v8.
+    const StringArray pFocus { "P1", "P2", "P3", "P4" };
+    auto slotExtras = [&](const char* prefix, const String& nm) {
+        for (int i = 0; i < 4; ++i)
+            layout.add(uni(juce::String(prefix) + "_p" + juce::String(i),
+                           nm + " Param " + juce::String(i + 1), 0.5f));
+    };
+
     layout.add(choice(kModfxType, "Mod FX Type",
-        StringArray { "Chorus", "Flanger", "Phaser", "Ensemble" }, 0));
+        StringArray { "Chorus", "Flanger", "Phaser", "Ensemble",
+                      "Dimension", "Rotary", "Barberpole" }, 0));
     layout.add(uni(kModfxRate,  "Mod FX Rate",  0.3f));
     layout.add(uni(kModfxDepth, "Mod FX Depth", 0.5f));
     layout.add(uni(kModfxMix,   "Mod FX Mix",   0.5f));
     layout.add(boolean(kModfxOn, "Mod FX On", false));
+    slotExtras("modfx", "Mod FX");
+    layout.add(choice(kModfxPFocus, "Mod FX Focus", pFocus, 0));
 
     layout.add(choice(kDlyMode, "Delay Mode", StringArray { "Digital", "Tape", "Pong" }, 0));
     layout.add(uni(kDlyTime, "Delay Time", 0.55f));
     layout.add(uni(kDlyFb,   "Delay Feedback", 0.39f));
     layout.add(uni(kDlyMix,  "Delay Mix", 0.0f));
     layout.add(boolean(kDlyOn, "Delay On", false));
+    slotExtras("dly", "Delay");
+    layout.add(choice(kDlyPFocus, "Delay Focus", pFocus, 0));
 
     layout.add(choice(kRevType, "Reverb Type", StringArray { "Room", "Hall", "Plate" }, 0));
     layout.add(uni(kRevSize, "Reverb Size", 0.5f));
     layout.add(uni(kRevDamp, "Reverb Damp", 0.5f));
     layout.add(uni(kRevMix,  "Reverb Mix", 0.0f));
     layout.add(boolean(kRevOn, "Reverb On", false));
+    slotExtras("rev", "Reverb");
+    layout.add(choice(kRevPFocus, "Reverb Focus", pFocus, 0));
+
+    // ---- standalone stages (named params per DSP_BUILD s9) ----------------
+    layout.add(boolean(kLofiOn, "Lo-Fi On", false));
+    layout.add(uni(kLofiBits, "Lo-Fi Bits", 0.0f));
+    layout.add(uni(kLofiSrate, "Lo-Fi Rate", 0.0f));
+    layout.add(uni(kLofiCompand, "Lo-Fi Compand", 0.0f));
+    layout.add(boolean(kLofiAlias, "Lo-Fi Alias", false));
+    layout.add(boolean(kWidthOn, "Width On", false));
+    layout.add(uni(kWidth, "Width", 0.5f));
+    layout.add(uni(kWidthHaas, "Width Haas", 0.0f));
+    layout.add(boolean(kWidthBassMono, "Width Bass Mono", false));
+    layout.add(boolean(kTalkOn, "Talk On", false));
+    layout.add(uni(kTalkVa, "Talk Vowel A", 0.0f));
+    layout.add(uni(kTalkVb, "Talk Vowel B", 0.5f));
+    layout.add(uni(kTalkMorph, "Talk Morph", 0.0f));
+    layout.add(uni(kTalkSens, "Talk Sens", 0.0f));
+    layout.add(choice(kFxPrePost, "Lo-Fi Routing", StringArray { "Post", "Pre" }, 0));
 
     layout.add(uni(kDrift, "Drift", 0.0f));
     layout.add(choice(kInterp, "Interpolation", StringArray { "Drop Sample", "Linear" }, 1));
