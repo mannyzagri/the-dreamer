@@ -44,7 +44,7 @@ TheDreamerProcessor::TheDreamerProcessor()
     pModfxType = p(kModfxType); pModfxRate = p(kModfxRate);
     pModfxDepth = p(kModfxDepth); pModfxMix = p(kModfxMix); pModfxOn = p(kModfxOn);
     pDlyMode = p(kDlyMode); pDlyTime = p(kDlyTime);
-    pDlyFb = p(kDlyFb); pDlyMix = p(kDlyMix); pDlyOn = p(kDlyOn);
+    pDlyFb = p(kDlyFb); pDlyMix = p(kDlyMix); pDlyOn = p(kDlyOn); pDlySync = p(kDlySync);
     pRevType = p(kRevType); pRevSize = p(kRevSize);
     pRevDamp = p(kRevDamp); pRevMix = p(kRevMix); pRevOn = p(kRevOn);
     for (int i = 0; i < 4; ++i) {
@@ -212,14 +212,13 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     buildPatch(synth.patch());
     synth.updateLive();
 
-    {   // host tempo for the v7 tone-LFO sync divisions (fallback 120)
-        double bpm = 120.0;
-        if (auto* ph = getPlayHead())
-            if (auto pos = ph->getPosition())
-                if (auto b = pos->getBpm())
-                    bpm = juce::jlimit(20.0, 999.0, *b);
-        synth.setBpm((float)bpm);
-    }
+    // host tempo for the tone-LFO + delay sync divisions (fallback 120)
+    double bpm = 120.0;
+    if (auto* ph = getPlayHead())
+        if (auto pos = ph->getPosition())
+            if (auto b = pos->getBpm())
+                bpm = juce::jlimit(20.0, 999.0, *b);
+    synth.setBpm((float)bpm);
 
     const bool vintage = pEngine->load() < 0.5f;
     const int  os      = vintage ? 1 : 2;
@@ -276,7 +275,16 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     const bool dlyOn = pDlyOn->load() > 0.5f;
     static constexpr int delayTypeMap[3] = { 2, 0, 1 };      // DIG/TAPE/PONG -> donor enum
     delay.setType((dreamer::StereoDelay::Type)delayTypeMap[(int)pDlyMode->load()]);
-    delay.setTimeFree((float)dlyMs(pDlyTime->load()));
+    if (pDlySync->load() > 0.5f) {
+        // v9: tempo-sync the delay time to the same 12-division table the tone
+        // LFOs use (dreamer::toneLfoDivisionBeats), off the host BPM.
+        const int idx = (int)(pDlyTime->load() * 11.0f + 0.5f);
+        const double beats = dreamer::toneLfoDivisionBeats(idx);
+        const double ms = beats * 60000.0 / (bpm > 1.0 ? bpm : 120.0);
+        delay.setTimeFree((float)juce::jlimit(1.0, 4000.0, ms));
+    } else {
+        delay.setTimeFree((float)dlyMs(pDlyTime->load()));
+    }
     const float dfb  = pDlyFb->load() * 0.9f;                // 0..1 -> 0..0.9 (donor cap)
     const float dwet = dlyOn ? pDlyMix->load() : 0.0f;
 
@@ -427,11 +435,15 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         else
             reverb.processMono(reverbWetL.data(), numSamples);
 
-        constexpr float kDryScale = 2.0f;                    // donor law
+        // Dry gain must be CONTINUOUS with the bypass path (dry x1.0 when
+        // reverb is off): the donor's kDryScale=2.0 doubled the dry level the
+        // instant mix crossed the 1% threshold -> a click + a huge ROOM/HALL
+        // level jump. With pure-wet render (dryLevel=0) the manual mix needs
+        // no 2x compensation: at rmix->0 dry->1.0 (= bypass), so no step.
         for (int n = 0; n < numSamples; ++n) {
-            left[n] = left[n] * (kDryScale * (1.0f - 0.4f * rmix)) + reverbWetL[(size_t)n] * (0.8f * rmix);
+            left[n] = left[n] * (1.0f - 0.4f * rmix) + reverbWetL[(size_t)n] * (0.8f * rmix);
             if (right != nullptr)
-                right[n] = right[n] * (kDryScale * (1.0f - 0.4f * rmix)) + reverbWetR[(size_t)n] * (0.8f * rmix);
+                right[n] = right[n] * (1.0f - 0.4f * rmix) + reverbWetR[(size_t)n] * (0.8f * rmix);
         }
         reverbWasActive = true;
     } else if (reverbWasActive) {

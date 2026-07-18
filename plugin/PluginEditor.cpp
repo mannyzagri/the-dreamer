@@ -45,7 +45,7 @@ juce::StringArray makeToggleIds() {
             ids.add(juce::String(s) + sx);
     for (const char* s : { "vec_orbit_on", "vec_orbit_voice",
                            "vec_penv_on", "vec_penv_loop",
-                           "modfx_on", "dly_on", "rev_on" })
+                           "modfx_on", "dly_on", "dly_sync", "rev_on" })
         ids.add(s);
     return ids;
 }

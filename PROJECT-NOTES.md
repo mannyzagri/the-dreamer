@@ -4,11 +4,12 @@
 > block. STATE is OVERWRITE-ONLY: update it in place as the last act of a work
 > pass — never append a second STATE block.
 
-## STATE (updated 2026-07-18, RC 0.7.0 — loops v2 (26 loops), validator all-stages PASS)
+## STATE (updated 2026-07-18, RC 0.7.1 — bug fixes + v9 GUI, validator all-stages PASS)
 
 | Item | Value |
 |---|---|
-| Deployed version | **0.7.0 RC (FX v1.5 + v8 + loops v2)** — `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root); validator PASS all stages (pluginval 8) |
+| Deployed version | **0.7.1 RC (bug fixes + v9 delay-sync)** — `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root); validator PASS all stages (pluginval 8) |
+| 0.7.1 fixes | (1) Global filter resonance/BAL overflow → GlobalFilter output safety net (peak 2.57→1.49, transparent <0.8). (2) Reverb click + ROOM/HALL huge gain → kDryScale 2.0→1.0 (dry continuous with bypass). (3) NL3→N+LP name. (4) v9: dly_sync (tempo-synced delay, 12-div table off host BPM) + GUI SYNC btn. **"F1 not applying" was NOT reproduced** — DSP proven (F1 LP24@300Hz kills 6kHz) AND GUI binding proven correct (F1 CUT→flt1_cut, distinct from F2, 3 ways); likely masked by the overflow bugs (now fixed) or a stale build — user to re-verify on 0.7.1 |
 | Bank | **114 waves** = 78 cycles + **26 Ens loops** (v1's 16 at indices 78-93 held stable + v2 batch2's 10 string/choir/vox at 94-103) + 10 Shot (104-113). Loops baked from assets/loops/*.wav by tools/bake_loops_header.cpp; recipes tools/bake_loops.py + bake_loops2.py. LoopBankData.h = 6.13 MB int16 (exceeds §1's <5 MB soft target — consequence of 26 loops; not blocking). NOTE: "bank2"/rompler-bank-v2 (the 78 cycles) was already fully in since v1 — the share copy only differed by CRLF. |
 | Contracts | design-handoff/v8/ (DSP_BUILD/FEATURES §11 + GUI_2 README) is newest; supersedes v7 where it conflicts. ~250 params → Cubase FULL re-scan |
 | Engine | v3+v7 base + **FX v1.5**: modfx 7 modes (+Dimension/Rotary/Barberpole; extras p0..p3 drive them), standalone LO-FI/WIDTH/TALK stages (host-automatable only, not on panel), per-slot PARAMS (modfx/dly/rev p0..p3+pfocus; **dly/rev extras RESERVED/inert** — ports can't take knobs under rule 1), fx_prepost (LO-FI PRE/POST; WIDTH fixed POST), output peak meters. Bus order + RT-safety per architect review (see CLAUDE.md v1.5 decisions) |
@@ -57,6 +58,14 @@
 
 ## STATUS log (newest first)
 
+- 2026-07-18 (bug fixes + v9) — RC 0.7.1. User-reported bugs, measured then
+  fixed: global-filter resonance/BAL overflow (ToneSvf had no safety →
+  GlobalFilter output soft-clip), reverb click + ROOM/HALL gain (kDryScale
+  2→1). NL3→N+LP name. v9 delay tempo-sync (dly_sync + GUI SYNC btn/division
+  label). test_fx_v15 [global-filter] regression added. "F1 not applying"
+  could not be reproduced — DSP + GUI binding both proven correct; flagged
+  for user re-verify (likely masked by the overflow, now fixed). GUI: only
+  app.js/style.css changed (frontend-developer pass).
 - 2026-07-18 (loops v2) — loop bank v1→v2 (RC 0.7.0). Added the 10 batch2
   string/choir/vox loops (dreamer-loops-v2.zip / bake_loops2.py) appended
   after v1's 16 (indices 94-103; v1 78-93 byte-identical, shots shift to

@@ -14,6 +14,7 @@
 #include <cmath>
 #include <vector>
 
+#include "dsp/glue/GlobalFilter.h"
 #include "dsp/glue/Ensemble.h"
 #include "dsp/glue/Dimension.h"
 #include "dsp/glue/Rotary.h"
@@ -213,6 +214,53 @@ int main() {
         const double bright = hf(0.0f), dark = hf(1.0f);
         std::printf("  ensemble hf: tone0=%.4f tone1=%.4f\n", bright, dark);
         CHECK(dark < bright, "ensemble TONE rolls off HF");
+    }
+
+    // ---- [global-filter] (0.7.1 bug fixes) -------------------------------
+    std::printf("[global-filter]\n");
+    {
+        // F1 LP24 at a low cutoff must attenuate HF (F1-applies regression;
+        // the "F1 not applying" report was GUI-side, DSP is proven here)
+        dreamer::GlobalFilter f; f.setSampleRate(SR); f.setType(0);
+        f.setCutoffRes(300.0, 0.0);
+        auto band = [&](double hz) {
+            dreamer::GlobalFilter g; g.setSampleRate(SR); g.setType(0);
+            g.setCutoffRes(300.0, 0.0);
+            double e = 0;
+            for (int i = 0; i < 24000; ++i) {
+                const float y = g.process((float)std::sin(2.0 * M_PI * hz * i / SR) * 0.5f);
+                if (i > 6000) e += (double)y * y;
+            }
+            return std::sqrt(e / 18000.0);
+        };
+        const double lo = band(100.0), hi = band(6000.0);
+        std::printf("  LP24@300: 100Hz=%.4f 6kHz=%.4f\n", lo, hi);
+        CHECK(lo > 0.2 && hi < lo * 0.05, "F1 LP24 attenuates HF (F1 applies)");
+
+        // resonant SVF output must be bounded by the safety net (no overflow
+        // into FX/master; the BAL-solo-resonant overflow report)
+        dreamer::GlobalFilter g; g.setSampleRate(SR); g.setType(0);
+        g.setCutoffRes(900.0, 0.98);
+        float pk = 0.0f;
+        for (int i = 0; i < SR; ++i) {
+            const float y = g.process((float)std::sin(2.0 * M_PI * 900.0 * i / SR) * 0.5f);
+            pk = std::fmax(pk, std::fabs(y));
+        }
+        std::printf("  resonant LP24 peak=%.3f (bounded)\n", pk);
+        CHECK(pk < 1.6f, "resonant global filter output bounded (safety net)");
+
+        // small signals pass through the safety transparently (a 0.3 tone in
+        // the passband stays ~0.3, not boosted or clipped by the knee)
+        dreamer::GlobalFilter t; t.setSampleRate(SR); t.setType(3);   // HP
+        t.setCutoffRes(50.0, 0.0);
+        float pkT = 0.0f;
+        for (int i = 0; i < 8000; ++i) {
+            const float x = (float)std::sin(2.0 * M_PI * 2000.0 * i / SR) * 0.3f;  // < 0.8
+            const float y = t.process(x);
+            if (i > 4000) pkT = std::fmax(pkT, std::fabs(y));
+        }
+        std::printf("  0.3 passband peak=%.4f (transparent)\n", pkT);
+        CHECK(pkT > 0.25f && pkT < 0.35f, "safety transparent for small signals");
     }
 
     if (failures) { std::printf("%d FAILURE(S)\n", failures); return 1; }

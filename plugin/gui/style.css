@@ -203,6 +203,13 @@ html,body{width:100%;height:100%;overflow:hidden;background:#15172e}
 .fxtype{width:44px;flex:none}   /* v8: FX type button (center of the <> stepper, opens menu) */
 .fxdiv{width:100%;height:1px;background:#464e94;opacity:.4}
 .fxright{margin-left:auto;display:flex;align-items:center;gap:5px}
+/* v9: DELAY tempo-sync SYNC btn + LED (compact column, fits the 4-knob FX row) */
+.fxsync{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none}
+.fxsync .led.sled{width:5px;height:5px}
+.fxsyncbtn{width:30px;height:13px;background:#181b34;border:1px solid #464e94;border-radius:3px;cursor:pointer;
+  box-shadow:0 2px 3px rgba(0,0,0,.5);color:#c9cdf2;font:700 6.5px 'Barlow Semi Condensed';
+  display:flex;align-items:center;justify-content:center;letter-spacing:.08em;flex:none}
+.fxsyncbtn:active{background:#10122a}
 
 /* version/build stamp (getInfo) */
 #verStamp{position:absolute;right:14px;bottom:8px;font:600 7px 'Barlow Semi Condensed';
