@@ -10,6 +10,7 @@
 
 #pragma once
 #include <cmath>
+#include <algorithm>   // std::min/std::max (used below)
 
 namespace dreamer {
 

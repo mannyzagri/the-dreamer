@@ -59,6 +59,7 @@ inline constexpr auto kDlyTime       = "dly_time";
 inline constexpr auto kDlyFb         = "dly_fb";
 inline constexpr auto kDlyMix        = "dly_mix";
 inline constexpr auto kDlyOn         = "dly_on";
+inline constexpr auto kDlySync       = "dly_sync";   // v9: tempo-sync delay time
 inline constexpr auto kRevType       = "rev_type";
 inline constexpr auto kRevSize       = "rev_size";
 inline constexpr auto kRevDamp       = "rev_damp";
@@ -123,7 +124,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     const StringArray tvfTypes    { "LP 24", "LP 12", "BP", "HP" };
     const StringArray filterTypes { "LP 24", "LP 12", "BP", "HP", "Liquid",
                                     "Classic", "Ladder", "Notch", "Comb +",
-                                    "Comb -", "NL3 N+LP", "Formant", "Allpass",
+                                    "Comb -", "N+LP", "Formant", "Allpass",
                                     "DreamPln" };
     const StringArray lfoShapes   { "Tri", "Sin", "Saw", "Sqr", "S+H" };
     const StringArray orbitShapes { "Saw", "Tri", "Sin", "Sqr", "S+H" };
@@ -245,6 +246,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add(uni(kDlyFb,   "Delay Feedback", 0.39f));
     layout.add(uni(kDlyMix,  "Delay Mix", 0.0f));
     layout.add(boolean(kDlyOn, "Delay On", false));
+    layout.add(boolean(kDlySync, "Delay Sync", false));
     slotExtras("dly", "Delay");
     layout.add(choice(kDlyPFocus, "Delay Focus", pFocus, 0));
 

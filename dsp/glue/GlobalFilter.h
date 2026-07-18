@@ -15,6 +15,7 @@
 // C++17, header-only, JUCE-free, real-time safe after setSampleRate().
 
 #pragma once
+#include <cmath>
 #include "dsp/glue/ToneSvf.h"
 #include "dsp/ported/RhinoFilter.h"
 
@@ -48,14 +49,26 @@ public:
     }
 
     float process(float in) noexcept {
-        if (type_ <= 3) return svf_.process(in);
-        if (type_ <= 6) return rhino_.processSample(in);
-        return in;                        // 8-14: not yet implemented -> bypass
+        float y;
+        if (type_ <= 3)      y = svf_.process(in);
+        else if (type_ <= 6) return rhino_.processSample(in);   // Rhino ports self-safety
+        else                 return in;                          // 8-14: bypass
+        return safety(y);   // built-in SVF has no resonance clamp -> bound it
     }
 
     void reset() noexcept { svf_.reset(); rhino_.reset(); }
 
 private:
+    // Output safety net for the built-in resonant SVF: transparent up to ~0.8,
+    // soft-limits above and asymptotes to ~1.5 so extreme resonance (or a
+    // BAL sweep that solos a resonant slot) can't overflow into the FX/master.
+    static float safety(float x) noexcept {
+        const float a = std::fabs(x);
+        if (a <= 0.8f) return x;
+        const float s = x < 0.0f ? -1.0f : 1.0f;
+        return s * (0.8f + 0.7f * std::tanh((a - 0.8f) / 0.7f));
+    }
+
     int                     type_ = 0;
     ToneSvf                 svf_;
     RubberFilter            rhino_;

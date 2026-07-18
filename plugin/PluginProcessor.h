@@ -124,7 +124,7 @@ private:
                        *pLfoRate, *pLfoShape,
                        *pMtxSrc[3], *pMtxDst[3], *pMtxAmt[3],
                        *pModfxType, *pModfxRate, *pModfxDepth, *pModfxMix, *pModfxOn,
-                       *pDlyMode, *pDlyTime, *pDlyFb, *pDlyMix, *pDlyOn,
+                       *pDlyMode, *pDlyTime, *pDlyFb, *pDlyMix, *pDlyOn, *pDlySync,
                        *pRevType, *pRevSize, *pRevDamp, *pRevMix, *pRevOn,
                        *pModfxP[4], *pDlyP[4], *pRevP[4],
                        *pLofiOn, *pLofiBits, *pLofiSrate, *pLofiCompand, *pLofiAlias,
