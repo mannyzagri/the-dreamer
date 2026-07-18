@@ -98,7 +98,7 @@ static std::vector<float> render1s(const dreamer::DreamPatch& patch, int note = 
     std::vector<float> out(SR);
     for (int i = 0; i < SR; ++i) {
         float l = 0, r = 0;
-        s->process(0.0f, 0.0f, l, r);
+        s->process(l, r);
         out[(size_t)i] = l;
     }
     return out;
@@ -210,7 +210,7 @@ int main(int argc, char** argv) {
         g_allocCount = 0; g_countAllocs = true;
         for (int i = 0; i < SR; ++i) {
             float l = 0, r = 0;
-            synth.process(0.0f, 0.0f, l, r);
+            synth.process(l, r);
             L.push_back(l * 0.02f); R.push_back(r * 0.02f);
         }
         g_countAllocs = false;
@@ -218,7 +218,7 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 24; ++i) synth.noteOff(36 + i * 2);
         for (int i = 0; i < SR * 2; ++i) {
             float l = 0, r = 0;
-            synth.process(0.0f, 0.0f, l, r);
+            synth.process(l, r);
             L.push_back(l * 0.02f); R.push_back(r * 0.02f);
         }
         bool finite = true; float peak = 0, tail = 0;
@@ -240,7 +240,7 @@ int main(int argc, char** argv) {
         p.tone[0].tvaR = 0.005;
         synth.updateLive();
         auto renderMs = [&](int ms) {
-            for (int i = 0; i < SR * ms / 1000; ++i) { float l = 0, r = 0; synth.process(0, 0, l, r); }
+            for (int i = 0; i < SR * ms / 1000; ++i) { float l = 0, r = 0; synth.process(l, r); }
         };
         auto hasNote = [&](int note) {
             for (int i = 0; i < dreamer::DreamSynth::kMaxVoices; ++i)
@@ -344,7 +344,7 @@ int main(int argc, char** argv) {
         float mn = 99, mx = -99;
         for (int i = 0; i < SR; ++i) {
             float l = 0, r2 = 0;
-            s->process(0, 0, l, r2);
+            s->process(l, r2);
             mn = std::fmin(mn, s->matrixCut1Oct());
             mx = std::fmax(mx, s->matrixCut1Oct());
         }
@@ -372,12 +372,174 @@ int main(int argc, char** argv) {
         float peakL = 0, peakR = 0;
         for (int i = 0; i < SR / 2; ++i) {
             float l = 0, r = 0;
-            s->process(0, 0, l, r);
+            s->process(l, r);
             if (i > SR / 10) { peakL = std::fmax(peakL, std::fabs(l)); peakR = std::fmax(peakR, std::fabs(r)); }
         }
         std::printf("  hard-left peaks L=%.3f R=%.5f\n", peakL, peakR);
         CHECK(peakL > 0.1f, "hard-left tone audible on L");
         CHECK(peakR < peakL * 0.01f, "hard-left tone silent on R");
+    }
+
+    // ---- [noise] (phase 12) ----------------------------------------------
+    std::printf("[noise]\n");
+    {
+        auto renderNoise = [&](double level, double color) {
+            auto s = std::make_unique<dreamer::DreamSynth>();
+            s->prepare(SR);
+            auto& p = s->patch();
+            p = sinePatch();
+            p.tone[0].level = 1.0;
+            p.tone[0].noise = level;
+            p.tone[0].noiseColor = color;
+            s->updateLive();
+            s->noteOn(69, 0.8f);
+            std::vector<float> out(SR);
+            for (int i = 0; i < SR; ++i) { float l = 0, r = 0; s->process(l, r); out[(size_t)i] = l; }
+            return out;
+        };
+        auto rmsHf = [&](const std::vector<float>& v) {   // first-difference RMS
+            double s = 0;
+            for (size_t i = SR / 5 + 1; i < v.size(); ++i) {
+                const double d = (double)v[i] - v[i - 1];
+                s += d * d;
+            }
+            return std::sqrt(s / (double)(v.size() - SR / 5));
+        };
+        const auto clean = renderNoise(0.0, 0.0);
+        const auto white = renderNoise(0.5, 0.0);
+        const auto dark  = renderNoise(0.5, 1.0);
+        const double hClean = rmsHf(clean), hWhite = rmsHf(white), hDark = rmsHf(dark);
+        std::printf("  hf-rms clean=%.5f white=%.5f dark=%.5f\n", hClean, hWhite, hDark);
+        CHECK(hWhite > hClean * 3.0, "noise adds HF energy");
+        CHECK(hDark < hWhite * 0.5, "color darkens the noise");
+        CHECK(renderNoise(0.0, 0.7) == clean, "noise level 0 is a no-op");
+    }
+
+    // ---- [drift] (phase 12) ----------------------------------------------
+    std::printf("[drift]\n");
+    {
+        auto s = std::make_unique<dreamer::DreamSynth>();
+        s->prepare(SR);
+        s->patch() = sinePatch();
+        s->patch().drift = 1.0;
+        s->updateLive();
+        s->noteOn(69, 0.8f);
+        float mx = 0.0f;
+        for (int i = 0; i < SR * 20; ++i) {
+            float l = 0, r = 0;
+            s->process(l, r);
+            mx = std::fmax(mx, std::fabs(s->voiceForTest(0).driftSemisForTest()));
+        }
+        std::printf("  max |drift| over 20 s: %.4f semis (limit 0.03)\n", mx);
+        CHECK(mx <= 0.0301f, "drift bounded at +/-3 cents");
+        CHECK(mx > 0.0001f, "drift actually moves at depth 1");
+    }
+
+    // ---- [requant] (phase 12 chain stage) --------------------------------
+    std::printf("[requant]\n");
+    {
+        int bad = 0;
+        for (int i = -32768; i < 32768; i += 7) {
+            const float y = dreamer::Tone::requant12((float)i / 32768.0f);
+            const int32_t q = (int32_t)(y * 32768.0f);
+            if (q & 0xF) ++bad;
+        }
+        CHECK(bad == 0, "requant12 output keeps low nibble zero");
+        CHECK(dreamer::Tone::requant12(160.0f / 32768.0f) == 160.0f / 32768.0f,
+              "requant12 passes grained values unchanged");
+    }
+
+    // ---- [orbit] (phase 13) ----------------------------------------------
+    std::printf("[orbit]\n");
+    {
+        bool bounded = true;
+        for (int shape = 0; shape <= 4; ++shape)
+            for (int i = 0; i <= 100; ++i) {
+                const float v = dreamer::DreamSynth::orbitShapeFn(shape, i / 100.0f, 0.37f);
+                if (v < 0.0f || v > 1.0f) bounded = false;
+            }
+        CHECK(bounded, "orbit shapes bounded 0..1");
+        CHECK(dreamer::DreamSynth::orbitShapeFn(0, 0.3f, 0) == 0.3f, "SAW is the raw ramp");
+        CHECK(dreamer::DreamSynth::orbitShapeFn(3, 0.3f, 0) == 0.0f
+              && dreamer::DreamSynth::orbitShapeFn(3, 0.7f, 0) == 0.5f, "SQR jumps at half");
+        const double lo = dreamer::DreamSynth::orbitRateHz(0.0);
+        const double hi = dreamer::DreamSynth::orbitRateHz(1.0);
+        std::printf("  orbit rate map: %.3f .. %.2f Hz\n", lo, hi);
+        CHECK(std::fabs(lo - 0.02) < 1e-6 && std::fabs(hi - 8.0) < 1e-6,
+              "orbit rate 0.02..8 Hz");
+    }
+
+    // ---- [compass] (DSP_BUILD phase-13 acceptance) -----------------------
+    std::printf("[compass]\n");
+    {
+        // DIRs 0/.25/.5/.75, INT=1: measured solo-tone gains reproduce the
+        // 4-corner VS law within 1e-3 after normalizing out the chain gain.
+        double gm[4], ge[4];
+        for (double phase : { 0.0, 0.125, 0.4 }) {
+            for (int t = 0; t < 4; ++t) {
+                auto s = std::make_unique<dreamer::DreamSynth>();
+                s->prepare(SR);
+                auto& p = s->patch();
+                p = sinePatch();
+                p.tone[0].enabled = false;
+                p.tone[t] = sinePatch().tone[0];
+                p.tone[t].enabled = true;
+                p.tone[t].level = 1.0;
+                p.tone[t].velSens = 0.0;
+                p.tone[t].vecInt = 1.0;
+                p.tone[t].dir = 0.25 * t;
+                p.tone[t].pan = -1.0;
+                p.vec.phase = phase;
+                s->updateLive();
+                s->noteOn(69, 1.0f);
+                double peak = 0.0;
+                for (int i = 0; i < SR; ++i) {
+                    float l = 0, r = 0;
+                    s->process(l, r);
+                    if (i > SR / 2) peak = std::fmax(peak, std::fabs((double)l));
+                }
+                const double c = std::cos(2.0 * M_PI * (phase - 0.25 * t));
+                gm[t] = peak;
+                ge[t] = c > 0.0 ? c * c : 0.0;
+            }
+            double kM = 0, kE = 0;
+            for (int t = 0; t < 4; ++t) { kM = std::fmax(kM, gm[t]); kE = std::fmax(kE, ge[t]); }
+            bool ok = kM > 0 && kE > 0;
+            for (int t = 0; ok && t < 4; ++t)
+                if (std::fabs(gm[t] / kM - ge[t] / kE) > 1e-3) ok = false;
+            std::printf("  phase %.3f measured: %.4f %.4f %.4f %.4f\n", phase,
+                        gm[0] / kM, gm[1] / kM, gm[2] / kM, gm[3] / kM);
+            CHECK(ok, "compass gains reproduce the VS law within 1e-3");
+        }
+    }
+
+    // ---- [startrand] ------------------------------------------------------
+    std::printf("[startrand]\n");
+    {
+        auto render = [&](bool rnd) {
+            auto s = std::make_unique<dreamer::DreamSynth>();
+            s->prepare(SR);
+            auto& p = s->patch();
+            p = sinePatch();
+            p.tone[0].waveIndex = 78;             // first Ens loop
+            p.tone[0].startRandom = rnd;
+            s->updateLive();
+            std::vector<float> out;
+            for (int k = 0; k < 2; ++k) {         // two strikes
+                s->noteOn(57, 0.8f);
+                for (int i = 0; i < 4000; ++i) { float l = 0, r = 0; s->process(l, r); out.push_back(l); }
+                s->killAll();
+            }
+            return out;
+        };
+        const auto fixedA = render(false);
+        const auto fixedB = render(false);
+        CHECK(fixedA == fixedB, "fixed start is deterministic");
+        const auto rndA = render(true);
+        bool strikesDiffer = false;
+        for (int i = 0; i < 4000; ++i)
+            if (rndA[(size_t)i] != rndA[(size_t)(4000 + i)]) { strikesDiffer = true; break; }
+        CHECK(strikesDiffer, "START RANDOM varies between strikes");
     }
 
     // ---- [render] vector pad demo ---------------------------------------
@@ -413,7 +575,7 @@ int main(int argc, char** argv) {
         std::vector<float> L(SR * 6), R(SR * 6);
         for (int i = 0; i < SR * 6; ++i) {
             float l = 0, r = 0;
-            s->process(0, 0, l, r);
+            s->process(l, r);
             L[(size_t)i] = l * 0.22f; R[(size_t)i] = r * 0.22f;
         }
         bool finite = true; float peak = 0;

@@ -1,142 +1,158 @@
-// DreamVoice v2 -- The Dreamer's 4-tone voice engine (FEATURES.md CORE set,
-// design handoff 2026-07-18; supersedes the 2-partial v1 engine, git history
-// keeps it).
+// DreamVoice v3 -- The Dreamer's 4-tone voice engine.
+// v2 (FEATURES.md CORE) extended per DSP_BUILD.md (2026-07-18, which WINS
+// over FEATURES.md where they conflict):
 //
-// Per voice: 4 Tones (JD-990 model), each:
-//   PcmOscillator -> Waveshaper (01/W LUT, section 2) -> ToneSvf TVF
-//   (LP24/LP12/BP/HP) -> TVA, with TVF/TVA/AUX ADSR envelopes, a per-tone
-//   tap of the single GLOBAL LFO (section 3), per-tone PAN (equal-power into
-//   the stereo voice bus), and a Dream Vector position DIR/INT (section 4).
-// Tone sum (stereo) -> global filters + FX in the processor.
+//   * bank v3 playback via PcmOsc3 (Cycle/Loop/OneShot, START as 0..1
+//     fraction, START RANDOM per-tone flag)
+//   * per-tone NOISE source (level + color one-pole, 12-bit quantized,
+//     mixed PRE-shaper; AUX dest 4 = NOISE, matrix dest NOISE)
+//   * tone chain (section 5): osc (+start/random) -> +noise -> waveshaper
+//     -> re-quantize 12-bit (ALWAYS) -> ToneSvf TVF -> TVA -> vector gain
+//     -> pan -> stereo tone sum
+//   * per-voice humanization drift (section 3): S&H random walk ~0.2 Hz,
+//     global DRIFT depth 0..1 -> 0..+/-3 cents, one-pole slewed, applied
+//     coherently to all tones of the voice
+//   * vector ORBIT SHAPE (section 6): SAW/TRI/SIN/SQR/S+H shaping of the
+//     raw phase ramp; ORBIT RATE 0.02..8 Hz; optional per-voice free-run
+//     (random phase offset per noteOn)
+//   * mod matrix dest list grows: PITCH/CUT1/CUT2/MORPH/SHAPE/VECPHS/PAN/
+//     NOISE; src list unchanged (GLFO/VECPHS/AUX/VELO/WHEEL)
 //
-// Dream Vector v4 (per-tone directional morphing):
-//   g    = max(0, cos(2pi*(phi - dir)))^2          control rate, per 16
-//   gain = level * ((1 - int) + int * g)           one-pole smoothed
-//   phi  = manual PHASE + ORBIT ramp + per-voice P-ENV, summed, wrapped.
-//
-// Mod matrix (section 7): 3 slots SRC -> DEST, bipolar AMT, control rate.
-//   SRC:  - / G-LFO / VEC PHS / AUX (voice-max) / VELO / WHEEL
-//   DEST: - / PITCH / CUT 1 / CUT 2 / MORPH (reserved, no-op in v1) /
-//         SHAPE / VEC PHS / PAN
-//   VEC PHS -> VEC PHS self-routing is clamped (slot skipped), per spec.
-//
-// Control-rate stepping (16 samples) is era-honest hardware behavior -- the
-// verified bank cadence -- do NOT smooth it (the vector gain's one-pole is
-// part of the spec'd law, not zipper hiding).
-//
-// Carry-overs from v1 (proven in test_voice): oldest-note steal via global
-// stamp (fixes the bank's unassigned-stamp defect), kill/killAll hard stop
-// (kill freezes envelope levels by design -- stolen-voice semantics),
-// sustain pedal, pitch bend on the control-rate frequency update.
+// Tone params are now native v3 fields (start 0..1 etc.) -- the verified
+// rompler::PartialParams struct no longer fits the v3 start semantics; the
+// verified ADSR (rompler::EnvelopeAdsr) is still reused. Carry-overs from
+// v1/v2 (proven): oldest-note steal via global stamp, kill/killAll (kill
+// freezes envelope levels by design), sustain, bend, 16-sample control-rate
+// stepping (era-honest, do NOT smooth).
 //
 // C++17, header-only, JUCE-free, real-time safe after prepare().
 
 #pragma once
 #include <cmath>
 #include <cstdint>
-#include "dsp/bank/Mode2Voice.h"        // rompler::EnvelopeAdsr + PcmOscillator/bank
+#include "dsp/bank/Mode2Voice.h"        // rompler::EnvelopeAdsr (verified)
+#include "dsp/glue/PcmOsc3.h"
 #include "dsp/glue/Waveshaper.h"
 #include "dsp/glue/ToneSvf.h"
-#include "dsp/ported/RhinoLfo.h"        // dreamer::Lfo (the global LFO)
+#include "dsp/ported/RhinoLfo.h"
 
 namespace dreamer {
 
 // ---------------------------------------------------------------- params
 struct ToneParams {
     bool   enabled      = false;
-    int    waveIndex    = 0;
-    int    coarse       = 0;       // semitones
+    int    waveIndex    = 0;       // bank3 index (0..103)
+    int    coarse       = 0;       // semitones (processor maps oct*12)
     double fineCents    = 0.0;
-    double level        = 0.8;     // 0..1
-    double velSens      = 0.5;     // 0..1
-    double startOffset  = 0.0;     // 0..599 (E-MU trick)
+    double level        = 0.8;
+    double velSens      = 0.5;
+    double start01      = 0.0;     // 0..1 fraction (v3 semantics)
+    bool   startRandom  = false;   // randomize start at note-on
     double pan          = 0.0;     // -1..+1
 
-    // Dream Vector position
-    double dir          = 0.0;     // 0..1 = 0..360 degrees
-    double vecInt       = 0.0;     // 0..1 intensity
+    double noise        = 0.0;     // 0..1 level
+    double noiseColor   = 0.0;     // 0 white .. 1 dark
 
-    // waveshaper
-    int    shapeMode    = 0;       // 0 OFF, 1..5 = ShaperTables order
-    double shapeDepth   = 0.0;     // 0..1
+    double dir          = 0.0;     // vector angle 0..1
+    double vecInt       = 0.0;     // vector intensity 0..1
 
-    // TVF
-    int    tvfMode      = 0;       // ToneSvf::Mode order LP24/LP12/BP/HP
+    int    shapeMode    = 0;       // 0 OFF, 1..5 ShaperTables order
+    double shapeDepth   = 0.0;
+
+    int    tvfMode      = 0;       // LP24/LP12/BP/HP
     double cutoffHz     = 8000.0;
     double resonance    = 0.0;
-    double tvfEnvAmount = 0.0;     // Hz at env peak (bipolar)
+    double tvfEnvAmount = 0.0;     // Hz at env peak
     double tvfKeyFollow = 0.5;
     double tvfA = 0.005, tvfD = 0.3, tvfS = 1.0, tvfR = 0.3;
-
-    // TVA
     double tvaA = 0.005, tvaD = 0.3, tvaS = 1.0, tvaR = 0.3;
 
-    // AUX env (section 3): one ADSR, one destination
     double auxA = 0.005, auxD = 0.3, auxS = 1.0, auxR = 0.3;
-    int    auxDest = 0;            // 0 PITCH, 1 START, 2 SHAPE, 3 PAN
-    double auxAmt  = 0.0;          // -1..+1 (PITCH scales to +/-24 st)
+    int    auxDest = 0;            // 0 PITCH, 1 START, 2 SHAPE, 3 PAN, 4 NOISE
+    double auxAmt  = 0.0;          // -1..+1 (flagged addition vs DSP_BUILD s9)
 
-    // global-LFO tap
-    double lfoDepth = 0.0;         // 0..1
+    double lfoDepth = 0.0;
     int    lfoDest  = 0;           // 0 PITCH, 1 CUTOFF, 2 SHAPE, 3 LEVEL
 };
 
 struct VectorParams {
-    double phase      = 0.0;       // manual PHASE knob, 0..1 turns
-    bool   orbitOn    = false;
-    double orbitRate01 = 20.0;     // 0..100 -> Lfo::rateHzFromParam Hz
-    bool   penvOn     = false;
-    bool   penvLoop   = false;
-    double penvStart  = 0.0;       // 0..1 turns
-    double penvEnd    = 0.5;
-    double penvTime   = 1.0;       // seconds
+    double phase        = 0.0;     // manual PHASE, 0..1 turns
+    bool   orbitOn      = false;
+    double orbitRate01  = 0.3;     // 0..1 -> 0.02..8 Hz (exp map)
+    int    orbitShape   = 0;       // 0 SAW, 1 TRI, 2 SIN, 3 SQR, 4 S+H
+    bool   orbitPerVoice = false;  // per-voice free-run (non-panel)
+    bool   penvOn       = false;
+    bool   penvLoop     = false;
+    double penvStart    = 0.0;
+    double penvEnd      = 0.5;
+    double penvTime     = 1.0;     // seconds
 };
 
-struct MatrixSlot { int src = 0; int dest = 0; double amt = 0.0; };  // amt -1..+1
+struct MatrixSlot { int src = 0; int dest = 0; double amt = 0.0; };
 
 struct DreamPatch {
     ToneParams   tone[4];
     int          interp = 1;       // 0 DropSample, 1 Linear
     VectorParams vec;
     int          glfoShape01 = 0;  // panel order TRI/SIN/SAW/SQR/S+H
-    double       glfoRate01  = 50.0;
+    double       glfoRate01  = 50.0;   // 0..100 -> Lfo::rateHzFromParam
     MatrixSlot   slot[3];
+    double       drift = 0.0;      // global humanize depth 0..1
 };
 
-// matrix source/dest indices (panel choice order)
 namespace mtx {
     enum Src  : int { srcNone = 0, srcGlfo, srcVecPhs, srcAux, srcVelo, srcWheel };
     enum Dest : int { dstNone = 0, dstPitch, dstCut1, dstCut2, dstMorph,
-                      dstShape, dstVecPhs, dstPan };
+                      dstShape, dstVecPhs, dstPan, dstNoise };
 }
 
-// control-rate modulation bundle handed down from the synth
 struct ModContext {
     float bendSemis      = 0.0f;
-    float driftTuneSemis = 0.0f;
-    float driftCutOct    = 0.0f;
-    float glfoValue      = 0.0f;   // bipolar
-    float phi            = 0.0f;   // global phase part (manual+orbit+matrix), turns
+    float driftSemis     = 0.0f;   // per-voice humanize (filled by DreamVoice)
+    float glfoValue      = 0.0f;
+    float phi            = 0.0f;   // global phase part, turns
     float mtxPitchSemis  = 0.0f;
     float mtxShapeAdd    = 0.0f;
     float mtxPanAdd      = 0.0f;
+    float mtxNoiseAdd    = 0.0f;
+};
+
+// deterministic per-instance RNG (glue idiom)
+struct GlueRng {
+    uint32_t s = 1u;
+    void seed(uint32_t v) noexcept { s = v | 1u; }
+    float bipolar() noexcept {                      // [-1, +1)
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+        return (float)((int32_t)s / 2147483648.0);
+    }
+    float unipolar() noexcept { return bipolar() * 0.5f + 0.5f; }
 };
 
 // ---------------------------------------------------------------- tone
 class Tone {
 public:
-    void prepare(double sr) noexcept {
+    // 12-bit re-quantize (low nibble zero), truncate toward zero -- the
+    // explicit chain stage from DSP_BUILD s5 (also used by the shaper).
+    static float requant12(float x) noexcept {
+        int32_t q = (int32_t)(x * 32768.0f);
+        if (q > 32767) q = 32767; else if (q < -32768) q = -32768;
+        q = (q / 16) * 16;
+        return (float)q * (1.0f / 32768.0f);
+    }
+
+    void prepare(double sr, uint32_t seedBase) noexcept {
         sr_ = sr;
         osc_.setSampleRate(sr);
         tvfEnv_.setSampleRate(sr);
         tvaEnv_.setSampleRate(sr);
         auxEnv_.setSampleRate(sr);
         svf_.setSampleRate(sr);
+        rng_.seed(0x9E3779B9u * (seedBase + 1u));
     }
 
     void setInterpMode(int m) noexcept {
-        osc_.setInterp(m == 0 ? rompler::PcmOscillator::Interp::DropSample
-                              : rompler::PcmOscillator::Interp::Linear);
+        osc_.setInterp(m == 0 ? PcmOsc3::Interp::DropSample
+                              : PcmOsc3::Interp::Linear);
     }
 
     void noteOn(const ToneParams& p, int midiNote, float velocity01) noexcept {
@@ -144,12 +160,11 @@ public:
         note_ = midiNote;
         osc_.setWaveform(p.waveIndex);
         baseSemis_ = midiNote - 69 + p.coarse + p.fineCents / 100.0;
-        // AUX->START: re-strike offset, sampled at note-on from the aux env's
-        // residual level (0 on a fresh voice; evolving on steals/retriggers)
-        double start = p.startOffset;
-        if (p.auxDest == 1)
-            start += p.auxAmt * 599.0 * (double)lastAux_;
-        start = std::min(std::max(start, 0.0), 599.0);
+        double start = p.start01;
+        if (p.startRandom) start = (double)rng_.unipolar();       // section 2
+        if (p.auxDest == 1)                                       // AUX->START
+            start += p.auxAmt * (double)lastAux_;
+        if (start < 0.0) start = 0.0; else if (start > 1.0) start = 1.0;
         osc_.reset(start);
         velGain_ = (float)((1.0 - p.velSens) + p.velSens * velocity01);
         tvfEnv_.set(p.tvfA, p.tvfD, p.tvfS, p.tvfR);
@@ -160,9 +175,11 @@ public:
         auxEnv_.noteOn();
         svf_.setMode(p.tvfMode);
         svf_.reset();
-        vecGain_ = 0.0f;                 // vector gain fades in via its one-pole
+        noiseLp_ = 0.0f;
+        vecGain_ = 0.0f;
         levelMul_ = 1.0f;
         shapeEff_ = (float)p.shapeDepth;
+        noiseEff_ = (float)p.noise;
         ctrlCount_ = 0;
     }
 
@@ -171,8 +188,6 @@ public:
     bool isActive() const noexcept { return params_.enabled && tvaEnv_.isActive(); }
     float auxLevel() const noexcept { return lastAux_; }
 
-    // continuous fields go live on held notes; waveIndex/start/velSens/env
-    // times stay note-on-latched (v1 convention, documented)
     void updateLive(const ToneParams& p) noexcept {
         params_.enabled      = p.enabled;
         params_.level        = p.level;
@@ -181,6 +196,8 @@ public:
         params_.vecInt       = p.vecInt;
         params_.shapeMode    = p.shapeMode;
         params_.shapeDepth   = p.shapeDepth;
+        params_.noise        = p.noise;
+        params_.noiseColor   = p.noiseColor;
         params_.cutoffHz     = p.cutoffHz;
         params_.resonance    = p.resonance;
         params_.tvfEnvAmount = p.tvfEnvAmount;
@@ -191,6 +208,7 @@ public:
         params_.auxAmt       = p.auxAmt;
         params_.lfoDepth     = p.lfoDepth;
         params_.lfoDest      = p.lfoDest;
+        params_.startRandom  = p.startRandom;
         baseSemis_ = note_ - 69 + p.coarse + p.fineCents / 100.0;
         if (p.tvfMode != params_.tvfMode) {
             params_.tvfMode = p.tvfMode;
@@ -204,17 +222,17 @@ public:
         const float tva = tvaEnv_.process();
         lastAux_ = auxEnv_.process();
 
-        if (ctrlCount_-- <= 0) {                        // control rate, per 16
+        if (ctrlCount_-- <= 0) {                      // control rate, per 16
             ctrlCount_ = 15;
-            double pitchSemis = baseSemis_ + m.bendSemis + m.driftTuneSemis
+            double pitchSemis = baseSemis_ + m.bendSemis + m.driftSemis
                               + m.mtxPitchSemis;
-            double cutOct     = m.driftCutOct;
-            double shapeEff   = params_.shapeDepth + m.mtxShapeAdd;
-            double panEff     = params_.pan + m.mtxPanAdd;
+            double cutOct   = 0.0;
+            double shapeEff = params_.shapeDepth + m.mtxShapeAdd;
+            double noiseEff = params_.noise + m.mtxNoiseAdd;
+            double panEff   = params_.pan + m.mtxPanAdd;
             levelMul_ = 1.0f;
 
-            // global-LFO tap (per-tone depth/dest)
-            {
+            {   // global-LFO tap
                 const float v = m.glfoValue;
                 const float d = (float)params_.lfoDepth;
                 switch (params_.lfoDest) {
@@ -224,13 +242,13 @@ public:
                 default: levelMul_  *= 1.0f - d * 0.5f * (1.0f - v); break;
                 }
             }
-            // AUX env (PITCH/SHAPE/PAN live; START is note-on-only)
-            {
+            {   // AUX env (START is note-on-only)
                 const double a = (double)lastAux_ * params_.auxAmt;
                 switch (params_.auxDest) {
                 case 0:  pitchSemis += a * 24.0; break;
                 case 2:  shapeEff   += a;        break;
                 case 3:  panEff     += a;        break;
+                case 4:  noiseEff   += a;        break;
                 default: break;
                 }
             }
@@ -244,8 +262,7 @@ public:
             hz = std::min(std::max(hz, 20.0), 18000.0);
             svf_.setCutoffRes(hz, params_.resonance);
 
-            // Dream Vector gain law (v4), one-pole smoothed at control rate
-            {
+            {   // Dream Vector gain law, one-pole smoothed at control rate
                 const double d  = m.phi - params_.dir;
                 const double c  = std::cos(2.0 * 3.14159265358979323846 * d);
                 const double g  = c > 0.0 ? c * c : 0.0;
@@ -253,8 +270,7 @@ public:
                     ((1.0 - params_.vecInt) + params_.vecInt * g);
                 vecGain_ += kVecSmooth * ((float)tg - vecGain_);
             }
-            // equal-power pan
-            {
+            {   // equal-power pan
                 if (panEff > 1.0) panEff = 1.0; else if (panEff < -1.0) panEff = -1.0;
                 const double a = (panEff + 1.0) * 0.25 * 3.14159265358979323846;
                 panL_ = (float)std::cos(a);
@@ -262,10 +278,19 @@ public:
             }
             if (shapeEff < 0.0) shapeEff = 0.0; else if (shapeEff > 1.0) shapeEff = 1.0;
             shapeEff_ = (float)shapeEff;
+            if (noiseEff < 0.0) noiseEff = 0.0; else if (noiseEff > 1.0) noiseEff = 1.0;
+            noiseEff_ = (float)noiseEff;
+            noiseCoef_ = 1.0f - 0.98f * (float)params_.noiseColor;   // 0=white 1=dark
         }
 
+        // ---- chain (DSP_BUILD s5) --------------------------------------
         float x = osc_.process();
+        if (noiseEff_ > 0.0f) {
+            noiseLp_ += noiseCoef_ * (rng_.bipolar() - noiseLp_);
+            x += noiseEff_ * requant12(noiseLp_ * 0.9995f);   // 12-bit noise
+        }
         x = Waveshaper::process(x, params_.shapeMode, shapeEff_);
+        x = requant12(x);                                      // explicit stage
         x = svf_.process(x);
         const float s = x * tva * velGain_ * vecGain_ * levelMul_;
         l += s * panL_;
@@ -273,16 +298,18 @@ public:
     }
 
 private:
-    static constexpr float kVecSmooth = 0.3f;   // one-pole at control rate
+    static constexpr float kVecSmooth = 0.3f;
 
-    rompler::PcmOscillator osc_;
+    PcmOsc3                osc_;
     rompler::EnvelopeAdsr  tvfEnv_, tvaEnv_, auxEnv_;
     ToneSvf                svf_;
     ToneParams             params_;
+    GlueRng                rng_;
     double sr_ = 44100.0;
     double baseSemis_ = 0.0;
     float  velGain_ = 1.0f, vecGain_ = 0.0f, levelMul_ = 1.0f;
-    float  shapeEff_ = 0.0f, lastAux_ = 0.0f;
+    float  shapeEff_ = 0.0f, noiseEff_ = 0.0f, noiseCoef_ = 1.0f, noiseLp_ = 0.0f;
+    float  lastAux_ = 0.0f;
     float  panL_ = 0.70710678f, panR_ = 0.70710678f;
     int    note_ = 60, ctrlCount_ = 0;
 };
@@ -290,9 +317,13 @@ private:
 // ---------------------------------------------------------------- voice
 class DreamVoice {
 public:
-    void prepare(double sr) noexcept {
+    void prepare(double sr, uint32_t voiceIdx) noexcept {
         sr_ = sr;
-        for (auto& t : tones_) t.prepare(sr);
+        for (uint32_t i = 0; i < 4; ++i) tones_[i].prepare(sr, voiceIdx * 4u + i);
+        walkRng_.seed(0x51D5EEDu + voiceIdx * 0x9E3779B9u);
+        orbitRng_.seed(0xB16B00B5u + voiceIdx * 0x9E3779B9u);
+        walk_ = walkTarget_ = 0.0f;
+        walkCount_ = 0;
     }
 
     void noteOn(const DreamPatch& patch, int midiNote, float velocity01,
@@ -300,6 +331,7 @@ public:
         note_ = midiNote;
         serial_ = stamp;
         penvT_ = 0.0;
+        voicePhiOffset_ = patch.vec.orbitPerVoice ? orbitRng_.unipolar() : 0.0f;
         for (int i = 0; i < 4; ++i) {
             tones_[i].setInterpMode(patch.interp);
             tones_[i].noteOn(patch.tone[i], midiNote, velocity01);
@@ -319,6 +351,7 @@ public:
         for (auto& t : tones_) m = std::fmax(m, t.auxLevel());
         return m;
     }
+    float driftSemisForTest() const noexcept { return driftSemis_; }
 
     void updateLive(const DreamPatch& patch) noexcept {
         for (int i = 0; i < 4; ++i) {
@@ -327,30 +360,45 @@ public:
         }
     }
 
-    // P-ENV value (turns): start -> end over time, optional ping-pong loop
     float penvValue(const VectorParams& v) const noexcept {
         if (!v.penvOn) return 0.0f;
         const double T = std::max(v.penvTime, 0.001);
         double u = penvT_ / T;
         if (v.penvLoop) {
             u = std::fmod(u, 2.0);
-            if (u > 1.0) u = 2.0 - u;               // ping-pong
+            if (u > 1.0) u = 2.0 - u;
         } else if (u > 1.0) {
             u = 1.0;
         }
         return (float)(v.penvStart + (v.penvEnd - v.penvStart) * u);
     }
 
-    void process(float& l, float& r, const VectorParams& vec, ModContext m) noexcept {
-        m.phi += penvValue(vec);
-        m.phi -= std::floor(m.phi);                 // wrap to [0,1)
+    void process(float& l, float& r, const DreamPatch& patch, ModContext m) noexcept {
+        // humanize drift (section 3): S&H random walk ~0.2 Hz, one-pole slew,
+        // coherent for all 4 tones of this voice
+        if (walkCount_-- <= 0) {
+            walkCount_ = (int)(sr_ * 5.0);                 // ~0.2 Hz steps
+            walkTarget_ += walkRng_.bipolar();
+            if (walkTarget_ >  1.0f) walkTarget_ =  1.0f;
+            if (walkTarget_ < -1.0f) walkTarget_ = -1.0f;
+        }
+        walk_ += 2.0e-5f * (walkTarget_ - walk_);          // slow slew
+        driftSemis_ = walk_ * (float)patch.drift * 0.03f;  // +/-3 cents max
+        m.driftSemis = driftSemis_;
+
+        m.phi += penvValue(patch.vec) + voicePhiOffset_;
+        m.phi -= std::floor(m.phi);
         penvT_ += 1.0 / sr_;
         for (auto& t : tones_) t.process(l, r, m);
     }
 
 private:
     Tone tones_[4];
+    GlueRng walkRng_, orbitRng_;
     double sr_ = 44100.0, penvT_ = 0.0;
+    float  walk_ = 0.0f, walkTarget_ = 0.0f, driftSemis_ = 0.0f;
+    float  voicePhiOffset_ = 0.0f;
+    int    walkCount_ = 0;
     int note_ = -1;
     uint64_t serial_ = 0;
 };
@@ -360,26 +408,43 @@ class DreamSynth {
 public:
     static constexpr int kMaxVoices = 24;
 
+    // ORBIT SHAPE (section 6): shape the raw 0..1 ramp into the phase
+    // contribution. Public static for tests.
+    static float orbitShapeFn(int shape, float raw, float shValue) noexcept {
+        switch (shape) {
+        case 1:  return 1.0f - std::fabs(2.0f * raw - 1.0f);            // TRI
+        case 2:  return 0.5f - 0.5f * std::cos(2.0f * 3.14159265f * raw); // SIN
+        case 3:  return raw < 0.5f ? 0.0f : 0.5f;                       // SQR
+        case 4:  return shValue;                                        // S+H (slewed)
+        default: return raw;                                            // SAW
+        }
+    }
+    static double orbitRateHz(double v01) noexcept {                    // 0.02..8 Hz
+        if (v01 < 0.0) v01 = 0.0; else if (v01 > 1.0) v01 = 1.0;
+        return 0.02 * std::pow(400.0, v01);
+    }
+
     void prepare(double sr) noexcept {
         sr_ = sr;
         for (int i = 0; i < kMaxVoices; ++i) {
-            voices_[i].prepare(sr);
+            voices_[i].prepare(sr, (uint32_t)i);
             sustained_[i] = false;
         }
-        glfo_.prepare(sr, 0x1955B52Fu);             // deterministic (donor idiom)
+        glfo_.prepare(sr, 0x1955B52Fu);
+        shRng_.seed(0x5EEDBA5Eu);
         orbitPhase_ = 0.0;
+        shHeld_ = shSlewed_ = 0.0f;
         ctrlCount_ = 0;
     }
     DreamPatch& patch() noexcept { return patch_; }
 
     void updateLive() noexcept {
-        // panel order TRI/SIN/SAW/SQR/S+H -> Lfo::Shape {sine,tri,ramp,square,sh}
-        static constexpr int shapeMap[5] = { 1, 0, 2, 3, 4 };
+        static constexpr int shapeMap[5] = { 1, 0, 2, 3, 4 };   // panel->Lfo
         int s = patch_.glfoShape01;
         if (s < 0) s = 0; if (s > 4) s = 4;
         glfo_.setShape(shapeMap[s]);
         glfo_.setRateHz(Lfo::rateHzFromParam((float)patch_.glfoRate01));
-        orbitHz_ = Lfo::rateHzFromParam((float)patch_.vec.orbitRate01);
+        orbitHz_ = orbitRateHz(patch_.vec.orbitRate01);
         for (auto& v : voices_) v.updateLive(patch_);
     }
 
@@ -391,7 +456,7 @@ public:
         DreamVoice* target = nullptr;
         for (int i = 0; i < kMaxVoices; ++i)
             if (!voices_[i].isActive()) { target = &voices_[i]; sustained_[i] = false; break; }
-        if (!target) {                              // steal the OLDEST note
+        if (!target) {
             uint64_t best = UINT64_MAX;
             int bestIdx = 0;
             for (int i = 0; i < kMaxVoices; ++i)
@@ -426,74 +491,76 @@ public:
         for (int i = 0; i < kMaxVoices; ++i) { sustained_[i] = false; voices_[i].kill(); }
     }
 
-    // matrix cutoff offsets for the processor's global filter slots (octaves)
     float matrixCut1Oct() const noexcept { return mtxCut1Oct_; }
     float matrixCut2Oct() const noexcept { return mtxCut2Oct_; }
-    // voice-max AUX env level (control-rate) -- drives the GUI's F1 ENV knob
     float auxMax() const noexcept { return auxMax_; }
 
-    void process(float driftTuneSemis, float driftCutOct, float& l, float& r) noexcept {
+    void process(float& l, float& r) noexcept {
         glfo_.tick();
         if (patch_.vec.orbitOn) {
             orbitPhase_ += orbitHz_ / sr_;
-            if (orbitPhase_ >= 1.0) orbitPhase_ -= 1.0;
+            if (orbitPhase_ >= 1.0) {
+                orbitPhase_ -= 1.0;
+                shHeld_ = shRng_.unipolar();               // S+H: new jump target
+            }
+            shSlewed_ += 0.002f * (shHeld_ - shSlewed_);   // slewed random jumps
         }
 
-        if (ctrlCount_-- <= 0) {                    // synth-level control rate
+        if (ctrlCount_-- <= 0) {
             ctrlCount_ = 15;
             updateMatrix();
         }
 
         ModContext m;
-        m.bendSemis      = bendSemis_;
-        m.driftTuneSemis = driftTuneSemis;
-        m.driftCutOct    = driftCutOct;
-        m.glfoValue      = glfo_.value();
-        m.phi            = basePhi_;
-        m.mtxPitchSemis  = mtxPitchSemis_;
-        m.mtxShapeAdd    = mtxShapeAdd_;
-        m.mtxPanAdd      = mtxPanAdd_;
+        m.bendSemis     = bendSemis_;
+        m.glfoValue     = glfo_.value();
+        m.phi           = basePhi_;
+        m.mtxPitchSemis = mtxPitchSemis_;
+        m.mtxShapeAdd   = mtxShapeAdd_;
+        m.mtxPanAdd     = mtxPanAdd_;
+        m.mtxNoiseAdd   = mtxNoiseAdd_;
 
-        for (auto& v : voices_) v.process(l, r, patch_.vec, m);
+        for (auto& v : voices_) v.process(l, r, patch_, m);
     }
 
     DreamVoice& voiceForTest(int i) noexcept { return voices_[i]; }
-    float glfoValueForTest() const noexcept { return glfo_.value(); }
 
 private:
     void updateMatrix() noexcept {
-        // base phase (manual + orbit), before matrix VEC PHS pushes
-        double phi = patch_.vec.phase + (patch_.vec.orbitOn ? orbitPhase_ : 0.0);
+        double phi = patch_.vec.phase;
+        if (patch_.vec.orbitOn)
+            phi += orbitShapeFn(patch_.vec.orbitShape, (float)orbitPhase_, shSlewed_);
 
-        float auxMax = 0.0f;
+        float am = 0.0f;
         for (auto& v : voices_)
-            if (v.isActive()) auxMax = std::fmax(auxMax, v.auxMax());
-        auxMax_ = auxMax;
+            if (v.isActive()) am = std::fmax(am, v.auxMax());
+        auxMax_ = am;
 
         auto srcValue = [&](int src) -> float {
             switch (src) {
             case mtx::srcGlfo:   return glfo_.value();
             case mtx::srcVecPhs: return (float)(2.0 * (phi - std::floor(phi)) - 1.0);
-            case mtx::srcAux:    return auxMax;
+            case mtx::srcAux:    return auxMax_;
             case mtx::srcVelo:   return lastVelocity_;
             case mtx::srcWheel:  return wheel_;
             default:             return 0.0f;
             }
         };
 
-        float pitch = 0, cut1 = 0, cut2 = 0, shape = 0, vecAdd = 0, pan = 0;
+        float pitch = 0, cut1 = 0, cut2 = 0, shape = 0, vecAdd = 0, pan = 0, noise = 0;
         for (const auto& s : patch_.slot) {
             if (s.src == mtx::srcNone || s.dest == mtx::dstNone) continue;
-            if (s.src == mtx::srcVecPhs && s.dest == mtx::dstVecPhs) continue; // clamped
+            if (s.src == mtx::srcVecPhs && s.dest == mtx::dstVecPhs) continue;
             const float v = srcValue(s.src) * (float)s.amt;
             switch (s.dest) {
-            case mtx::dstPitch:  pitch  += v * 12.0f; break;   // +/-12 st at full
-            case mtx::dstCut1:   cut1   += v * 2.0f;  break;   // +/-2 oct
+            case mtx::dstPitch:  pitch  += v * 12.0f; break;
+            case mtx::dstCut1:   cut1   += v * 2.0f;  break;
             case mtx::dstCut2:   cut2   += v * 2.0f;  break;
             case mtx::dstShape:  shape  += v;         break;
-            case mtx::dstVecPhs: vecAdd += v * 0.5f;  break;   // +/-half turn
+            case mtx::dstVecPhs: vecAdd += v * 0.5f;  break;
             case mtx::dstPan:    pan    += v;         break;
-            case mtx::dstMorph:  break;                        // reserved (V1.1/V2)
+            case mtx::dstNoise:  noise  += v;         break;
+            case mtx::dstMorph:  break;               // reserved (V1.1/V2)
             default: break;
             }
         }
@@ -503,6 +570,7 @@ private:
         mtxCut2Oct_    = cut2;
         mtxShapeAdd_   = shape;
         mtxPanAdd_     = pan;
+        mtxNoiseAdd_   = noise;
         phi += vecAdd;
         basePhi_ = (float)(phi - std::floor(phi));
     }
@@ -511,14 +579,15 @@ private:
     bool       sustained_[kMaxVoices] = {};
     DreamPatch patch_;
     Lfo        glfo_;
+    GlueRng    shRng_;
     double     sr_ = 44100.0;
     double     orbitPhase_ = 0.0, orbitHz_ = 0.5;
     uint64_t   stamp_ = 0;
     float      bendSemis_ = 0.0f, wheel_ = 0.0f, lastVelocity_ = 0.8f;
-    float      basePhi_ = 0.0f;
-    float      auxMax_ = 0.0f;
+    float      basePhi_ = 0.0f, auxMax_ = 0.0f;
+    float      shHeld_ = 0.0f, shSlewed_ = 0.0f;
     float      mtxPitchSemis_ = 0, mtxCut1Oct_ = 0, mtxCut2Oct_ = 0,
-               mtxShapeAdd_ = 0, mtxPanAdd_ = 0;
+               mtxShapeAdd_ = 0, mtxPanAdd_ = 0, mtxNoiseAdd_ = 0;
     bool       sustainDown_ = false;
     int        ctrlCount_ = 0;
 };
