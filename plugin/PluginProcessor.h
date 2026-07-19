@@ -61,6 +61,11 @@ public:
     juce::String presetCategory(int index) const;
     juce::var    getPresetList() const;     // Array<{name,category}> for editors
 
+    // Bank-authoritative wave list (bank3 order): Array<{category,name,tag}>,
+    // tag "" cycle / "ENS" loop / "SHOT" one-shot. The GUI wave overlay reads
+    // this so loop/hit entries show the REAL bank names, not placeholders.
+    juce::var    getWaveList() const;
+
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 

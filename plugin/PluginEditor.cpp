@@ -259,6 +259,14 @@ juce::WebBrowserComponent::Options TheDreamerEditor::makeOptions()
             {
                 completion(processor.getPresetList());
             })
+        // Bank-authoritative wave list {category,name,tag} so the wave overlay
+        // shows the REAL loop/hit names (PAD_01, HIT_CHIFF, ...) not placeholders.
+        .withNativeFunction("getWaveList",
+            [this](const juce::Array<juce::var>&,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                completion(processor.getWaveList());
+            })
         .withNativeFunction("loadPreset",
             [this](const juce::Array<juce::var>& a,
                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
