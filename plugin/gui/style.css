@@ -225,7 +225,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:#15172e}
 
 /* ============ FX ============ */
 #gFx{padding:16px 12px 8px;display:flex;flex-direction:column;gap:6px}
-.fxrow{display:flex;align-items:center;gap:5px}   /* v13: 3 primary knobs + focus LCD + PARAMS knob */
+.fxrow{display:flex;align-items:center;gap:3px}   /* v13: 3 primary knobs + focus LCD + PARAMS knob.
+   gap + FX knob wrapper widths (app.js: primary w32 / PARAMS w36) tightened to the master's FX
+   pitch so the row's min-content stays within the row2 1fr track (380px); otherwise the widest row
+   (DELAY, with the SYNC column) inflated the 1fr track to ~411px, pushing the FX group past the
+   panel's overflow:hidden edge and clipping the on/off buttons + UTIL. */
 .fxname{width:30px;flex:none;font:700 7.5px 'Barlow Semi Condensed';letter-spacing:.1em;color:#c9cdf2}
 .fxtype{width:52px;flex:none;font-size:10px}   /* v13: FX type LCD (click = menu, no arrows) */
 /* v13 PARAMS-FOCUS mini-LCD (click cycles the algorithm's secondary-param list) */
@@ -306,11 +310,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:#15172e}
 
 /* v11 per-tone LFO SHAPE mini-LCD (34x16, click = menu, no arrows) */
 .shapeLcd{width:34px;height:16px;flex:none}
-
-/* v8 window resize grip (visual affordance; native window is authoritative) */
-#grip{position:absolute;right:0;bottom:0;width:15px;height:15px;z-index:30;cursor:nwse-resize;
-  background:linear-gradient(135deg,transparent 0 45%,#464e94 45% 52%,transparent 52% 63%,
-    #464e94 63% 70%,transparent 70% 81%,#464e94 81% 88%,transparent 88%)}
 
 /* ============ menu overlay ============ */
 #menuOverlay{position:absolute;inset:0;background:rgba(7,7,10,.82);display:none;
