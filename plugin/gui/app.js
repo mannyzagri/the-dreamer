@@ -1064,6 +1064,7 @@ const nfPitchBend = nativeFn('pitchBend'), nfModWheel = nativeFn('modWheel');
 const nfKeyboardFold = nativeFn('keyboardFold');
 // preset bank native bridge (processor-owned factory presets)
 const nfLoadPreset = nativeFn('loadPreset'), nfGetPresetList = nativeFn('getPresetList');
+const nfGetWaveList = nativeFn('getWaveList');
 // select preset i (wrapping): update the browser index + ask the processor to
 // recall it -> the APVTS relays then refresh every panel control automatically.
 function selectPreset(i) {
@@ -1082,6 +1083,27 @@ function loadPresetList() {
       if (Array.isArray(list) && list.length) {
         PRESETS = list.map((e) => [(e && e.category) || '', (e && e.name) || '']);
         if (preset >= PRESETS.length) preset = 0;
+        scheduleRefresh();
+      }
+    }).catch(() => {});
+  } catch (_) {}
+}
+// Replace the placeholder loop/hit wave names with the REAL bank names
+// (PAD_01, AIRY_06, MORPH_PADAIR, HIT_CHIFF, ...) fetched from the processor's
+// bank-authoritative list. Mutates WAVES in place (const binding), preserving
+// index order, then refreshes the wave display. Offline mock keeps placeholders.
+function loadWaveList() {
+  if (!nfGetWaveList) return;
+  try {
+    const p = nfGetWaveList();
+    if (p && p.then) p.then((list) => {
+      if (Array.isArray(list) && list.length) {
+        WAVES.length = 0;
+        list.forEach((e) => WAVES.push({
+          cat:  (e && e.category) || '',
+          name: (e && e.name) || '',
+          tag:  (e && e.tag) || '',
+        }));
         scheduleRefresh();
       }
     }).catch(() => {});
@@ -1132,6 +1154,7 @@ window.addEventListener('resize', fit);
 
 applyVersion();
 loadPresetList();   // pull the processor-owned factory bank into the browser
+loadWaveList();     // pull the REAL bank wave names (loop/hit) from the processor
 syncOverlays();
 refresh();
 fit();

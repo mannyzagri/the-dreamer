@@ -3,6 +3,17 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-19 (real wave names in the GUI) — **RC 2.1.1**. Bug fix (user report:
+  the wave list showed "Loop 001..130" / "Hit 01..10" placeholders instead of the
+  real bank names). The regenerated GUI hardcoded placeholder loop/hit names because
+  the real names weren't exposed to the JS. Fix: new processor `getWaveList()` +
+  editor native fn returning the bank-authoritative 218 entries {category,name,tag}
+  (from bank3::kWaveforms; tag ""/ENS/SHOT by WaveType); app.js `loadWaveList()` (mirrors
+  loadPresetList) pulls them on boot and replaces the placeholders in place. Now the
+  wave overlay/LCD shows PAD_01, AIRY_06, MORPH_PADAIR, HIT_CHIFF, etc. Preset browser
+  was already correct (real names). No param/DSP change. Validator all stages PASS +
+  pluginval 8.
+
 - 2026-07-19 (v2 library + 47 presets + filter fixes + DreamPlane Z-plane) — **RC 2.1.0**.
   Feature release. No param-list change vs 2.0.x → reload the instance, no re-scan.
   (1) **Fixed sound library v2** (files(8)): the 130 loops re-baked from corrected

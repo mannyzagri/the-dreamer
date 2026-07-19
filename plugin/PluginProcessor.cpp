@@ -195,6 +195,26 @@ juce::var TheDreamerProcessor::getPresetList() const
     return juce::var(list);
 }
 
+// Bank-authoritative wave list so the GUI shows REAL loop/hit names (PAD_01,
+// AIRY_06, MORPH_PADAIR, HIT_CHIFF, ...) instead of "Loop NNN" placeholders.
+juce::var TheDreamerProcessor::getWaveList() const
+{
+    using namespace rompler::bank3;
+    juce::Array<juce::var> list;
+    for (int i = 0; i < kNumWaveforms; ++i)
+    {
+        const auto& w = kWaveforms[(size_t)i];
+        const char* tag = w.type == WaveType::Loop    ? "ENS"
+                        : w.type == WaveType::OneShot  ? "SHOT" : "";
+        auto* o = new juce::DynamicObject();
+        o->setProperty("category", juce::String(w.category));
+        o->setProperty("name",     juce::String(w.name));
+        o->setProperty("tag",      juce::String(tag));
+        list.add(juce::var(o));
+    }
+    return juce::var(list);
+}
+
 void TheDreamerProcessor::cacheTonePtrs(TonePtrs& dst, int t)
 {
     auto p = [&](const char* base) { return apvts.getRawParameterValue(tid(base, t)); };
