@@ -3,6 +3,32 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-19 (v2 library + 47 presets + filter fixes + DreamPlane Z-plane) — **RC 2.1.0**.
+  Feature release. No param-list change vs 2.0.x → reload the instance, no re-scan.
+  (1) **Fixed sound library v2** (files(8)): the 130 loops re-baked from corrected
+  source (WAV data + per-loop roots updated; same 130 names/order → wave indices
+  unchanged; HITs untouched). LoopBankData.h + LoopRoots.h regenerated.
+  (2) **47 factory presets** (PRESETS.md, presets(1).zip = presets.zip): processor-
+  owned bank (bank A 23 + B 24) embedded as BinaryData::presets_json, parsed once at
+  ctor, exposed via the standard program interface (Cubase menu) AND the in-GUI
+  browser (native getPresetList/loadPreset → applyPreset). applyPreset dispatches on
+  param TYPE (JSON stores normalized 0..1 for float/int, index for choice, bool for
+  bool). 219 preset ids ⊂ 281 APVTS ids (0 unknown; tools/check_presets.sh).
+  **State-restore fix:** exposing 47 host programs made JUCE inject a synthetic
+  Program param that pluginval toggled → applyPreset wrote clean 1.0 to bools while
+  a raw fractional survived in the tree (AudioParameterBool stores the raw normalized
+  float, doesn't quantize) → 9 bools failed state round-trip. Fixed by snapping every
+  bool to clean 0/1 after replaceState in setStateInformation; 47 programs kept.
+  (3) **Filter fixes** (user report, rule-1-safe glue): CLASSIC/LIQUID resonance
+  perceptual curve (res^0.35 in GlobalFilter) so the ring spreads from ~1/3 knob
+  instead of jumping near max (LADDER stays mild — weak resonator in the port, can't
+  ring without touching ported math); ALLPASS made clearly audible (6 staggered
+  allpasses + RES feedback → −13..−33 dB swept notches, was −1.9 dB inaudible);
+  **DreamPlane (type 13) implemented as an E-MU Xtreme Lead Z-plane morphing filter**
+  (new dsp/glue/ZPlaneFilter.h: 6 peaking bells/12-pole, 3 frames GLASS/VOWEL/BRITE,
+  MORPH=flt2_morph crossfades, CUTOFF shifts freqs, RES sharpens) — was a V2 bypass.
+  Validator all stages PASS: dsp 10/10 + staging/bundle/gui/deploy + pluginval 8.
+
 - 2026-07-19 (loop tuning + gain staging + GUI regenerated from handoff) — **RC 2.0.2**.
   No param-list change vs 2.0.0/2.0.1 → just reload the instance (no re-scan).
   **DSP (R&D-Claude files(7) spec, all rule-1-safe glue — zero ported-math edits):**

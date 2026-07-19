@@ -11,8 +11,14 @@
 //  11 FORMANT  three bandpass resonators on a vowel; CUT sweeps A->E->I->O->U
 //              (and scales the set), RES -> resonator Q. Vowel table shared
 //              with the FX-bus Talkbox.
-//  12 ALLPASS  4x cascaded allpass mixed 50/50 with dry -> swept phase notches
-//              (static-phaser character; a bare allpass is inaudible on tone).
+//  12 ALLPASS  resonant swept phaser: 6 first-order allpass stages whose
+//              corners are STAGGERED around CUT (several notches that sweep
+//              together as CUT moves) fed back by RES (resonant emphasis
+//              between the notches), summed 50/50 with dry for maximum notch
+//              depth. RES 0 -> gentle static notches; RES up -> deep, ringing,
+//              obviously-phasing notches. (The old build was 4 allpass at ONE
+//              corner mixed 50/50 -- a single thin static notch, RES inert;
+//              measured inaudible on sustained tone. This is glue, not a port.)
 //
 // All cutoff/res driven exactly like the other slots (Hz + 0..1). Fixed
 // storage, no allocation, no locks -- RT-safe after setSampleRate(). C++17,
@@ -51,6 +57,7 @@ public:
         for (auto& s : comb_) s = 0.0f;
         combIdx_ = 0;
         combDf_ = combDfTarget_;                 // snap (no glide across type/reset)
+        apFb_ = 0.0f; apG_ = apGTarget_;         // snap phaser feedback
     }
 
     float process(float x) noexcept {
@@ -61,9 +68,11 @@ public:
         case nlp:       return bq_[1].tick(bq_[0].tick(x));            // notch -> LP
         case formant:   return formantTick(x);
         case allpass: {
-            float y = x;
-            for (int i = 0; i < 4; ++i) y = ap_[i].tick(y);
-            return 0.5f * (x + y);                                     // swept phase notches
+            apG_ += 0.002f * (apGTarget_ - apG_);        // de-click RES/feedback
+            float s = x + apG_ * apFb_;                  // resonant feedback
+            for (int i = 0; i < kAp; ++i) s = ap_[i].tick(s);
+            apFb_ = s;
+            return 0.5f * (x + s);                        // deep swept phase notches
         }
         default: return x;
         }
@@ -140,11 +149,20 @@ private:
             }
         }
 
-        // ALLPASS: 4 stages, coeff from cutoff (all at the same corner)
+        // ALLPASS: kAp stages, corners STAGGERED around CUT so several phase
+        // notches move together when CUT sweeps (a wider, obviously-phasing
+        // effect vs one corner). RES drives the feedback gain (resonant
+        // emphasis between the notches) -- smoothed toward apGTarget_ in
+        // process() to avoid zipper. Feedback < 0.9 -> bounded (allpass loop
+        // is unity-magnitude; resonant gain 1/(1-g) stays finite).
         {
-            const double t = std::tan(3.14159265358979323846 * std::min(hz_, fs_ * 0.45) / fs_);
-            const float  c = (float)((t - 1.0) / (t + 1.0));
-            for (auto& a : ap_) a.c = c;
+            static constexpr double spread[kAp] = { 0.5, 0.72, 1.0, 1.45, 2.1, 3.0 };
+            for (int i = 0; i < kAp; ++i) {
+                const double fc = std::min(hz_ * spread[i], fs_ * 0.45);
+                const double t  = std::tan(3.14159265358979323846 * fc / fs_);
+                ap_[i].c = (float)((t - 1.0) / (t + 1.0));
+            }
+            apGTarget_ = (float)(0.85 * res_);           // 0 .. 0.85 feedback
         }
     }
 
@@ -186,16 +204,18 @@ private:
 
     static constexpr float kFormantMakeup = 2.2f;            // narrowband gain lift
     static constexpr int kCombMax = 2048;                    // >= fs/20 at 44.1/48k
+    static constexpr int kAp = 6;                            // resonant-phaser stages
     int    kind_ = notch;
     double fs_ = 44100.0, hz_ = 1000.0, res_ = 0.0;
     bool   dirty_ = true;
 
     Biquad bq_[2];                                           // notch, N+LP-LP
     Biquad fbq_[3];                                          // formant resonators
-    Allpass1 ap_[4];
+    Allpass1 ap_[kAp];
     float  comb_[kCombMax] = {};
     int    combIdx_ = 0;
     float  combDf_ = 100.0f, combDfTarget_ = 100.0f, combG_ = 0.5f;
+    float  apFb_ = 0.0f, apG_ = 0.0f, apGTarget_ = 0.0f;     // phaser feedback + smoothing
 };
 
 } // namespace dreamer

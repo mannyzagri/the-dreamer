@@ -42,11 +42,24 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram(int) override {}
-    const juce::String getProgramName(int) override { return {}; }
+    // Factory preset bank -- processor-owned (PRESETS.md). The standard program
+    // interface exposes the whole bank to the host's own preset menu; every
+    // program IS a factory preset. Presets are parsed once at construction.
+    int getNumPrograms() override { return juce::jmax(1, (int)presets.size()); }
+    int getCurrentProgram() override { return currentProgram; }
+    void setCurrentProgram(int i) override { applyPreset(i); }
+    const juce::String getProgramName(int i) override;
     void changeProgramName(int, const juce::String&) override {}
+
+    // Public preset API so ANY editor (the JS GUI, a future JUCE editor, or the
+    // host program menu) can drive preset recall through the processor. The GUI
+    // becomes a viewer: it asks for names/categories and calls applyPreset --
+    // it never holds the preset data itself.
+    void         applyPreset(int index);   // atomic APVTS swap (message thread)
+    int          presetCount() const noexcept { return (int)presets.size(); }
+    juce::String presetName(int index) const;
+    juce::String presetCategory(int index) const;
+    juce::var    getPresetList() const;     // Array<{name,category}> for editors
 
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
@@ -95,6 +108,20 @@ private:
     void drainGuiMidi() noexcept;              // audio thread, top of processBlock
 
     void buildPatch(dreamer::DreamPatch& p) const;
+
+    // ---- factory preset bank (parsed once from BinaryData::presets_json) -----
+    // Values are stored exactly as the JSON holds them: normalized 0..1 for all
+    // Float/Int params, integer choice index for AudioParameterChoice, and
+    // true/false for AudioParameterBool. applyPreset() converts per PARAM TYPE
+    // (not per assumed range), so the encoding is robust regardless of a param's
+    // native range. See PluginProcessor.cpp.
+    struct Preset {
+        juce::String name, category;
+        std::vector<std::pair<juce::String, juce::var>> values;
+    };
+    std::vector<Preset> presets;
+    int  currentProgram = 0;
+    void loadFactoryPresets();   // construction only; never on the audio thread
 
     dreamer::DreamSynth   synth;
     int lastOversample = 0;
