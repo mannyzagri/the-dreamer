@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "Params.h"
+#include "BinaryData.h"
 
 using namespace dreamer::params;
 
@@ -61,6 +62,137 @@ TheDreamerProcessor::TheDreamerProcessor()
     pTalkMorph = p(kTalkMorph); pTalkSens = p(kTalkSens);
     pFxPrePost = p(kFxPrePost);
     pDrift = p(kDrift); pInterp = p(kInterp); pEngine = p(kEngine);
+
+    loadFactoryPresets();   // parse embedded bank once (message thread, ctor)
+}
+
+//==============================================================================
+// Factory preset bank -- parsed once at construction from the embedded
+// presets.json. Validation (PRESETS.md): every param id in every preset MUST
+// exist in the APVTS; an unknown id is preset/param drift, so we fail LOUD in
+// debug (jassert + DBG) and, in release, skip the unknown id while counting it.
+void TheDreamerProcessor::loadFactoryPresets()
+{
+    const auto parsed = juce::JSON::parse(
+        juce::String::fromUTF8(BinaryData::presets_json, BinaryData::presets_jsonSize));
+    auto* root = parsed.getDynamicObject();
+    if (root == nullptr) { jassertfalse; return; }
+
+    const auto arr = root->getProperty("presets");
+    if (! arr.isArray()) { jassertfalse; return; }
+
+    int unknownCount = 0;
+    for (const auto& pv : *arr.getArray())
+    {
+        auto* po = pv.getDynamicObject();
+        if (po == nullptr) { jassertfalse; continue; }
+
+        Preset preset;
+        preset.name     = po->getProperty("name").toString();
+        preset.category = po->getProperty("category").toString();
+
+        const auto params = po->getProperty("params");
+        if (auto* paramObj = params.getDynamicObject())
+        {
+            preset.values.reserve((size_t)paramObj->getProperties().size());
+            for (const auto& kv : paramObj->getProperties())
+            {
+                const juce::String id = kv.name.toString();
+                if (apvts.getParameter(id) == nullptr)
+                {
+                    ++unknownCount;
+                    DBG("[presets] UNKNOWN param id '" << id << "' in preset '"
+                        << preset.name << "' -- skipped");
+                    jassertfalse;   // preset/param drift bug: make it loud
+                    continue;       // release: skip unknown id, keep the count
+                }
+                preset.values.emplace_back(id, kv.value);
+            }
+        }
+        presets.push_back(std::move(preset));
+    }
+
+    DBG("[presets] loaded " << (int)presets.size() << " factory presets; "
+        << unknownCount << " unknown param id(s)");
+    jassert(unknownCount == 0);   // must be 0 -- see PRESETS.md validation
+}
+
+//==============================================================================
+// applyPreset -- one atomic, host-visible state change on the message thread.
+//
+// Encoding contract (verified against presets.json): the JSON stores
+//   * AudioParameterChoice -> integer choice INDEX (may exceed 1),
+//   * AudioParameterBool    -> true/false,
+//   * every Float AND Int param -> its NORMALIZED 0..1 value (already in the
+//     0..1 domain even for bipolar/ranged params such as pan, fine, oct,
+//     hit_pitchtrim -- they are NOT stored in real units here).
+// So we dispatch on the PARAM TYPE, not on an assumed range: choices are
+// normalized through the choice range, bools map to 0/1, and everything else
+// is passed straight through as the normalized value. setValueNotifyingHost
+// updates the host, the undo/automation view, AND the WebView relays in one
+// step, so the whole panel reflects the patch automatically.
+//
+// NaN/Inf: values are JSON literals already in range; convertTo0to1 and the
+// direct 0..1 pass-through cannot manufacture NaN/Inf, so no sanitising needed.
+void TheDreamerProcessor::applyPreset(int index)
+{
+    if (index < 0 || index >= (int)presets.size())
+        return;
+
+    const auto& preset = presets[(size_t)index];
+    for (const auto& [id, value] : preset.values)
+    {
+        auto* param = apvts.getParameter(id);
+        if (param == nullptr)   // validated at parse time; belt-and-braces
+            continue;
+
+        if (dynamic_cast<juce::AudioParameterBool*>(param) != nullptr)
+        {
+            param->setValueNotifyingHost((bool)value ? 1.0f : 0.0f);
+        }
+        else if (auto* cp = dynamic_cast<juce::AudioParameterChoice*>(param))
+        {
+            param->setValueNotifyingHost(cp->convertTo0to1((float)(int)value));
+        }
+        else   // Float / Int: JSON value IS the normalized 0..1 value
+        {
+            param->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, (float)(double)value));
+        }
+    }
+    currentProgram = index;
+}
+
+const juce::String TheDreamerProcessor::getProgramName(int index)
+{
+    if (index < 0 || index >= (int)presets.size())
+        return {};
+    const auto& p = presets[(size_t)index];
+    return p.category.isNotEmpty() ? (p.category + ": " + p.name) : p.name;
+}
+
+juce::String TheDreamerProcessor::presetName(int index) const
+{
+    return (index >= 0 && index < (int)presets.size()) ? presets[(size_t)index].name
+                                                       : juce::String();
+}
+
+juce::String TheDreamerProcessor::presetCategory(int index) const
+{
+    return (index >= 0 && index < (int)presets.size()) ? presets[(size_t)index].category
+                                                       : juce::String();
+}
+
+juce::var TheDreamerProcessor::getPresetList() const
+{
+    juce::Array<juce::var> list;
+    for (const auto& p : presets)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty("name", p.name);
+        o->setProperty("category", p.category);
+        list.add(juce::var(o));
+    }
+    return juce::var(list);
 }
 
 void TheDreamerProcessor::cacheTonePtrs(TonePtrs& dst, int t)
@@ -371,6 +503,7 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             for (int ch = 0; ch < 2; ++ch) {
                 f1[ch].setCutoffRes(h1, pFlt1Res->load());
                 f2[ch].setCutoffRes(h2, pFlt2Res->load());
+                f2[ch].setMorph(pFlt2Morph->load());   // routes flt2_morph -> DreamPlane Z-plane (type 13); harmless for other types
             }
         }
         if (routing == 0) {                                  // SER (BAL inert)
@@ -576,7 +709,32 @@ void TheDreamerProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary(data, sizeInBytes))
         if (xml->hasTagName(apvts.state.getType()))
+        {
             apvts.replaceState(juce::ValueTree::fromXml(*xml));
+
+            // --- pluginval strictness-8 "Plugin state restoration" fix --------
+            // Snap every AudioParameterBool to a clean 0.0/1.0 after a state load.
+            // Root cause: juce::AudioParameterBool stores the RAW normalized float
+            // it was last set to (setValue: `value = newValue;` -- it does NOT
+            // quantize; only get() applies `value >= 0.5`). So getValue() can
+            // report e.g. 0.7983, and APVTS serialises that raw float into the
+            // state tree -- a fractional bool round-trips through save/restore
+            // verbatim. With the 47-program bank, applyPreset() (invoked via the
+            // host's synthetic "Program" parameter during pluginval's randomise
+            // pass) sets some bools to a clean 1.0 which pluginval records as the
+            // "expected" value, while a raw fractional (0.7983) survives into the
+            // restored tree -- so expected(1.0) != restored(0.7983) and the
+            // "Plugin state restoration" test fails (tolerance 0.1). Re-setting
+            // each bool to its own quantised boolean makes getValue() report the
+            // clean 0/1 the host expects; setValueNotifyingHost also reconciles
+            // the host / VST3 EditController cache. The boolean meaning is
+            // unchanged (0.7983 -> true -> 1.0), so audio behaviour is identical.
+            // Message-thread only (get/setStateInformation contract) -- rule 5
+            // safe. Does not touch applyPreset or the GUI preset path.
+            for (auto* p : getParameters())
+                if (auto* b = dynamic_cast<juce::AudioParameterBool*>(p))
+                    b->setValueNotifyingHost(b->get() ? 1.0f : 0.0f);
+        }
 }
 
 juce::AudioProcessorEditor* TheDreamerProcessor::createEditor()

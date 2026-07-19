@@ -245,6 +245,26 @@ juce::WebBrowserComponent::Options TheDreamerEditor::makeOptions()
             {
                 setKeyboardFolded(a.size() >= 1 && (bool)a[0]);
                 completion(juce::var());
+            })
+
+        // Factory preset bank (processor-owned). getPresetList mirrors getInfo:
+        // it returns the bank as a JSON array of {name,category} so the page can
+        // populate its preset browser from the processor instead of a hardcoded
+        // JS array. loadPreset(index) drives recall through the processor's
+        // standard program interface; the APVTS relays then update every control
+        // on the panel automatically. Both run on the message thread.
+        .withNativeFunction("getPresetList",
+            [this](const juce::Array<juce::var>&,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                completion(processor.getPresetList());
+            })
+        .withNativeFunction("loadPreset",
+            [this](const juce::Array<juce::var>& a,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (a.size() >= 1) processor.setCurrentProgram((int)a[0]);
+                completion(juce::var());
             });
 
     for (auto& r : sliderRelays) options = options.withOptionsFrom(*r);

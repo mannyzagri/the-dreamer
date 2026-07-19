@@ -57,9 +57,12 @@ const LOFIFOCUS  = ['BITS','SRATE','COMPAND','ALIAS'];       // UI-local focus -
 const TALKFOCUS  = ['VOWEL-A','VOWEL-B','MORPH','SENS'];     // UI-local focus -> talk_va/vb/morph/sens
 const SYNCDIVS   = ['4/1','2/1','1/1','1/2','1/2T','1/4','1/4T','1/8','1/8T','1/16','1/16T','1/32'];
 const TONELET    = ['A','B','C','D'];
-// preset browser (UI-side only -- there is no preset APVTS param; selection
-// changes the displayed name, exactly as the master does).
-const PRESETS = [
+// preset browser. The factory bank is PROCESSOR-OWNED (parsed from the embedded
+// presets.json); on boot loadPresetList() replaces this array with the names/
+// categories fetched via the getPresetList native fn, and selecting a preset
+// calls the loadPreset native fn so the processor performs the APVTS recall.
+// The array below is only the offline/mock fallback (no JUCE backend).
+let PRESETS = [
   ['PAD','ETHEREAL DAWN'],['PAD','SLOW MEMORY'],['PAD','GHOST HARBOR'],['PAD','VIOLET SLEEP'],
   ['PAD','TIDE GARDEN'],['PAD','HALF LIGHT'],['SPLIT','GLASS RIVER'],['SPLIT','NIGHT DRIVE 84'],
   ['BELL','TINE CATHEDRAL'],['BELL','MUSICBOX MOON'],['BELL','COLD CHIMES'],
@@ -388,8 +391,8 @@ function buildHeader() {
   // centre cluster: preset steppers + main LCD
   const center = mk('div', 'flex:1;display:flex;justify-content:center');
   const psteps = mk('div', 'display:flex;flex-direction:column;gap:3px;margin-right:6px');
-  psteps.appendChild(stepper('▲', () => { preset = (preset + PRESETS.length - 1) % PRESETS.length; }, 22, 19, 9));
-  psteps.appendChild(stepper('▼', () => { preset = (preset + 1) % PRESETS.length; }, 22, 19, 9));
+  psteps.appendChild(stepper('▲', () => selectPreset(preset - 1), 22, 19, 9));
+  psteps.appendChild(stepper('▼', () => selectPreset(preset + 1), 22, 19, 9));
   center.appendChild(psteps);
   const lcdBox = mk('div', 'width:520px;height:44px;background:#07070a;border-radius:3px;box-shadow:inset 0 2px 8px rgba(0,0,0,.9), 0 1px 0 rgba(201,205,242,.15);padding:5px 10px;display:flex;align-items:center;gap:12px');
   const glyph = mk('div', 'display:flex;align-items:flex-end;gap:1px;height:30px');
@@ -1029,7 +1032,7 @@ const pad2 = (n) => String(n).padStart(2, '0');
 function openMenu(title, rows, getCur, pick) { if (midiLearn) return; menu = { title, rows, getCur, pick }; syncOverlays(); }
 function openWaveMenu() { openMenu('WAVE SELECT — TONE ' + TONELET[sel], WAVES.map((w, i) => ({ num: pad2(i + 1), cat: w.cat.toUpperCase(), name: (w.name + (w.tag ? ' [' + w.tag + ']' : '')).toUpperCase() })), () => selCbIdx('wave', WAVES.length), (i) => selCbSet('wave', i)); }
 function openSelMenu(title, list, getCur, pick) { openMenu(title, list.map((n, i) => ({ num: pad2(i + 1), cat: '', name: n })), getCur, pick); }
-function openPresetMenu() { openMenu('PRESET SELECT', PRESETS.map(([c, n], i) => ({ num: pad2(i + 1), cat: c, name: n })), () => preset, (i) => { preset = i; scheduleRefresh(); }); }
+function openPresetMenu() { openMenu('PRESET SELECT', PRESETS.map(([c, n], i) => ({ num: pad2(i + 1), cat: c, name: n })), () => preset, (i) => selectPreset(i)); }
 
 // ---- meters + animation ---------------------------------------------------
 let _mL = 0, _mR = 0, _mtL = 0, _mtR = 0;
@@ -1059,6 +1062,31 @@ const nativeFn = (name) => { try { return Juce.getNativeFunction(name); } catch 
 const nfNoteOn = nativeFn('noteOn'), nfNoteOff = nativeFn('noteOff');
 const nfPitchBend = nativeFn('pitchBend'), nfModWheel = nativeFn('modWheel');
 const nfKeyboardFold = nativeFn('keyboardFold');
+// preset bank native bridge (processor-owned factory presets)
+const nfLoadPreset = nativeFn('loadPreset'), nfGetPresetList = nativeFn('getPresetList');
+// select preset i (wrapping): update the browser index + ask the processor to
+// recall it -> the APVTS relays then refresh every panel control automatically.
+function selectPreset(i) {
+  const n = PRESETS.length; if (!n) return;
+  preset = ((i % n) + n) % n;
+  if (nfLoadPreset) nfLoadPreset(preset);
+  scheduleRefresh();
+}
+// on boot, fetch the factory bank names/categories from the processor and use
+// it as the preset browser's data source (replacing the hardcoded fallback).
+function loadPresetList() {
+  if (!nfGetPresetList) return;
+  try {
+    const p = nfGetPresetList();
+    if (p && p.then) p.then((list) => {
+      if (Array.isArray(list) && list.length) {
+        PRESETS = list.map((e) => [(e && e.category) || '', (e && e.name) || '']);
+        if (preset >= PRESETS.length) preset = 0;
+        scheduleRefresh();
+      }
+    }).catch(() => {});
+  } catch (_) {}
+}
 function applyVersion() {
   let p = null; try { p = Juce.getNativeFunction('getInfo')(); } catch (_) {}
   if (p && p.then) p.then((info) => { if (info && info.version && verEl) verEl.textContent = 'VER ' + info.version; }).catch(() => {});
@@ -1103,6 +1131,7 @@ window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { menu = nul
 window.addEventListener('resize', fit);
 
 applyVersion();
+loadPresetList();   // pull the processor-owned factory bank into the browser
 syncOverlays();
 refresh();
 fit();
