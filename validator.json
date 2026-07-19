@@ -31,6 +31,10 @@
       { "name": "filter_extra",
         "compile": "(if not exist tests\\bin mkdir tests\\bin) && cl /nologo /std:c++17 /O2 /EHsc /D_USE_MATH_DEFINES /I. tests\\test_filter_extra.cpp /Fo:tests\\bin\\ /Fe:tests\\bin\\test_filter_extra.exe",
         "run": "tests\\bin\\test_filter_extra.exe",
+        "expect": ["ALL CHECKS PASSED"] },
+      { "name": "dsp_features",
+        "compile": "(if not exist tests\\bin mkdir tests\\bin) && cl /nologo /std:c++17 /O2 /EHsc /DRHINO_TEST_FEATURES=1 /D_USE_MATH_DEFINES /I. tests\\test_dsp_features.cpp /Fo:tests\\bin\\ /Fe:tests\\bin\\test_dsp_features.exe",
+        "run": "tests\\bin\\test_dsp_features.exe",
         "expect": ["ALL CHECKS PASSED"] }
     ]
   },

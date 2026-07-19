@@ -30,6 +30,21 @@ public:
     void setFrequency(double hz)  noexcept { freq_ = hz;      updateIncrement(); }
     void setInterp(Interp m)      noexcept { interp_ = m; }
 
+    // DSP_BUILD s12: per-tap loop mode. FORWARD = current wrap (loopStart..len);
+    // PINGPONG = phase reflects at both ends (Loop-type only; ignored on
+    // Cycle/OneShot). RT-safe: only flips a bool consulted in the Loop branch.
+    void setLoopMode(bool pingpong) noexcept { pingpong_ = pingpong; }
+
+    // DSP_BUILD s13: varispeed multiplier applied to the Loop/OneShot phase
+    // increment (Cycle path deliberately untouched -> stays v2 bit-identical).
+    // Default 1.0 keeps every existing render byte-for-byte identical.
+    void setSpeedMul(double m) noexcept { speedMul_ = m; updateIncrement(); }
+
+    // --- test-only observers (RT-neutral, no state) ---------------------------
+    uint32_t sampleIndexForTest() const noexcept { return (uint32_t)(phase64_ >> 32); }
+    double   incSamplesForTest()  const noexcept { return (double)inc64_ / 4294967296.0; }
+    int      dirForTest()         const noexcept { return dir_; }
+
     void setWaveform(int idx) noexcept {
         if (idx < 0 || idx >= rompler::bank3::kNumWaveforms) idx = 0;
         wf_ = &rompler::bank3::kWaveforms[(size_t)idx];
@@ -41,6 +56,7 @@ public:
         if (start01 < 0.0) start01 = 0.0;
         if (start01 > 1.0) start01 = 1.0;
         finished_ = false;
+        dir_ = 1;                               // pingpong starts forward
         if (wf_->type == rompler::bank3::WaveType::Cycle) {
             phase32_ = (uint32_t)(start01 * 599.0 * 65536.0) % kCycleWrap;
         } else {
@@ -93,6 +109,32 @@ public:
             const int32_t v = a + (int32_t)(((int64_t)(b - a) * frac16) >> 16);
             out = (float)v * kNorm;
         }
+        if (pingpong_ && w->type == rompler::bank3::WaveType::Loop) {
+            // ---- s12 PINGPONG: reflect at both ends, no OOR read ------------
+            const uint64_t lo   = (uint64_t)w->loopStart << 32;
+            const uint64_t hi   = (uint64_t)len << 32;
+            const uint64_t span = hi - lo;
+            if (dir_ >= 0) {
+                phase64_ += inc64_;
+                if (phase64_ >= hi) {                 // bounce off the top
+                    uint64_t over = phase64_ - hi;
+                    if (span != 0 && over >= span) over %= span;
+                    phase64_ = hi - 1 - over;         // stays in [lo, hi-1]
+                    dir_ = -1;
+                }
+            } else {
+                if (phase64_ >= lo + inc64_) {
+                    phase64_ -= inc64_;
+                } else {                              // bounce off the bottom
+                    uint64_t d = (lo + inc64_) - phase64_;
+                    if (span != 0 && d >= span) d %= span;
+                    phase64_ = lo + d;                // stays in [lo, hi)
+                    dir_ = 1;
+                }
+            }
+            return out;
+        }
+
         phase64_ += inc64_;
         const uint64_t end = (uint64_t)len << 32;
         if (phase64_ >= end) {
@@ -115,7 +157,7 @@ private:
             inc32_ = (uint32_t)(step * 65536.0 + 0.5);
         } else {
             const double root  = wf_->rootHz > 0.0f ? (double)wf_->rootHz : 220.0;
-            const double ratio = (freq_ / root) * (44100.0 / sampleRate_);
+            const double ratio = (freq_ / root) * (44100.0 / sampleRate_) * speedMul_;
             inc64_ = (uint64_t)(ratio * 4294967296.0 + 0.5);
         }
     }
@@ -127,8 +169,11 @@ private:
     uint32_t inc32_      = 0;
     uint64_t phase64_    = 0;
     uint64_t inc64_      = 0;
+    double   speedMul_   = 1.0;     // s13 varispeed (Loop/OneShot only)
     Interp   interp_     = Interp::Linear;
     bool     finished_   = false;
+    bool     pingpong_   = false;   // s12 loop mode (Loop only)
+    int      dir_        = 1;       // pingpong travel direction (+1/-1)
 };
 
 } // namespace dreamer

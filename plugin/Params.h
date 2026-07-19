@@ -9,15 +9,24 @@
 //   vec_penv_loop   bool    P-ENV loop flag (section 6 + GUI_SPEC name it)
 //   vec_orbit_voice bool    per-voice free-run (section 6 "non-panel param")
 //   interp, engine  choices v2 carryovers (DropSample/Linear, Vintage/Modern)
+//   voicing_[t]     choice  s11 multi-tap voicing (Single/Oct/Power/Dreamy)
+//   dreamy_spread_[t] choice s11 DREAMY interval set (Add9/Min7/Sus2)
+//   loop_mode_[t]   choice  s12 loop mode (Fwd/Pingpong; Loop waves only)
+//   hit_play_[t]    choice  s13 one-shot playback (Normal/Stretch)
+//   hit_stretch_[t] 0..1    s13 varispeed 0.25x..4x (log, 0.5=1.0x)
+//   hit_pitchtrim_[t] int   s13 -24..+24 semitone re-tune (still varispeed)
 // FLAGGED interpretation: tvf_env / flt1_env are UNIPOLAR 0..1 per the
 // table (upward-only env sweep); negative env is not reachable.
+// s13 note: hit_stretch is NOT a matrix dest -- DSP_BUILD s9 (which WINS)
+// lists FX PARAM in the matrix dest list, so mtxDests gains "Fx Param"
+// (RESERVED/inert engine dest dstFxParam=9), not hit_stretch.
 //
 // Normalized 0..1 -> real-unit maps live in PluginProcessor.cpp (documented
 // there); GUI displays 0-127 (bipolar -63..+63) regardless.
 //
-// Choice-count freezes: wave 104 (78 cycle + 16 Ens + 10 Shot, bank3 order);
-// flt type 14; shaper 6; tvf type 4; lfo/orbit shapes 5; mtx src 5, dst 8;
-// modfx 4; dly 3; rev 3.
+// Choice-count freezes: wave 218 (78 cycle + 130 Loop + 10 Shot, bank3 order);
+// flt type 14; shaper 6; tvf type 4; lfo/orbit shapes 5; mtx src 5, dst 9;
+// voicing 4; dreamy_spread 3; loop_mode 2; hit_play 2; modfx 7; dly 3; rev 3.
 
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -113,7 +122,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         return std::make_unique<AudioParameterChoice>(ParameterID { id, 1 }, name, items, def);
     };
 
-    // wave list from bank3 (104, order LOCKED)
+    // wave list from bank3 (218, order LOCKED)
     StringArray waves;
     for (int i = 0; i < rompler::bank3::kNumWaveforms; ++i)
         waves.add(String(rompler::bank3::kWaveforms[(size_t)i].category) + ": "
@@ -132,7 +141,12 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     const StringArray lfoDests    { "Pitch", "Cutoff", "Shape", "Level" };
     const StringArray mtxSrcs     { "G-LFO", "Vec Phs", "Aux", "Velo", "Wheel" };
     const StringArray mtxDests    { "Pitch", "Cut 1", "Cut 2", "Morph",
-                                    "Shape", "Vec Phs", "Pan", "Noise" };
+                                    "Shape", "Vec Phs", "Pan", "Noise",
+                                    "Fx Param" };   // s9 dst 9 (reserved/inert)
+    const StringArray voicings    { "Single", "Oct", "Power", "Dreamy" };
+    const StringArray dreamySpreads { "Add9", "Min7", "Sus2" };
+    const StringArray loopModes   { "Fwd", "Pingpong" };
+    const StringArray hitPlays    { "Normal", "Stretch" };
 
     // ---- per-tone blocks (suffix _a.._d) -----------------------------------
     const char* toneNames[4] = { "A ", "B ", "C ", "D " };
@@ -157,6 +171,14 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         layout.add(uni(tid("noise_color", t), P + "Noise Color", 0.0f));
         layout.add(uni(tid("dir", t), P + "Vec Dir", 0.25f * (float)t));
         layout.add(uni(tid("vint", t), P + "Vec Int", 0.0f));
+        // s11 multi-tap voicing / s12 loop mode / s13 hit varispeed (per tone)
+        layout.add(choice(tid("voicing", t), P + "Voicing", voicings, 0));
+        layout.add(choice(tid("dreamy_spread", t), P + "Dreamy Spread", dreamySpreads, 0));
+        layout.add(choice(tid("loop_mode", t), P + "Loop Mode", loopModes, 0));
+        layout.add(choice(tid("hit_play", t), P + "Hit Play", hitPlays, 0));
+        layout.add(uni(tid("hit_stretch", t), P + "Hit Stretch", 0.5f));
+        layout.add(std::make_unique<AudioParameterInt>(
+            ParameterID { tid("hit_pitchtrim", t), 1 }, P + "Hit Pitch Trim", -24, 24, 0));
         // v7: two per-tone LFOs (rate free-Hz or tempo-synced to 12 divisions)
         for (int lf = 1; lf <= 2; ++lf) {
             const String LB = "lfo" + String(lf) + "_";

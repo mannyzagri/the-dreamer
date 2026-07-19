@@ -33,64 +33,226 @@ const initData = window.__JUCE__.initialisationData;
 // 10 [SHOT] one-shots); display uppercases at render time, tag shows
 // right-aligned in the overlay. (The v7 README's "0-77" line is stale --
 // the 104-wave bank3 freeze in Params.h is authoritative.)
-const WAVES = [
-  { cat: "Basic", name: "Saw", tag: "" },          { cat: "Basic", name: "Square", tag: "" },
-  { cat: "Basic", name: "Triangle", tag: "" },     { cat: "Basic", name: "Sine", tag: "" },
-  { cat: "Pad", name: "SoftSaw 1", tag: "" },      { cat: "Pad", name: "SoftSaw 2", tag: "" },
-  { cat: "Pad", name: "SoftSaw 3", tag: "" },      { cat: "Pad", name: "AsymSaw 1", tag: "" },
-  { cat: "Pad", name: "AsymSaw 2", tag: "" },      { cat: "Pad", name: "Hollow 1", tag: "" },
-  { cat: "Pad", name: "Hollow 2", tag: "" },       { cat: "Pad", name: "Hollow 3", tag: "" },
-  { cat: "Pad", name: "Hollow 4", tag: "" },       { cat: "Pad", name: "Tannerin", tag: "" },
-  { cat: "Pad", name: "Breath 1", tag: "" },       { cat: "Pad", name: "Breath 2", tag: "" },
-  { cat: "Pad", name: "Breath 3", tag: "" },       { cat: "Pad", name: "Glass Organ 1", tag: "" },
-  { cat: "Pad", name: "Glass Organ 2", tag: "" },  { cat: "Pad", name: "Glass Organ 3", tag: "" },
-  { cat: "Pad", name: "SinHarm 1", tag: "" },      { cat: "Pad", name: "SinHarm 2", tag: "" },
-  { cat: "String", name: "StringBox 1", tag: "" }, { cat: "String", name: "StringBox 2", tag: "" },
-  { cat: "String", name: "StringBox 3", tag: "" }, { cat: "String", name: "Violin 1", tag: "" },
-  { cat: "String", name: "Violin 2", tag: "" },    { cat: "String", name: "Cello 1", tag: "" },
-  { cat: "String", name: "Cello 2", tag: "" },     { cat: "String", name: "Cello 3", tag: "" },
-  { cat: "Vox", name: "Voice 1", tag: "" },        { cat: "Vox", name: "Voice 2", tag: "" },
-  { cat: "Vox", name: "Voice 3", tag: "" },        { cat: "Vox", name: "Voice 4", tag: "" },
-  { cat: "Vox", name: "Voice 5", tag: "" },        { cat: "Vox", name: "Voice Bright 1", tag: "" },
-  { cat: "Vox", name: "Voice Bright 2", tag: "" }, { cat: "Bell", name: "FM Bell 1", tag: "" },
-  { cat: "Bell", name: "FM Bell 2", tag: "" },     { cat: "Bell", name: "FM Bell 3", tag: "" },
-  { cat: "Bell", name: "FM Bell 4", tag: "" },     { cat: "Bell", name: "FM Bell 5", tag: "" },
-  { cat: "Bell", name: "FM Bell 6", tag: "" },     { cat: "Bell", name: "Tine Bright", tag: "" },
-  { cat: "Bell", name: "EP Tine 1", tag: "" },     { cat: "Bell", name: "EP Tine 2", tag: "" },
-  { cat: "Bell", name: "DigiBell 1", tag: "" },    { cat: "Bell", name: "DigiBell 2", tag: "" },
-  { cat: "Bell", name: "DigiBell 3", tag: "" },    { cat: "Bell", name: "DigiBell 4", tag: "" },
-  { cat: "Bell", name: "DigiBell 5", tag: "" },    { cat: "Bell", name: "Chime 1", tag: "" },
-  { cat: "Bell", name: "Chime 2", tag: "" },       { cat: "Bell", name: "Chime 3", tag: "" },
-  { cat: "Bell", name: "Hollow Bell 1", tag: "" }, { cat: "Bell", name: "Hollow Bell 2", tag: "" },
-  { cat: "Bell", name: "Hollow Bell 3", tag: "" }, { cat: "Metal", name: "Spectrum 1", tag: "" },
-  { cat: "Metal", name: "Spectrum 2", tag: "" },   { cat: "Metal", name: "Spectrum 3", tag: "" },
-  { cat: "Metal", name: "Spectrum 4", tag: "" },   { cat: "Metal", name: "Spectrum 5", tag: "" },
-  { cat: "Metal", name: "Spectrum 6", tag: "" },   { cat: "Metal", name: "Spectrum 7", tag: "" },
-  { cat: "Metal", name: "RawMetal 1", tag: "" },   { cat: "Metal", name: "RawMetal 2", tag: "" },
-  { cat: "Metal", name: "RawMetal 3", tag: "" },   { cat: "Metal", name: "RawMetal 4", tag: "" },
-  { cat: "Metal", name: "Clang 1", tag: "" },      { cat: "Metal", name: "Clang 2", tag: "" },
-  { cat: "Metal", name: "Clang 3", tag: "" },      { cat: "Metal", name: "BitHash 1", tag: "" },
-  { cat: "Metal", name: "BitHash 2", tag: "" },    { cat: "Metal", name: "BitHash 3", tag: "" },
-  { cat: "Metal", name: "BitHash 4", tag: "" },    { cat: "Metal", name: "GrainMetal 1", tag: "" },
-  { cat: "Metal", name: "GrainMetal 2", tag: "" }, { cat: "Metal", name: "GrainMetal 3", tag: "" },
-  { cat: "Ens", name: "STRINGBOX_ENS", tag: "ENS" },   { cat: "Ens", name: "CATHEDRAL", tag: "ENS" },
-  { cat: "Ens", name: "CHOIR_MORPH", tag: "ENS" },     { cat: "Ens", name: "GLASS_CHOIR", tag: "ENS" },
-  { cat: "Ens", name: "SOLINA_DREAM", tag: "ENS" },    { cat: "Ens", name: "CELLO_SECTION", tag: "ENS" },
-  { cat: "Ens", name: "THEREMIN_SWARM", tag: "ENS" },  { cat: "Ens", name: "DARK_BREATH", tag: "ENS" },
-  { cat: "Ens", name: "FM_HALO", tag: "ENS" },         { cat: "Ens", name: "SPECTRAL_TIDE", tag: "ENS" },
-  { cat: "Ens", name: "SAW_CLOUD", tag: "ENS" },       { cat: "Ens", name: "TANNERIN_GHOST", tag: "ENS" },
-  { cat: "Ens", name: "ORGAN_MASS", tag: "ENS" },      { cat: "Ens", name: "VOICE_OF_STEEL", tag: "ENS" },
-  { cat: "Ens", name: "BELL_GARDEN", tag: "ENS" },     { cat: "Ens", name: "ACID_MIRAGE", tag: "ENS" },
-  { cat: "Ens", name: "ETHEREAL_CHOIR", tag: "ENS" },  { cat: "Ens", name: "OPERA_VIOLA", tag: "ENS" },
-  { cat: "Ens", name: "CELLO_CHOIR", tag: "ENS" },     { cat: "Ens", name: "STEEL_CHOIR", tag: "ENS" },
-  { cat: "Ens", name: "CHROME_VOICES", tag: "ENS" },   { cat: "Ens", name: "ORACLE", tag: "ENS" },
-  { cat: "Ens", name: "STRING_OCTAVES", tag: "ENS" },  { cat: "Ens", name: "GHOST_ORCHESTRA", tag: "ENS" },
-  { cat: "Ens", name: "VIOLIN_SERAPH", tag: "ENS" },   { cat: "Ens", name: "CATHEDRAL_STRINGS", tag: "ENS" },
-  { cat: "Shot", name: "CHIFF", tag: "SHOT" },         { cat: "Shot", name: "BREATH", tag: "SHOT" },
-  { cat: "Shot", name: "CLICK", tag: "SHOT" },         { cat: "Shot", name: "MALLET_TICK", tag: "SHOT" },
-  { cat: "Shot", name: "NOISE_SWELL", tag: "SHOT" },   { cat: "Shot", name: "GLASS_TICK", tag: "SHOT" },
-  { cat: "Shot", name: "VOX_PLOSIVE", tag: "SHOT" },   { cat: "Shot", name: "METAL_HIT", tag: "SHOT" },
-  { cat: "Shot", name: "SUB_THUMP", tag: "SHOT" },     { cat: "Shot", name: "TAPE_START", tag: "SHOT" },
+const WAVES = [   // regenerated from Bank3 (218: 78 cycle + 130 [ENS] loop + 10
+  //  [SHOT] hit) via tools/emit_wave_list.cpp -- order LOCKED = wave_[t] index.
+  { cat: "Basic", name: "Saw", tag: "" },
+  { cat: "Basic", name: "Square", tag: "" },
+  { cat: "Basic", name: "Triangle", tag: "" },
+  { cat: "Basic", name: "Sine", tag: "" },
+  { cat: "Pad", name: "SoftSaw 1", tag: "" },
+  { cat: "Pad", name: "SoftSaw 2", tag: "" },
+  { cat: "Pad", name: "SoftSaw 3", tag: "" },
+  { cat: "Pad", name: "AsymSaw 1", tag: "" },
+  { cat: "Pad", name: "AsymSaw 2", tag: "" },
+  { cat: "Pad", name: "Hollow 1", tag: "" },
+  { cat: "Pad", name: "Hollow 2", tag: "" },
+  { cat: "Pad", name: "Hollow 3", tag: "" },
+  { cat: "Pad", name: "Hollow 4", tag: "" },
+  { cat: "Pad", name: "Tannerin", tag: "" },
+  { cat: "Pad", name: "Breath 1", tag: "" },
+  { cat: "Pad", name: "Breath 2", tag: "" },
+  { cat: "Pad", name: "Breath 3", tag: "" },
+  { cat: "Pad", name: "Glass Organ 1", tag: "" },
+  { cat: "Pad", name: "Glass Organ 2", tag: "" },
+  { cat: "Pad", name: "Glass Organ 3", tag: "" },
+  { cat: "Pad", name: "SinHarm 1", tag: "" },
+  { cat: "Pad", name: "SinHarm 2", tag: "" },
+  { cat: "String", name: "StringBox 1", tag: "" },
+  { cat: "String", name: "StringBox 2", tag: "" },
+  { cat: "String", name: "StringBox 3", tag: "" },
+  { cat: "String", name: "Violin 1", tag: "" },
+  { cat: "String", name: "Violin 2", tag: "" },
+  { cat: "String", name: "Cello 1", tag: "" },
+  { cat: "String", name: "Cello 2", tag: "" },
+  { cat: "String", name: "Cello 3", tag: "" },
+  { cat: "Vox", name: "Voice 1", tag: "" },
+  { cat: "Vox", name: "Voice 2", tag: "" },
+  { cat: "Vox", name: "Voice 3", tag: "" },
+  { cat: "Vox", name: "Voice 4", tag: "" },
+  { cat: "Vox", name: "Voice 5", tag: "" },
+  { cat: "Vox", name: "Voice Bright 1", tag: "" },
+  { cat: "Vox", name: "Voice Bright 2", tag: "" },
+  { cat: "Bell", name: "FM Bell 1", tag: "" },
+  { cat: "Bell", name: "FM Bell 2", tag: "" },
+  { cat: "Bell", name: "FM Bell 3", tag: "" },
+  { cat: "Bell", name: "FM Bell 4", tag: "" },
+  { cat: "Bell", name: "FM Bell 5", tag: "" },
+  { cat: "Bell", name: "FM Bell 6", tag: "" },
+  { cat: "Bell", name: "Tine Bright", tag: "" },
+  { cat: "Bell", name: "EP Tine 1", tag: "" },
+  { cat: "Bell", name: "EP Tine 2", tag: "" },
+  { cat: "Bell", name: "DigiBell 1", tag: "" },
+  { cat: "Bell", name: "DigiBell 2", tag: "" },
+  { cat: "Bell", name: "DigiBell 3", tag: "" },
+  { cat: "Bell", name: "DigiBell 4", tag: "" },
+  { cat: "Bell", name: "DigiBell 5", tag: "" },
+  { cat: "Bell", name: "Chime 1", tag: "" },
+  { cat: "Bell", name: "Chime 2", tag: "" },
+  { cat: "Bell", name: "Chime 3", tag: "" },
+  { cat: "Bell", name: "Hollow Bell 1", tag: "" },
+  { cat: "Bell", name: "Hollow Bell 2", tag: "" },
+  { cat: "Bell", name: "Hollow Bell 3", tag: "" },
+  { cat: "Metal", name: "Spectrum 1", tag: "" },
+  { cat: "Metal", name: "Spectrum 2", tag: "" },
+  { cat: "Metal", name: "Spectrum 3", tag: "" },
+  { cat: "Metal", name: "Spectrum 4", tag: "" },
+  { cat: "Metal", name: "Spectrum 5", tag: "" },
+  { cat: "Metal", name: "Spectrum 6", tag: "" },
+  { cat: "Metal", name: "Spectrum 7", tag: "" },
+  { cat: "Metal", name: "RawMetal 1", tag: "" },
+  { cat: "Metal", name: "RawMetal 2", tag: "" },
+  { cat: "Metal", name: "RawMetal 3", tag: "" },
+  { cat: "Metal", name: "RawMetal 4", tag: "" },
+  { cat: "Metal", name: "Clang 1", tag: "" },
+  { cat: "Metal", name: "Clang 2", tag: "" },
+  { cat: "Metal", name: "Clang 3", tag: "" },
+  { cat: "Metal", name: "BitHash 1", tag: "" },
+  { cat: "Metal", name: "BitHash 2", tag: "" },
+  { cat: "Metal", name: "BitHash 3", tag: "" },
+  { cat: "Metal", name: "BitHash 4", tag: "" },
+  { cat: "Metal", name: "GrainMetal 1", tag: "" },
+  { cat: "Metal", name: "GrainMetal 2", tag: "" },
+  { cat: "Metal", name: "GrainMetal 3", tag: "" },
+  { cat: "Pad", name: "PAD_01", tag: "ENS" },
+  { cat: "Pad", name: "PAD_02", tag: "ENS" },
+  { cat: "Pad", name: "PAD_03", tag: "ENS" },
+  { cat: "Pad", name: "PAD_04", tag: "ENS" },
+  { cat: "Pad", name: "PAD_05", tag: "ENS" },
+  { cat: "Pad", name: "PAD_06", tag: "ENS" },
+  { cat: "Pad", name: "PAD_07", tag: "ENS" },
+  { cat: "Pad", name: "PAD_08", tag: "ENS" },
+  { cat: "Pad", name: "PAD_09", tag: "ENS" },
+  { cat: "Pad", name: "PAD_10", tag: "ENS" },
+  { cat: "Pad", name: "PAD_11", tag: "ENS" },
+  { cat: "Pad", name: "PAD_12", tag: "ENS" },
+  { cat: "Pad", name: "PAD_13", tag: "ENS" },
+  { cat: "Pad", name: "PAD_14", tag: "ENS" },
+  { cat: "Pad", name: "PAD_15", tag: "ENS" },
+  { cat: "Pad", name: "PAD_16", tag: "ENS" },
+  { cat: "Pad", name: "PAD_17", tag: "ENS" },
+  { cat: "Pad", name: "PAD_18", tag: "ENS" },
+  { cat: "Pad", name: "PAD_19", tag: "ENS" },
+  { cat: "Pad", name: "PAD_20", tag: "ENS" },
+  { cat: "Pad", name: "PAD_21", tag: "ENS" },
+  { cat: "Pad", name: "PAD_22", tag: "ENS" },
+  { cat: "Pad", name: "PAD_23", tag: "ENS" },
+  { cat: "Pad", name: "PAD_24", tag: "ENS" },
+  { cat: "Pad", name: "PAD_25", tag: "ENS" },
+  { cat: "Pad", name: "PAD_26", tag: "ENS" },
+  { cat: "Pad", name: "PAD_27", tag: "ENS" },
+  { cat: "Pad", name: "PAD_28", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_01", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_02", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_03", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_04", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_05", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_06", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_07", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_08", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_09", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_10", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_11", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_12", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_13", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_14", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_15", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_16", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_17", tag: "ENS" },
+  { cat: "Airy", name: "AIRY_18", tag: "ENS" },
+  { cat: "Vox", name: "VOX_01", tag: "ENS" },
+  { cat: "Vox", name: "VOX_02", tag: "ENS" },
+  { cat: "Vox", name: "VOX_03", tag: "ENS" },
+  { cat: "Vox", name: "VOX_04", tag: "ENS" },
+  { cat: "Vox", name: "VOX_05", tag: "ENS" },
+  { cat: "Vox", name: "VOX_06", tag: "ENS" },
+  { cat: "Vox", name: "VOX_07", tag: "ENS" },
+  { cat: "Vox", name: "VOX_08", tag: "ENS" },
+  { cat: "Vox", name: "VOX_09", tag: "ENS" },
+  { cat: "Vox", name: "VOX_10", tag: "ENS" },
+  { cat: "Vox", name: "VOX_11", tag: "ENS" },
+  { cat: "Vox", name: "VOX_12", tag: "ENS" },
+  { cat: "Vox", name: "VOX_13", tag: "ENS" },
+  { cat: "Vox", name: "VOX_14", tag: "ENS" },
+  { cat: "Vox", name: "VOX_15", tag: "ENS" },
+  { cat: "Vox", name: "VOX_16", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_01", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_02", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_03", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_04", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_05", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_06", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_07", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_08", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_09", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_10", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_11", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_12", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_13", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_14", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_15", tag: "ENS" },
+  { cat: "Ether", name: "ETHER_16", tag: "ENS" },
+  { cat: "FM", name: "FM_01", tag: "ENS" },
+  { cat: "FM", name: "FM_02", tag: "ENS" },
+  { cat: "FM", name: "FM_03", tag: "ENS" },
+  { cat: "FM", name: "FM_04", tag: "ENS" },
+  { cat: "FM", name: "FM_05", tag: "ENS" },
+  { cat: "FM", name: "FM_06", tag: "ENS" },
+  { cat: "FM", name: "FM_07", tag: "ENS" },
+  { cat: "FM", name: "FM_08", tag: "ENS" },
+  { cat: "FM", name: "FM_09", tag: "ENS" },
+  { cat: "FM", name: "FM_10", tag: "ENS" },
+  { cat: "FM", name: "FM_11", tag: "ENS" },
+  { cat: "FM", name: "FM_12", tag: "ENS" },
+  { cat: "FM", name: "FM_13", tag: "ENS" },
+  { cat: "FM", name: "FM_14", tag: "ENS" },
+  { cat: "Wind", name: "WIND_01", tag: "ENS" },
+  { cat: "Wind", name: "WIND_02", tag: "ENS" },
+  { cat: "Wind", name: "WIND_03", tag: "ENS" },
+  { cat: "Wind", name: "WIND_04", tag: "ENS" },
+  { cat: "Wind", name: "WIND_05", tag: "ENS" },
+  { cat: "Wind", name: "WIND_06", tag: "ENS" },
+  { cat: "Wind", name: "WIND_07", tag: "ENS" },
+  { cat: "Wind", name: "WIND_08", tag: "ENS" },
+  { cat: "Wind", name: "WIND_09", tag: "ENS" },
+  { cat: "Wind", name: "WIND_10", tag: "ENS" },
+  { cat: "Wind", name: "WIND_11", tag: "ENS" },
+  { cat: "Wind", name: "WIND_12", tag: "ENS" },
+  { cat: "Metal", name: "METAL_01", tag: "ENS" },
+  { cat: "Metal", name: "METAL_02", tag: "ENS" },
+  { cat: "Metal", name: "METAL_03", tag: "ENS" },
+  { cat: "Metal", name: "METAL_04", tag: "ENS" },
+  { cat: "Metal", name: "METAL_05", tag: "ENS" },
+  { cat: "Metal", name: "METAL_06", tag: "ENS" },
+  { cat: "Metal", name: "METAL_07", tag: "ENS" },
+  { cat: "Metal", name: "METAL_08", tag: "ENS" },
+  { cat: "Metal", name: "METAL_09", tag: "ENS" },
+  { cat: "Metal", name: "METAL_10", tag: "ENS" },
+  { cat: "Metal", name: "METAL_11", tag: "ENS" },
+  { cat: "Metal", name: "METAL_12", tag: "ENS" },
+  { cat: "Morph", name: "MORPH_PADAIR", tag: "ENS" },
+  { cat: "Morph", name: "MORPH_VOXETHER", tag: "ENS" },
+  { cat: "Morph", name: "MORPH_STRWIND", tag: "ENS" },
+  { cat: "Morph", name: "MORPH_ETHERFM", tag: "ENS" },
+  { cat: "Morph", name: "MORPH_VOXMETAL", tag: "ENS" },
+  { cat: "Morph", name: "MORPH_AIRGLASS", tag: "ENS" },
+  { cat: "Morph", name: "MORPH_FMBELL", tag: "ENS" },
+  { cat: "Morph", name: "MORPH_PADVOX", tag: "ENS" },
+  { cat: "Morph", name: "MORPH_WINDVOX", tag: "ENS" },
+  { cat: "Morph", name: "MORPH_METALAIR", tag: "ENS" },
+  { cat: "Morph", name: "MORPH_PADPAD", tag: "ENS" },
+  { cat: "Morph", name: "MORPH_VOXVOX", tag: "ENS" },
+  { cat: "Morph", name: "MORPH_ETHMETAL", tag: "ENS" },
+  { cat: "Morph", name: "MORPH_FMPAD", tag: "ENS" },
+  { cat: "Hit", name: "HIT_AIR_SWELL", tag: "SHOT" },
+  { cat: "Hit", name: "HIT_BELL_PING", tag: "SHOT" },
+  { cat: "Hit", name: "HIT_BREATH", tag: "SHOT" },
+  { cat: "Hit", name: "HIT_CHIFF", tag: "SHOT" },
+  { cat: "Hit", name: "HIT_CLICK", tag: "SHOT" },
+  { cat: "Hit", name: "HIT_MALLET", tag: "SHOT" },
+  { cat: "Hit", name: "HIT_NOISE_HIT", tag: "SHOT" },
+  { cat: "Hit", name: "HIT_PLUCK", tag: "SHOT" },
+  { cat: "Hit", name: "HIT_THUMP", tag: "SHOT" },
+  { cat: "Hit", name: "HIT_TINE_TICK", tag: "SHOT" },
 ];
 const SHAPES    = ["OFF", "SOFT FOLD", "HARD FOLD", "SINE FOLD", "ASYM", "DRIVE"];
 const TVFTYPES  = ["LP24", "LP12", "BP", "HP"];              // LCD short form
@@ -107,7 +269,28 @@ const LFOSHAPES = ["TRI", "SIN", "SAW", "SQR", "S+H"];
 const SYNCDIVS  = ["4/1", "2/1", "1/1", "1/2", "1/2T", "1/4",   // lfoN_sync lit:
                    "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"];  // idx=round(v*11)
 const MSRC      = ["G-LFO", "VEC PHS", "AUX", "VELO", "WHEEL"];
-const MDST      = ["PITCH", "CUT 1", "CUT 2", "MORPH", "SHAPE", "VEC PHS", "PAN", "NOISE"];
+// v13: 9th DST "FX PARAM" (targets the focused PARAMS of an FX slot -- mtxN_dst
+// choice, added by the concurrent DSP phase; wire even though Params.h may be
+// mid-edit). Index = mtxN_dst choice index.
+const MDST      = ["PITCH", "CUT 1", "CUT 2", "MORPH", "SHAPE", "VEC PHS", "PAN",
+                   "NOISE", "FX PARAM"];
+// v13 per-tone additions (choice params added concurrently -- FINAL ids):
+//   voicing_[t]        SINGLE/OCT/POWER/DREAMY
+//   dreamy_spread_[t]  ADD9/MIN7/SUS2 (enabled only when voicing=DREAMY)
+//   loop_mode_[t]      FWD/PINGPONG   (ENS loop waves)
+//   hit_play_[t]       NORMAL/STRETCH (SHOT hit waves; STRETCH enables STRETCH+P.TRIM)
+const VOICINGS   = ["SINGLE", "OCT", "POWER", "DREAMY"];
+const DREAMYSPRD = ["ADD9", "MIN7", "SUS2"];
+const LOOPMODES  = ["FWD", "PINGPONG"];
+const HITPLAY    = ["NORMAL", "STRETCH"];
+// v13 FX PARAMS focus lists (per algorithm-family; index = {modfx,dly,rev}_pfocus
+// choice P1..P4 -> p0..p3). The PARAMS knob edits the focused p{focus}.
+const MODFXFOCUS = ["DELAY", "WIDTH", "FEEDBK", "TONE"];
+const DLYFOCUS   = ["WOW", "FLUTTER", "TONE", "DUCK"];
+const REVFOCUS   = ["PREDLY", "WIDTH", "LO CUT", "HI CUT"];
+const LOFIFOCUS  = ["BITS", "SRATE", "COMPAND", "ALIAS"];
+const TALKFOCUS  = ["VOWEL-A", "VOWEL-B", "MORPH", "SENS"];
+const PREPOST    = ["POST", "PRE"];
 const MODFX     = ["CHORUS", "FLANGER", "PHASER", "ENSEMBLE",   // v8: 7 entries,
                    "DIMENSION", "ROTARY", "BARBERPOLE"];        // matches Params.h modfx_type
 // v8: MOD FX PARAM (p0) knob label tracks the algorithm's p0 meaning; modes
@@ -509,6 +692,9 @@ function setTouched(label, norm, fmt) {
   } else if (fmt === "oct") {
     const v = Math.round(norm * 4) - 2;
     txt = (v > 0 ? "+" : "") + v;
+  } else if (fmt === "trim") {          // v13 P.TRIM: -24..+24 semitones
+    const v = Math.round(norm * 48) - 24;
+    txt = (v > 0 ? "+" : "") + v;
   } else {
     txt = String(Math.round(norm * 127));
   }
@@ -587,6 +773,7 @@ function makeKnob(mount, o) {
     rot.style.transform = "rotate(" + (-135 + st().getNormalisedValue() * 270) + "deg)";
   };
   draw.lblEl = lblEl;   // v8: exposed so a caller can retitle (MOD FX PARAM tracks the algorithm)
+  draw.wrap = wrap;     // v13: exposed so a caller can grey a knob in place (STRETCH/P.TRIM)
   o.states.forEach((s) => {
     s.valueChangedEvent.addListener(draw);
     s.propertiesChangedEvent.addListener(draw);
@@ -673,8 +860,10 @@ function makeVSlider(mount, o) {   // {states, cur, h, letter, touch}
   // corner of the CONTROL panel (top corners + the corners just above the
   // keyboard strip). Fixed slot angles match the PNG master.
   const screwLayer = $("screws");
+  // v13: bottom screws sit ~22px above the collapsed-panel bottom corner (y=660),
+  // just above the rubber band (y=640): bottom:202px in the 848-tall panel.
   [["left:14px;top:14px", 37], ["right:14px;top:14px", 112],
-   ["left:14px;bottom:200px", 74], ["right:14px;bottom:200px", 155]].forEach(([pos, ang]) => {
+   ["left:14px;bottom:202px", 74], ["right:14px;bottom:202px", 155]].forEach(([pos, ang]) => {
     const sc = el("div", "screw");
     sc.style.cssText = pos;
     const slot = el("i");
@@ -827,22 +1016,30 @@ $("shapeLcd").addEventListener("click", () =>
   openMenu("SHAPER — TONE " + letter(), rowsOf(SHAPES),
     idx(shapeStates[SEL.i], SHAPES.length), (i) => shapeStates[SEL.i].setChoiceIndex(i)));
 
-// v7 knob row (34px knobs at 40px pitch): OCTV FINE START [RND] | divider |
-// LEVEL VELO SHP-DPT NOISE NS-COL. PAN lives in the TONES mixer strip.
-// The RND button+LED (start_random_[t]) sits next to START per GUI_SPEC.
-[["oct", "OCTV", { fmt: "oct", quant: (v) => Math.round(v * 4) / 4 }],
+// v13 knob row (Ø34, 46px pitch, full-word silkscreen labels). Left group under
+// the WAVE LCD: OCTAVE FINE START [RND] | 1px divider | LEVEL VELOCITY. Then a
+// fixed gap, then the right "shape compartment" (pushed right, above the
+// FILTER/AMPLITUDE/AUX banks): STRETCH + P.TRIM (greyed unless a HIT wave is in
+// STRETCH play mode -- never hidden), SHAPE DEPTH (yellow), NOISE, NOISE COLOR.
+// STRETCH/P.TRIM draws are captured so updateWaveMode() can grey them in place.
+let stretchDraw = null, ptrimDraw = null;
+[["oct", "OCTAVE", { fmt: "oct", quant: (v) => Math.round(v * 4) / 4 }],
  ["fine", "FINE", { fmt: "bip" }],
- ["start", "START", {}],
+ ["start", "START", { rnd: true }],
  ["level", "LEVEL", {}],
- ["velo", "VELO", {}],
- ["shape_depth", "SHP DPT", { ptr: "#ffd23f" }],
+ ["velo", "VELOCITY", { gap: true }],
+ ["hit_stretch", "STRETCH", { grey: "stretch" }],
+ ["hit_pitchtrim", "P.TRIM", { grey: "ptrim", fmt: "trim", quant: (v) => Math.round(v * 48) / 48 }],
+ ["shape_depth", "SHAPE DEPTH", { ptr: "#ffd23f" }],
  ["noise", "NOISE", {}],
- ["noise_color", "NS COL", {}]].forEach(([base, lbl, o]) => {
-  makeKnob($("teKnobs"), {
-    states: tSliders(base), cur: curTone, label: lbl, size: 34, w: 40,
+ ["noise_color", "NOISE COLOR", {}]].forEach(([base, lbl, o]) => {
+  const kd = makeKnob($("teKnobs"), {
+    states: tSliders(base), cur: curTone, label: lbl, size: 34, w: 46, lblCls: "klbl",
     ptr: o.ptr || null, touch: lbl, fmt: o.fmt, quant: o.quant,
   });
-  if (base === "start") {   // START RND: per-tone note-on start randomize
+  if (o.grey === "stretch") stretchDraw = kd;
+  if (o.grey === "ptrim")   ptrimDraw = kd;
+  if (o.rnd) {   // START RND: per-tone note-on start randomize, then 1px divider
     const col = el("div", "rndcol");
     const led = el("div", "led");
     const btn = el("div", "pbtn");
@@ -860,7 +1057,49 @@ $("shapeLcd").addEventListener("click", () =>
       s.setValue(!s.getValue());
     });
   }
+  if (o.gap) $("teKnobs").appendChild(el("div", "tekgap"));  // pushes shape compartment right
 });
+
+// v13 LOOP/PLAY selector (one shared fixed slot on the WAVE/SHAPE row, swapped
+// by the loaded wave's bank tag): ""=CYCLE -> greyed "LOOP FWD" placeholder;
+// "ENS"=LOOP -> LOOP MODE latching btn+LED (loop_mode_[t] FWD/PINGPONG, LED lit
+// = PINGPONG); "SHOT"=HIT -> PLAY MODE latching btn+LED (hit_play_[t]
+// NORMAL/STRETCH, LED lit = STRETCH; STRETCH enables the STRETCH+P.TRIM knobs).
+const loopModeStates = tCombos("loop_mode");   // NEW param (concurrent phase)
+const hitPlayStates  = tCombos("hit_play");    // NEW param (concurrent phase)
+function curTag() { return WAVES[idx(waveStates[SEL.i], WAVES.length)].tag; }
+function updateWaveMode() {
+  const tag = curTag();
+  const led = $("loopLed"), lbl = $("loopLbl"), btn = $("loopBtn"), sel = $("loopSel");
+  let stretchActive = false;
+  if (tag === "ENS") {                          // loop wave
+    sel.classList.remove("disabled");
+    const i = idx(loopModeStates[SEL.i], LOOPMODES.length);
+    lbl.textContent = "LOOP MODE"; btn.textContent = LOOPMODES[i];
+    led.classList.toggle("on", i === 1);        // PINGPONG lit
+  } else if (tag === "SHOT") {                   // hit wave
+    sel.classList.remove("disabled");
+    const i = idx(hitPlayStates[SEL.i], HITPLAY.length);
+    lbl.textContent = "PLAY MODE"; btn.textContent = HITPLAY[i];
+    led.classList.toggle("on", i === 1);        // STRETCH lit
+    stretchActive = (i === 1);
+  } else {                                       // cycle wave -> greyed placeholder
+    sel.classList.add("disabled");
+    lbl.textContent = "LOOP"; btn.textContent = "FWD";
+    led.classList.remove("on");
+  }
+  if (stretchDraw) stretchDraw.wrap.classList.toggle("disabled", !stretchActive);
+  if (ptrimDraw)   ptrimDraw.wrap.classList.toggle("disabled", !stretchActive);
+}
+$("loopBtn").addEventListener("click", () => {
+  const tag = curTag();
+  if (tag === "ENS") { const s = loopModeStates[SEL.i]; s.setChoiceIndex((idx(s, LOOPMODES.length) + 1) % LOOPMODES.length); }
+  else if (tag === "SHOT") { const s = hitPlayStates[SEL.i]; s.setChoiceIndex((idx(s, HITPLAY.length) + 1) % HITPLAY.length); }
+  // cycle: greyed placeholder, no-op
+});
+waveStates.forEach((s) => { s.valueChangedEvent.addListener(updateWaveMode); s.propertiesChangedEvent.addListener(updateWaveMode); });
+loopModeStates.concat(hitPlayStates).forEach((s) => s.valueChangedEvent.addListener(updateWaveMode));
+rebinds.push(updateWaveMode);
 
 // TVF: TYPE LCD (click = menu) + 4 red knobs + three ADSR banks
 // (FILTER / AMPLITUDE / AUX, 1px dividers between them).
@@ -872,9 +1111,11 @@ $("tvfTypeLcd").addEventListener("click", () =>
   openMenu("TVF TYPE — TONE " + letter(), rowsOf(TVFFULL),
     idx(tvfTypeStates[SEL.i], TVFTYPES.length), (i) => tvfTypeStates[SEL.i].setChoiceIndex(i)));
 
-[["tvf_cut", "CUT"], ["tvf_res", "RES"], ["tvf_env", "ENV"], ["tvf_kf", "KF"]].forEach(([base, lbl]) => {
+[["tvf_cut", "CUTOFF"], ["tvf_res", "RESONANCE"], ["tvf_env", "ENVELOPE"],
+ ["tvf_kf", "KEY FLW"]].forEach(([base, lbl]) => {
   makeKnob($("tvfKnobs"), {
-    states: tSliders(base), cur: curTone, label: lbl, size: 34, ptr: "#ff5b6e", touch: "TVF " + lbl,
+    states: tSliders(base), cur: curTone, label: lbl, size: 34, w: 46, lblCls: "klbl",
+    ptr: "#ff5b6e", touch: "TVF " + lbl,
   });
 });
 
@@ -987,16 +1228,17 @@ function makeLfoRow(mountId, n) {
 makeLfoRow("lfo1Row", 1);
 makeLfoRow("lfo2Row", 2);
 
-// v7 AUX ENV row: bipolar AMT± knob (yellow, center detent, -63..+63) +
-// DEST select (incl NOISE) + per-tone footnote.
+// v13 AUX ENV row: bipolar AMOUNT± knob (yellow, center detent, -63..+63) +
+// DEST select (incl NOISE) + VOICING stepper (SINGLE/OCT/POWER/DREAMY) +
+// DREAMY-spread stepper (ADD9/MIN7/SUS2, shown ONLY when VOICING=DREAMY).
 {
   const mount = $("auxEnvRow");
   const name = el("div", "lfoname"); name.textContent = "AUX ENV";
   mount.appendChild(name);
   makeKnob(mount, {
-    states: tSliders("aux_amt"), cur: curTone, label: "AMT ±", size: 26,
-    inset: 4, w: 38, lblCls: "plab7", ptr: "#ffd23f",
-    touch: "AUX AMT", fmt: "bip", quant: detent,
+    states: tSliders("aux_amt"), cur: curTone, label: "AMOUNT", size: 26,
+    inset: 4, w: 42, lblCls: "plab7", ptr: "#ffd23f",
+    touch: "AUX AMOUNT", fmt: "bip", quant: detent,
   });
   const dl = el("div", "plbl"); dl.textContent = "DEST";
   const destBtn = el("div", "cbtn destbtn");
@@ -1008,9 +1250,34 @@ makeLfoRow("lfo2Row", 2);
   destBtn.addEventListener("click", () =>
     openMenu("AUX ENV DEST — TONE " + letter(), rowsOf(AUXDESTS),
       idx(auxDestStates[SEL.i], AUXDESTS.length), (i) => auxDestStates[SEL.i].setChoiceIndex(i)));
-  const note = el("div"); note.id = "footnote";
-  note.textContent = "ALL TONE EDIT CONTROLS ARE PER-TONE";
-  mount.appendChild(note);
+
+  // VOICING stepper (voicing_[t]) -- NEW param (concurrent phase)
+  const vl = el("div", "plbl"); vl.textContent = "VOICE";
+  const voiceBtn = el("div", "cbtn destbtn");
+  mount.append(vl, voiceBtn);
+  const voicingStates = tCombos("voicing");
+  const dreamyStates  = tCombos("dreamy_spread");
+  // DREAMY-spread stepper -- shown only when VOICING=DREAMY (idx 3)
+  const dsWrap = el("div", "dsWrap");
+  const dsl = el("div", "plbl"); dsl.textContent = "SPREAD";
+  const dsBtn = el("div", "cbtn destbtn");
+  dsWrap.append(dsl, dsBtn);
+  mount.appendChild(dsWrap);
+  const drawVoice = () => {
+    const vi = idx(voicingStates[SEL.i], VOICINGS.length);
+    voiceBtn.textContent = VOICINGS[vi];
+    dsBtn.textContent = DREAMYSPRD[idx(dreamyStates[SEL.i], DREAMYSPRD.length)];
+    dsWrap.style.display = (vi === 3) ? "flex" : "none";   // ADD9/MIN7/SUS2 only for DREAMY
+  };
+  voicingStates.concat(dreamyStates).forEach((s) => { s.valueChangedEvent.addListener(drawVoice); s.propertiesChangedEvent.addListener(drawVoice); });
+  rebinds.push(drawVoice);
+  drawVoice();
+  voiceBtn.addEventListener("click", () =>
+    openMenu("VOICING — TONE " + letter(), rowsOf(VOICINGS),
+      idx(voicingStates[SEL.i], VOICINGS.length), (i) => voicingStates[SEL.i].setChoiceIndex(i)));
+  dsBtn.addEventListener("click", () =>
+    openMenu("DREAMY SPREAD — TONE " + letter(), rowsOf(DREAMYSPRD),
+      idx(dreamyStates[SEL.i], DREAMYSPRD.length), (i) => dreamyStates[SEL.i].setChoiceIndex(i)));
 }
 
 //==============================================================================
@@ -1041,7 +1308,7 @@ function openMenu(title, rows, curI, pick) {   // rows: [{cat, name, tag?}]
 }
 function closeMenu() { menuOpen = false; $("menuOverlay").style.display = "none"; }
 $("menuOverlay").addEventListener("click", (e) => { if (e.target === $("menuOverlay")) closeMenu(); });
-window.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeMenu(); closePenv(); } });
+window.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeMenu(); closePenv(); closeUtil(); } });
 const rowsOf = (arr) => arr.map((n) => ({ cat: "", name: n }));
 const waveRows = () => WAVES.map((w) =>
   ({ cat: w.cat.toUpperCase(), name: w.name.toUpperCase(), tag: w.tag }));
@@ -1077,14 +1344,14 @@ function filterStrip(lcdId, decId, incId, typeId, knobDefs, knobMountId, menuTit
   $(lcdId).addEventListener("click", () =>
     openMenu(menuTitle, rowsOf(FTYPES), idx(state, FTYPES.length), (i) => state.setChoiceIndex(i)));
   knobDefs.forEach(([id, lbl, ptr]) => {
-    makeKnob($(knobMountId), { states: [sliderState(id)], label: lbl, size: 36, ptr, touch: lbl });
+    makeKnob($(knobMountId), { states: [sliderState(id)], label: lbl, size: 36, w: 52, lblCls: "klbl", ptr, touch: lbl });
   });
 }
 filterStrip("f1Lcd", "f1Dec", "f1Inc", "flt1_type",
-  [["flt1_cut", "CUT", "#ff5b6e"], ["flt1_res", "RES", "#ff5b6e"], ["flt1_env", "ENV", "#ff5b6e"]],
+  [["flt1_cut", "CUTOFF", "#ff5b6e"], ["flt1_res", "RESONANCE", "#ff5b6e"], ["flt1_env", "ENVELOPE", "#ff5b6e"]],
   "f1Knobs", "FILTER 1 TYPE");
 filterStrip("f2Lcd", "f2Dec", "f2Inc", "flt2_type",
-  [["flt2_cut", "CUT", "#ff5b6e"], ["flt2_res", "RES", "#ff5b6e"], ["flt2_morph", "MORPH", "#ffd23f"]],
+  [["flt2_cut", "CUTOFF", "#ff5b6e"], ["flt2_res", "RESONANCE", "#ff5b6e"], ["flt2_morph", "MORPH", "#ffd23f"]],
   "f2Knobs", "FILTER 2 TYPE");
 
 const routeState = comboState("flt_route");
@@ -1095,9 +1362,9 @@ comboDraw([routeState], false, () => {
 });
 $("routeBtn").addEventListener("click", () => routeState.setChoiceIndex(1 - idx(routeState, 2)));
 
-makeKnob($("fbalMount"), {   // v7 filter output balance (bipolar)
-  states: [sliderState("flt_bal")], label: "BAL 1↔2", size: 26, inset: 4,
-  w: 38, lblCls: "plab7", ptr: "#ffd23f", touch: "FLT BAL", fmt: "bip", quant: detent,
+makeKnob($("fbalMount"), {   // v7 filter output balance (bipolar 1<->2)
+  states: [sliderState("flt_bal")], label: "BALANCE", size: 26, inset: 4,
+  w: 44, lblCls: "plab7", ptr: "#ffd23f", touch: "FLT BAL", fmt: "bip", quant: detent,
 });
 
 //==============================================================================
@@ -1238,7 +1505,7 @@ let uiPhase = vecPhaseState.getNormalisedValue();
 vecPhaseState.valueChangedEvent.addListener(() => { uiPhase = vecPhaseState.getNormalisedValue(); });
 const flowPos = [0, .25, .5, .75];
 setInterval(() => {
-  if (menuOpen || penvOpen) return;
+  if (menuOpen || penvOpen || utilOpen) return;
   if (orbitState.getValue())
     uiPhase = (uiPhase + .003 + orbitRateState.getNormalisedValue() * .012) % 1;
   else
@@ -1420,48 +1687,34 @@ function makeFxSyncKnob(row, sliderId, baseLabel, syncState, touchName) {
   bindVDrag(skirt, () => st,
     () => touchName + " " + (syncState.getValue() ? divOf() : baseLabel), draw);
 }
-function fxRow(name, typeId, typeArr, menuTitle, knobDefs, onId, divider, syncId) {
+// v13 FX row: name, type LCD (click = menu, NO arrows -- README: FX types carry
+// no steppers), 3 PRIMARY knobs, PARAMS-FOCUS mini-LCD (click cycles the
+// algorithm's secondary-param list -> {prefix}_pfocus), a yellow PARAMS knob
+// that edits the FOCUSED secondary param ({prefix}_p0..p3 by focus index), then
+// the on LED/btn. DELAY additionally gets a SYNC btn+LED and its TIME knob is
+// sync-aware (yellow pointer + tempo division). All p0..p3 + pfocus are APVTS.
+function fxRow(name, typeId, typeArr, menuTitle, primary, prefix, focusList, onId, divider, syncId) {
   const row = el("div", "fxrow");
   const nm = el("div", "fxname"); nm.textContent = name;
-  const dec = el("div", "step stepn"); dec.textContent = "<";
-  const typeBtn = el("div", "cbtn fxtype");
-  const inc = el("div", "step stepn"); inc.textContent = ">";
-  row.append(nm, dec, typeBtn, inc);
+  const typeBtn = el("div", "lcd ctr fxtype"); typeBtn.style.height = "18px";
+  row.append(nm, typeBtn);
 
   const typeState = comboState(typeId);
-  const isMod = typeId === "modfx_type";
   const syncState = syncId ? toggleState(syncId) : null;   // v9: DELAY tempo sync
   comboDraw([typeState], false, () => {
     typeBtn.textContent = typeArr[idx(typeState, typeArr.length)];
   });
-  bindStep(dec, inc, () => typeState, typeArr.length);
   typeBtn.addEventListener("click", () =>
     openMenu(menuTitle, rowsOf(typeArr), idx(typeState, typeArr.length),
       (i) => typeState.setChoiceIndex(i)));
 
-  // PARAM (p0) label: dynamic for MOD FX (algorithm p0 name), else "PARAM".
-  const paramLbl = () => (isMod ? MODFXPARAM[idx(typeState, typeArr.length)] : "PARAM");
-  knobDefs.forEach(([id, lbl], ki) => {
-    if (syncState && ki === 0) {   // v9 DELAY TIME: sync-aware knob (yellow ptr + division)
-      makeFxSyncKnob(row, id, lbl, syncState, name);
-      return;
-    }
-    const isParam = ki === 2;
-    const kd = makeKnob(row, {
-      states: [sliderState(id)], size: 30, w: 36,
-      label: isParam ? paramLbl() : lbl,
-      ptr: isParam ? "#ffd23f" : null,
-      touch: isParam ? (() => name + " " + paramLbl()) : (name + " " + lbl),
-    });
-    if (isParam && isMod) {   // retitle the PARAM knob when the algorithm changes
-      const relabel = () => { if (kd.lblEl) kd.lblEl.textContent = paramLbl(); };
-      typeState.valueChangedEvent.addListener(relabel);
-      typeState.propertiesChangedEvent.addListener(relabel);
-      relabel();
-    }
+  // 3 primary knobs (DELAY's first, TIME, is the sync-aware knob)
+  primary.forEach(([id, lbl], ki) => {
+    if (syncState && ki === 0) { makeFxSyncKnob(row, id, lbl, syncState, name); return; }
+    makeKnob(row, { states: [sliderState(id)], size: 30, w: 36, label: lbl, touch: name + " " + lbl });
   });
 
-  if (syncState) {   // v9: SYNC btn + LED, compact column after the 4 knobs
+  if (syncState) {   // v9: DELAY SYNC btn + LED (compact column)
     const scol = el("div", "fxsync");
     const sled = el("div", "led sled");
     const sbtn = el("div", "fxsyncbtn"); sbtn.textContent = "SYNC";
@@ -1472,6 +1725,28 @@ function fxRow(name, typeId, typeArr, menuTitle, knobDefs, onId, divider, syncId
     drawSled();
     sbtn.addEventListener("click", () => syncState.setValue(!syncState.getValue()));
   }
+
+  // PARAMS FOCUS mini-LCD (cycles pfocus) + yellow PARAMS knob (edits p{focus}).
+  const focusState = comboState(prefix + "_pfocus");
+  const focusLcd = el("div", "lcd ctr fxfocus"); focusLcd.title = "PARAMS FOCUS";
+  const flblCol = el("div", "fxfocuscol");
+  const flbl = el("div", "plab7"); flbl.textContent = "FOCUS";
+  flblCol.append(focusLcd, flbl);
+  row.appendChild(flblCol);
+  comboDraw([focusState], false, () => {
+    focusLcd.textContent = focusList[idx(focusState, focusList.length)];
+  });
+  focusLcd.addEventListener("click", () =>
+    focusState.setChoiceIndex((idx(focusState, focusList.length) + 1) % focusList.length));
+
+  const pStates = [0, 1, 2, 3].map((i) => sliderState(prefix + "_p" + i));
+  const paramsKnob = makeKnob(row, {
+    states: pStates, cur: () => idx(focusState, focusList.length),
+    size: 30, w: 40, label: "PARAMS", ptr: "#ffd23f",
+    touch: () => name + " " + focusList[idx(focusState, focusList.length)],
+  });
+  focusState.valueChangedEvent.addListener(paramsKnob);       // redraw knob on focus change
+  focusState.propertiesChangedEvent.addListener(paramsKnob);
 
   const right = el("div", "fxright");
   const led = el("div", "led");
@@ -1488,14 +1763,81 @@ function fxRow(name, typeId, typeArr, menuTitle, knobDefs, onId, divider, syncId
   if (divider) $("fxRows").appendChild(el("div", "fxdiv"));
 }
 fxRow("MOD", "modfx_type", MODFX, "MOD FX TYPE",
-  [["modfx_rate", "RATE"], ["modfx_depth", "DEPTH"], ["modfx_p0", "PARAM"], ["modfx_mix", "MIX"]],
-  "modfx_on", true);
+  [["modfx_rate", "RATE"], ["modfx_depth", "DEPTH"], ["modfx_mix", "MIX"]],
+  "modfx", MODFXFOCUS, "modfx_on", true);
 fxRow("DELAY", "dly_mode", DLYMODES, "DELAY MODE",
-  [["dly_time", "TIME"], ["dly_fb", "FB"], ["dly_p0", "PARAM"], ["dly_mix", "MIX"]],
-  "dly_on", true, "dly_sync");   // v9: tempo-sync toggle (SYNC btn + LED)
+  [["dly_time", "TIME"], ["dly_fb", "FB"], ["dly_mix", "MIX"]],
+  "dly", DLYFOCUS, "dly_on", true, "dly_sync");   // v9: tempo-sync toggle (SYNC btn + LED)
 fxRow("REVERB", "rev_type", REVTYPES, "REVERB TYPE",
-  [["rev_size", "SIZE"], ["rev_damp", "DAMP"], ["rev_p0", "PARAM"], ["rev_mix", "MIX"]],
-  "rev_on", false);
+  [["rev_size", "SIZE"], ["rev_damp", "DAMP"], ["rev_mix", "MIX"]],
+  "rev", REVFOCUS, "rev_on", false);
+
+//==============================================================================
+// v13 UTILITY overlay (modal, opened by the FX group's UTIL button): LO-FI /
+// WIDTH / TALK standalone stages + a PRE/POST switch (fx_prepost) placing
+// LO-FI/WIDTH before or after the FILTERS. Every stage param wired 1:1 to APVTS
+// (lofi_*, width_*, talk_*, fx_prepost). ESC / scrim / UTIL toggles close it.
+let utilOpen = false;
+function openUtil() { utilOpen = true; $("utilOverlay").style.display = "flex"; }
+function closeUtil() { utilOpen = false; $("utilOverlay").style.display = "none"; }
+$("utilBtn").addEventListener("click", () => (utilOpen ? closeUtil() : openUtil()));
+$("utilOverlay").addEventListener("click", (e) => { if (e.target === $("utilOverlay")) closeUtil(); });
+{
+  const rows = $("utilRows");
+  // led+button toggle (compact) bound to a toggle param
+  const toggleCell = (parent, label, id) => {
+    const cell = el("div", "utilcell");
+    const led = el("div", "led");
+    const btn = el("div", "pbtn tog");
+    const lb = el("div", "plab7"); lb.textContent = label;
+    cell.append(led, btn, lb);
+    parent.appendChild(cell);
+    const st = toggleState(id);
+    const draw = () => led.classList.toggle("on", !!st.getValue());
+    st.valueChangedEvent.addListener(draw); draw();
+    btn.addEventListener("click", () => st.setValue(!st.getValue()));
+  };
+  const stage = (title, build) => {
+    const row = el("div", "utilrow");
+    const nm = el("div", "utilname"); nm.textContent = title;
+    row.appendChild(nm);
+    build(row);
+    rows.appendChild(row);
+  };
+  stage("LO-FI", (row) => {
+    toggleCell(row, "ON", "lofi_on");
+    makeKnob(row, { states: [sliderState("lofi_bits")], size: 30, w: 44, label: "BITS", touch: "LO-FI BITS" });
+    makeKnob(row, { states: [sliderState("lofi_srate")], size: 30, w: 44, label: "SRATE", touch: "LO-FI SRATE" });
+    makeKnob(row, { states: [sliderState("lofi_compand")], size: 30, w: 52, label: "COMPAND", touch: "LO-FI COMPAND" });
+    toggleCell(row, "ALIAS", "lofi_alias");
+  });
+  stage("WIDTH", (row) => {
+    toggleCell(row, "ON", "width_on");
+    makeKnob(row, { states: [sliderState("width")], size: 30, w: 44, label: "WIDTH", touch: "WIDTH" });
+    makeKnob(row, { states: [sliderState("width_haas")], size: 30, w: 44, label: "HAAS", touch: "WIDTH HAAS" });
+    toggleCell(row, "BASS MONO", "width_bassmono");
+  });
+  stage("TALK", (row) => {
+    toggleCell(row, "ON", "talk_on");
+    makeKnob(row, { states: [sliderState("talk_va")], size: 30, w: 46, label: "VOWEL-A", touch: "TALK VOWEL-A" });
+    makeKnob(row, { states: [sliderState("talk_vb")], size: 30, w: 46, label: "VOWEL-B", touch: "TALK VOWEL-B" });
+    makeKnob(row, { states: [sliderState("talk_morph")], size: 30, w: 44, label: "MORPH", ptr: "#ffd23f", touch: "TALK MORPH" });
+    makeKnob(row, { states: [sliderState("talk_sens")], size: 30, w: 44, label: "SENS", touch: "TALK SENS" });
+  });
+  // PRE/POST switch (fx_prepost): LO-FI/WIDTH placement vs the FILTERS.
+  stage("ROUTING", (row) => {
+    const ppState = comboState("fx_prepost");
+    const preLed = el("div", "led"), postLed = el("div", "led");
+    const preC = el("div", "utilcell"); const preLab = el("div", "plab7"); preLab.textContent = "PRE"; preC.append(preLed, preLab);
+    const btn = el("div", "pbtn"); btn.style.cssText = "width:38px;height:18px";
+    const postC = el("div", "utilcell"); const postLab = el("div", "plab7"); postLab.textContent = "POST"; postC.append(postLed, postLab);
+    const note = el("div", "plab7"); note.style.marginLeft = "10px"; note.textContent = "LO-FI / WIDTH BEFORE OR AFTER FILTERS";
+    row.append(preC, btn, postC, note);
+    const draw = () => { const i = idx(ppState, PREPOST.length); postLed.classList.toggle("on", i === 0); preLed.classList.toggle("on", i === 1); };
+    ppState.valueChangedEvent.addListener(draw); ppState.propertiesChangedEvent.addListener(draw); draw();
+    btn.addEventListener("click", () => ppState.setChoiceIndex(1 - idx(ppState, PREPOST.length)));
+  });
+}
 
 //==============================================================================
 // Tone selection (UI-only): rebinds the TONE EDIT group + LCD tone label.
@@ -1537,9 +1879,16 @@ if (infoPromise)
 const presetFlag = location.search.match(/preset=(\d+)/);
 if (presetFlag) applyPreset(parseInt(presetFlag[1], 10) - 1);
 if (location.search.indexOf("ens") >= 0) {
-  waveStates[0].setChoiceIndex(82);              // Ens: SOLINA_DREAM
+  waveStates[0].setChoiceIndex(82);              // [ENS] loop wave -> LOOP MODE selector
   comboState("modfx_type").setChoiceIndex(3);    // ENSEMBLE
 }
+if (location.search.indexOf("shot") >= 0) {      // v13: [SHOT] hit -> PLAY MODE + STRETCH
+  waveStates[0].setChoiceIndex(208);             // HIT_AIR_SWELL
+  hitPlayStates[0].setChoiceIndex(1);            // STRETCH (enables STRETCH+P.TRIM knobs)
+}
+if (location.search.indexOf("util") >= 0) openUtil();   // v13: boot with UTILITY overlay open
+if (location.search.indexOf("keys") >= 0)               // v13 dev: boot with keyboard expanded
+  setTimeout(() => $("keysFold").dispatchEvent(new MouseEvent("click")), 0);  // after fold listener attaches
 const modfxFlag = location.search.match(/modfx=(\d+)/);   // dev: force MOD FX algorithm (0..6)
 if (modfxFlag) comboState("modfx_type").setChoiceIndex(parseInt(modfxFlag[1], 10));
 if (location.search.indexOf("dlysync") >= 0) toggleState("dly_sync").setValue(true);   // v9
@@ -1701,8 +2050,11 @@ const KB_VEL = 0.8;                                 // fixed velocity (no aftert
 // button only). The KEYS fold handler (below) flips it and calls keyboardFold()
 // so the host window resizes to match; fit() then scales the whole #frame to
 // whatever innerWidth/innerHeight the host gives us against currentBaseH.
-const BASE_W = 1140, BASE_H = 864;
-let currentBaseH = BASE_H;
+// v13: control panel 1140x660 (collapsed, DEFAULT) expanding to 848 when the
+// keyboard/wheels strip folds out. BASE_H is the expanded height; currentBaseH
+// is the LIVE logical height fit() scales against (660 collapsed / 848 expanded).
+const BASE_W = 1140, BASE_H = 848, FOLDED_H = 660;
+let currentBaseH = FOLDED_H;   // boot COLLAPSED (README: collapsed by default)
 let uiScale = 1;
 function fit() {
   const s = Math.min(window.innerWidth / BASE_W, window.innerHeight / currentBaseH) * uiScale;
@@ -1750,15 +2102,22 @@ fit();
 // standalone mock (no bridge) nfKeyboardFold is null and callNative is a
 // harmless no-op. Boot state = EXPANDED (folded=false, height 864); no native
 // call is made on load, matching the default window size.
+// v13: boot state = COLLAPSED (folded=true, height 660), matching the master and
+// the C++ editor's default window size; no native call is made on load.
 const nfKeyboardFold = nativeFn("keyboardFold");
 {
   const foldBtn = $("keysFold"), kbStrip = $("kbStrip");
-  let folded = false;
-  foldBtn.addEventListener("click", () => {
-    folded = !folded;
+  let folded = true;
+  const applyFold = () => {
     kbStrip.style.display = folded ? "none" : "";
     foldBtn.textContent = (folded ? "▲" : "▼") + " KEYS";   // ▲ collapsed / ▼ expanded
-    currentBaseH = folded ? 664 : BASE_H;
+    currentBaseH = folded ? FOLDED_H : BASE_H;
+  };
+  applyFold();   // boot collapsed (no native call -- matches the default window size)
+  fit();
+  foldBtn.addEventListener("click", () => {
+    folded = !folded;
+    applyFold();
     callNative(nfKeyboardFold, folded);   // C++ resizes the host window (+ its resized() re-fits)
     fit();                                 // re-fit now so the page updates immediately
   });

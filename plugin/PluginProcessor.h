@@ -130,7 +130,10 @@ private:
     struct TonePtrs {
         std::atomic<float> *wave, *on, *level, *oct, *fine, *start, *startRandom,
                            *velo, *pan, *shape, *shapeDepth, *noise, *noiseColor,
-                           *dir, *vint, *auxDest, *auxAmt,
+                           *dir, *vint,
+                           *voicing, *dreamySpread, *loopMode,     // s11/s12
+                           *hitPlay, *hitStretch, *hitPitchTrim,   // s13
+                           *auxDest, *auxAmt,
                            *tvfType, *tvfCut, *tvfRes, *tvfEnv, *tvfKf,
                            *tvfA, *tvfD, *tvfS, *tvfR,
                            *tvaA, *tvaD, *tvaS, *tvaR,

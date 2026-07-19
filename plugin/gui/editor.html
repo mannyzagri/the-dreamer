@@ -69,6 +69,14 @@
           <div class="lcd ctr" id="shapeLcd" style="width:96px;height:20px"></div>
           <div class="step" id="shapeDec">&lt;</div>
           <div class="step" id="shapeInc">&gt;</div>
+          <!-- v13 LOOP/PLAY selector (one fixed slot, swapped by wave bank tag:
+               ""=greyed LOOP FWD, ENS=LOOP MODE fwd/pingpong, SHOT=PLAY MODE
+               normal/stretch). Never hidden -- greyed in place for cycle waves. -->
+          <div id="loopSel">
+            <div class="led" id="loopLed"></div>
+            <div class="plbl" id="loopLbl">LOOP</div>
+            <div class="cbtn" id="loopBtn" style="width:64px">FWD</div>
+          </div>
         </div>
         <div id="teKnobs"></div>
         <div id="teTvfRow">
@@ -156,6 +164,9 @@
 
       <div class="group" id="gFx">
         <div class="gtitle">FX</div>
+        <!-- v13 UTIL button (top-right of the FX group) opens the UTILITY overlay
+             (LO-FI / WIDTH / TALK + PRE/POST switch), same idiom as the wave menu. -->
+        <div id="utilBtn">UTIL &#9656;</div>
         <div id="fxRows" style="display:flex;flex-direction:column;gap:6px"></div>
       </div>
     </div>
@@ -184,8 +195,11 @@
       <div id="keybed"></div>
     </div>
 
-    <!-- version stamp (getInfo), just left of the bottom-right corner screw -->
-    <div id="verStamp">VER 1.0</div>
+    <!-- version stamp (getInfo overrides with the real built version). This
+         release is 2.0.0; getInfo needs CMakeLists VERSION bumped to 2.0.0 to
+         read "VER 2.0" in-plugin (fallback below matches the master for the
+         standalone mock, where the getInfo promise never resolves). -->
+    <div id="verStamp">VER 2.0</div>
 
     <!-- faceplate finish (built by app.js): seeded star-field variant (off by
          default) + brushed-metal finish (default ON, z-index 0 = behind
@@ -206,6 +220,18 @@
     <div id="menuBox">
       <div id="menuHead"><span id="menuTitle"></span><span>ESC=EXIT</span></div>
       <div id="menuList" class="lcd-scroll"></div>
+    </div>
+  </div>
+
+  <!-- ============ UTILITY overlay (LO-FI / WIDTH / TALK + PRE/POST) ======= -->
+  <!-- Modal on the scrim (same idiom as the wave/P-ENV pages). Rows built by
+       app.js: LO-FI (on + BITS/SRATE/COMPAND/ALIAS), WIDTH (on + WIDTH/HAAS +
+       BASS MONO), TALK (on + VOWEL-A/B/MORPH/SENS), PRE/POST switch (fx_prepost)
+       placing LO-FI/WIDTH before or after the FILTERS. ESC exits. -->
+  <div id="utilOverlay">
+    <div id="utilBox">
+      <div id="utilHead"><span>UTILITY &mdash; LO-FI / WIDTH / TALK</span><span>ESC=EXIT</span></div>
+      <div id="utilRows"></div>
     </div>
   </div>
 

@@ -1,0 +1,4 @@
+dsp/bank/LoopBankData.h filter=lfs diff=lfs merge=lfs -text
+dsp/bank/ShotBankData.h filter=lfs diff=lfs merge=lfs -text
+assets/loops/*.wav filter=lfs diff=lfs merge=lfs -text
+assets/shots/*.wav filter=lfs diff=lfs merge=lfs -text

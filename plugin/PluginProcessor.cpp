@@ -73,6 +73,9 @@ void TheDreamerProcessor::cacheTonePtrs(TonePtrs& dst, int t)
     dst.shape = p("shape"); dst.shapeDepth = p("shape_depth");
     dst.noise = p("noise"); dst.noiseColor = p("noise_color");
     dst.dir = p("dir"); dst.vint = p("vint");
+    dst.voicing = p("voicing"); dst.dreamySpread = p("dreamy_spread");
+    dst.loopMode = p("loop_mode"); dst.hitPlay = p("hit_play");
+    dst.hitStretch = p("hit_stretch"); dst.hitPitchTrim = p("hit_pitchtrim");
     for (int lf = 0; lf < 2; ++lf) {
         const juce::String lb = "lfo" + juce::String(lf + 1) + "_";
         auto q = [&](const char* s) {
@@ -154,6 +157,12 @@ void TheDreamerProcessor::buildPatch(dreamer::DreamPatch& patch) const
         d.noiseColor   = s.noiseColor->load();
         d.dir          = s.dir->load();
         d.vecInt       = s.vint->load();
+        d.voicing      = (int)s.voicing->load();        // s11
+        d.dreamySpread = (int)s.dreamySpread->load();   // s11
+        d.loopMode     = (int)s.loopMode->load();       // s12
+        d.hitPlay      = (int)s.hitPlay->load();        // s13
+        d.hitStretch   = s.hitStretch->load();          // s13 (0..1)
+        d.hitPitchTrim = s.hitPitchTrim->load();        // s13 (Int -24..+24)
         d.shapeMode    = (int)s.shape->load();
         d.shapeDepth   = s.shapeDepth->load();
         d.tvfMode      = (int)s.tvfType->load();

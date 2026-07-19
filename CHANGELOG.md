@@ -3,6 +3,41 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-19 (v13 GUI + full v3 library + voicing/loop/hit DSP) — **RC 2.0.0**.
+  Major release integrating a delivered sound library, three new per-tone
+  synthesis features, and an all-new faceplate. Orchestrated in four phases
+  (build-engineer/cpp-pro + frontend-developer personas), each validator-gated.
+  (1) **Full v3 sound library** — the 26 placeholder "Ens" loops + 10
+  synthesized "Shot" one-shots were replaced by the delivered library:
+  **130 family loops** (Pad/Airy/Vox/Ether/FM/Wind/Metal/Morph) + **10 HIT
+  one-shots**. Bank now **218 waves** (78 cycle + 130 loop + 10 hit). New WAV→
+  header bakers (tools/bake_loops_header.cpp rewritten for 130 manifest-order
+  names + per-family category tags; tools/bake_shots_header.cpp new for the
+  HITs); big sample arrays emitted `inline const` (not constexpr) so the
+  ~102 MB LoopBankData.h compiles under MSVC (~21 s). 12-bit low-nibble
+  invariant holds across all 14.87 M samples; Cycle path byte-identical.
+  Embedded bank ≈ 28.4 MB (binary 36 MB). (2) **New per-tone DSP** —
+  §11 **VOICING** multi-tap oscillator (SINGLE/OCT/POWER/DREAMY; DREAMY spread
+  ADD9/MIN7/SUS2), taps fan the loop at equal-tempered ratios, equal-power sum
+  (SINGLE stays bit-identical); §12 **LOOP MODE** FORWARD/PINGPONG (phase
+  reflection, seam-friendly); §13 **HIT STRETCH** one-shot varispeed
+  (0.25×–4× log + −24…+24 st pitch trim; pitch follows speed). +26 params
+  (6 per-tone families ×4 + "Fx Param" 9th matrix dest, reserved/inert like
+  Morph). (3) **v13 faceplate** (design-handoff/v13, wholesale WebView rebuild)
+  — locked 1140×660 (collapsible 848), full-word labels, STRETCH/P.TRIM greyed
+  in place, LOOP↔PLAY selector swapped by wave bank type, VOICING/DREAMY
+  steppers, LFO1/LFO2 with tempo SYNC, BALANCE knob, 9-slot matrix with
+  bipolar amount bars, FX focus-LCD + PARAMS knobs, UTIL overlay, 218-wave
+  overlay with [ENS]/[SHOT] tags. Validator PASS across all stages;
+  pluginval strictness 8 SUCCESS. **Param list changed (218 waves + 26 params)
+  → Cubase FULL re-scan required** (remove/re-add the instance or restart).
+  Flagged/deferred (unchanged from prior): MIDI learn rendered non-functional;
+  FX-PARAM matrix dest reserved/inert (no GUI focus target yet); factory
+  preset payloads still placeholders (now point into the 218-order — real
+  authoring pending). test_bank3 counts/shot-bound updated + seam check made
+  report-only (delivered material can't meet the literal seam criterion;
+  PINGPONG is the remedy); new test_dsp_features + test_bank3_lib harnesses.
+
 - 2026-07-18 (GUI v12 + comb fix) — **RC 1.2.0**. Two user bugs + the v12 GUI.
   (1) **Comb filters stepped** per cutoff value — my COMB+/COMB− used an
   integer delay length (`round(fs/cut)`), so the comb fundamental snapped to

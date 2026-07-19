@@ -56,6 +56,16 @@ struct ToneParams {
     double dir          = 0.0;     // vector angle 0..1
     double vecInt       = 0.0;     // vector intensity 0..1
 
+    // DSP_BUILD s11/12/13 per-tone features (multi-tap voicing, loop mode,
+    // hit varispeed). All default to the inert value so a bare init patch is
+    // bit-identical to the pre-s11 single-tap forward-loop engine.
+    int    voicing      = 0;       // 0 SINGLE, 1 OCT, 2 POWER, 3 DREAMY (s11)
+    int    dreamySpread = 0;       // 0 ADD9, 1 MIN7, 2 SUS2 (s11, DREAMY only)
+    int    loopMode     = 0;       // 0 FORWARD, 1 PINGPONG (s12, Loop waves)
+    int    hitPlay      = 0;       // 0 NORMAL, 1 STRETCH (s13, OneShot waves)
+    double hitStretch   = 0.5;     // 0..1 -> 0.25x..4x speed (log, 0.5=1.0x)
+    double hitPitchTrim = 0.0;     // -24..+24 semitone re-tune (still varispeed)
+
     int    shapeMode    = 0;       // 0 OFF, 1..5 ShaperTables order
     double shapeDepth   = 0.0;
 
@@ -114,7 +124,11 @@ struct DreamPatch {
 namespace mtx {
     enum Src  : int { srcNone = 0, srcGlfo, srcVecPhs, srcAux, srcVelo, srcWheel };
     enum Dest : int { dstNone = 0, dstPitch, dstCut1, dstCut2, dstMorph,
-                      dstShape, dstVecPhs, dstPan, dstNoise };
+                      dstShape, dstVecPhs, dstPan, dstNoise, dstFxParam };
+    // dstFxParam (=9) is the "FX PARAM" matrix dest from DSP_BUILD s9 (which
+    // WINS): s9 lists FX PARAM -- NOT hit_stretch -- as the new dest. It is
+    // RESERVED/inert here (GUI parity only, like dstMorph) until the GUI gives
+    // it a slot/focus target; wiring one fixed FX param is the s9-flagged trap.
 }
 
 struct ModContext {
@@ -154,6 +168,40 @@ inline int panelLfoShapeToLfo(int s) noexcept {
     return m[s];
 }
 
+// ---------------------------------------------------------------- voicing s11
+// Multi-tap oscillator interval table (generated at playback, nothing baked).
+// Fills semis[0..ntaps-1] with the ET interval of each tap and returns the tap
+// count (1..4). Public for tests/GUI parity.
+//   SINGLE -> {0}                 OCT    -> {0,+12}
+//   POWER  -> {0,+7,+12}          DREAMY -> root + dreamy_spread:
+//     ADD9 {0,+7,+12,+14}  MIN7 {0,+3,+7,+10}  SUS2 {0,+2,+7,+12}
+inline int voicingIntervals(int voicing, int dreamySpread, int semis[4]) noexcept {
+    switch (voicing) {
+    case 1: semis[0]=0; semis[1]=12; semis[2]=0; semis[3]=0; return 2;   // OCT
+    case 2: semis[0]=0; semis[1]=7;  semis[2]=12; semis[3]=0; return 3;  // POWER
+    case 3: {                                                            // DREAMY
+        static constexpr int spread[3][4] = {
+            { 0, 7, 12, 14 },   // ADD9
+            { 0, 3, 7, 10 },    // MIN7
+            { 0, 2, 7, 12 } };  // SUS2
+        int s = dreamySpread < 0 ? 0 : (dreamySpread > 2 ? 2 : dreamySpread);
+        for (int i = 0; i < 4; ++i) semis[i] = spread[s][i];
+        return 4;
+    }
+    default: semis[0]=0; semis[1]=0; semis[2]=0; semis[3]=0; return 1;   // SINGLE
+    }
+}
+// equal-power sum gain 1/sqrt(ntaps). n==1 returns exactly 1.0f so a SINGLE
+// voicing tone stays bit-identical to the pre-s11 single-osc path.
+inline float voicingTapGain(int nTaps) noexcept {
+    switch (nTaps) {
+    case 2:  return 0.70710678118654752f;   // 1/sqrt(2)
+    case 3:  return 0.57735026918962576f;   // 1/sqrt(3)
+    case 4:  return 0.5f;                    // 1/sqrt(4)
+    default: return 1.0f;                    // SINGLE
+    }
+}
+
 // deterministic per-instance RNG (glue idiom)
 struct GlueRng {
     uint32_t s = 1u;
@@ -179,7 +227,7 @@ public:
 
     void prepare(double sr, uint32_t seedBase) noexcept {
         sr_ = sr;
-        osc_.setSampleRate(sr);
+        for (auto& o : osc_) o.setSampleRate(sr);      // s11: up to 4 taps
         tvfEnv_.setSampleRate(sr);
         tvaEnv_.setSampleRate(sr);
         auxEnv_.setSampleRate(sr);
@@ -190,21 +238,34 @@ public:
     }
 
     void setInterpMode(int m) noexcept {
-        osc_.setInterp(m == 0 ? PcmOsc3::Interp::DropSample
-                              : PcmOsc3::Interp::Linear);
+        const auto im = (m == 0 ? PcmOsc3::Interp::DropSample
+                                : PcmOsc3::Interp::Linear);
+        for (auto& o : osc_) o.setInterp(im);          // s11: all taps
     }
 
     void noteOn(const ToneParams& p, int midiNote, float velocity01) noexcept {
         params_ = p;
         note_ = midiNote;
-        osc_.setWaveform(p.waveIndex);
+        // s11/12/13: cache wave type + baked root for the varispeed / loop-mode
+        // decision, and configure all 4 taps over the SAME buffer.
+        {
+            const auto& wf = rompler::bank3::kWaveforms[
+                (p.waveIndex < 0 || p.waveIndex >= rompler::bank3::kNumWaveforms)
+                    ? 0 : (size_t)p.waveIndex];
+            waveType_ = wf.type;
+            rootHz_   = wf.rootHz > 0.0f ? (double)wf.rootHz : 220.0;
+        }
+        nTaps_   = voicingIntervals(p.voicing, p.dreamySpread, intervalSemis_);
+        tapGain_ = voicingTapGain(nTaps_);
+        const bool pingpong = (p.loopMode == 1);
+        for (auto& o : osc_) { o.setWaveform(p.waveIndex); o.setLoopMode(pingpong); }
         baseSemis_ = midiNote - 69 + p.coarse + p.fineCents / 100.0;
         double start = p.start01;
         if (p.startRandom) start = (double)rng_.unipolar();       // section 2
         if (p.auxDest == 1)                                       // AUX->START
             start += p.auxAmt * (double)lastAux_;
         if (start < 0.0) start = 0.0; else if (start > 1.0) start = 1.0;
-        osc_.reset(start);
+        for (auto& o : osc_) o.reset(start);           // taps inherit START/RANDOM
         velGain_ = (float)((1.0 - p.velSens) + p.velSens * velocity01);
         tvfEnv_.set(p.tvfA, p.tvfD, p.tvfS, p.tvfR);
         tvaEnv_.set(p.tvaA, p.tvaD, p.tvaS, p.tvaR);
@@ -248,6 +309,18 @@ public:
         params_.lfo1         = p.lfo1;
         params_.lfo2         = p.lfo2;
         params_.startRandom  = p.startRandom;
+        // s11/13: live voicing + hit params (read each control block); s12 loop
+        // mode is stateful in the oscillator, so push it on change.
+        params_.voicing      = p.voicing;
+        params_.dreamySpread = p.dreamySpread;
+        params_.hitPlay      = p.hitPlay;
+        params_.hitStretch   = p.hitStretch;
+        params_.hitPitchTrim = p.hitPitchTrim;
+        if (p.loopMode != params_.loopMode) {
+            params_.loopMode = p.loopMode;
+            const bool pingpong = (p.loopMode == 1);
+            for (auto& o : osc_) o.setLoopMode(pingpong);
+        }
         baseSemis_ = note_ - 69 + p.coarse + p.fineCents / 100.0;
         if (p.tvfMode != params_.tvfMode) {
             params_.tvfMode = p.tvfMode;
@@ -299,7 +372,34 @@ public:
                 }
             }
 
-            osc_.setFrequency(440.0 * std::pow(2.0, pitchSemis / 12.0));
+            // ---- s11/s13 multi-tap oscillator control ----------------------
+            // Recompute the tap table live (voicing/spread are host params).
+            nTaps_   = voicingIntervals(params_.voicing, params_.dreamySpread,
+                                        intervalSemis_);
+            tapGain_ = voicingTapGain(nTaps_);
+            // s13 HIT STRETCH (OneShot only): varispeed replaces note tracking.
+            // hit_stretch 0..1 -> speed 0.25x..4x (log, 0.5=1.0x); pitch FOLLOWS
+            // speed; hit_pitchtrim re-tunes (still varispeed). setSpeedMul feeds
+            // the Loop/OneShot phase increment; Cycle path is never touched.
+            const bool stretch =
+                (waveType_ == rompler::bank3::WaveType::OneShot) && (params_.hitPlay == 1);
+            double baseFreq, speedMul;
+            if (stretch) {
+                double hs = params_.hitStretch;
+                if (hs < 0.0) hs = 0.0; else if (hs > 1.0) hs = 1.0;
+                const double speed = 0.25 * std::pow(2.0, 4.0 * hs);        // 0.25..4x
+                const double trim  = std::pow(2.0, params_.hitPitchTrim / 12.0);
+                baseFreq = rootHz_;                    // native pitch, note-detached
+                speedMul = speed * trim;
+            } else {
+                baseFreq = 440.0 * std::pow(2.0, pitchSemis / 12.0);        // note-tracked
+                speedMul = 1.0;
+            }
+            for (int k = 0; k < 4; ++k) {
+                const double r = std::pow(2.0, intervalSemis_[k] / 12.0);   // ET detune
+                osc_[k].setFrequency(baseFreq * r);
+                osc_[k].setSpeedMul(speedMul);
+            }
 
             const double keyHz = params_.cutoffHz *
                 std::pow(2.0, params_.tvfKeyFollow * (note_ - 60) / 12.0);
@@ -330,7 +430,13 @@ public:
         }
 
         // ---- chain (DSP_BUILD s5) --------------------------------------
-        float x = osc_.process();
+        // s11: voicing fans ONLY the oscillator -- sum up to 4 taps at
+        // equal-power gain, then feed as ONE tone signal into the shared
+        // shaper/TVF/TVA/vector/pan chain. nTaps_==1 -> x == osc_[0].process()
+        // exactly (tapGain_ == 1.0f), so a SINGLE tone stays bit-identical.
+        float x = 0.0f;
+        for (int k = 0; k < nTaps_; ++k) x += osc_[k].process();
+        x *= tapGain_;
         if (noiseEff_ > 0.0f) {
             noiseLp_ += noiseCoef_ * (rng_.bipolar() - noiseLp_);
             x += noiseEff_ * requant12(noiseLp_ * 0.9995f);   // 12-bit noise
@@ -346,7 +452,7 @@ public:
 private:
     static constexpr float kVecSmooth = 0.3f;
 
-    PcmOsc3                osc_;
+    PcmOsc3                osc_[4];      // s11 multi-tap voicing (root + detuned)
     rompler::EnvelopeAdsr  tvfEnv_, tvaEnv_, auxEnv_;
     ToneSvf                svf_;
     Lfo                    lfo_[2];      // v7 per-tone LFO pair (v11: per-LFO shape)
@@ -359,6 +465,12 @@ private:
     float  lastAux_ = 0.0f;
     float  panL_ = 0.70710678f, panR_ = 0.70710678f;
     int    note_ = 60, ctrlCount_ = 0;
+    // s11/12/13 tap state
+    int    intervalSemis_[4] = { 0, 0, 0, 0 };
+    int    nTaps_    = 1;
+    float  tapGain_  = 1.0f;
+    rompler::bank3::WaveType waveType_ = rompler::bank3::WaveType::Cycle;
+    double rootHz_   = 220.0;
 };
 
 // ---------------------------------------------------------------- voice
@@ -607,6 +719,8 @@ private:
             case mtx::dstPan:    pan    += v;         break;
             case mtx::dstNoise:  noise  += v;         break;
             case mtx::dstMorph:  break;               // reserved (V1.1/V2)
+            case mtx::dstFxParam: break;              // s9 FX PARAM: reserved/inert
+                                                      //  (needs GUI slot/focus target)
             default: break;
             }
         }
