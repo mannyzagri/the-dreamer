@@ -3,14 +3,13 @@
 
 namespace {
 
-// Design canvas (handoff v11): fixed 1140x864 logical (control panel + the
-// keyboard/wheels strip below), uniform scale in the page. 2x assets => the
-// PNG master is 2280x1728. (v9 was 1140x660; the handoff's resize section
-// still quotes the old 660 -- 864 is authoritative per the "Logical size"
-// line and the PNG dimensions.)
+// Design canvas (handoff v13): 1140x660 control panel (collapsed, DEFAULT)
+// expanding to 1140x848 when the keyboard/wheels strip folds out. 2x assets =>
+// the PNG master is 2280x1320 (collapsed). The page scales the fixed layout
+// uniformly into the host window; fold flips the base height 660<->848.
 constexpr int kBaseW = 1140;
-constexpr int kBaseH = 864;      // expanded (keyboard visible)
-constexpr int kFoldedH = 664;    // v12: keyboard collapsed (control panel + rubber band)
+constexpr int kBaseH = 848;      // expanded (keyboard visible)
+constexpr int kFoldedH = 660;    // v13: keyboard collapsed (control panel + rubber band) -- DEFAULT
 
 // GUI-bound parameter IDs by relay type. IDs = APVTS IDs (plugin/Params.h);
 // the page JS asks for the same ids via getSliderState/getToggleState/
@@ -26,7 +25,10 @@ juce::StringArray makeSliderIds() {
                                "tvf_cut", "tvf_res", "tvf_env", "tvf_kf",  // (per-tone)
                                "tvf_a", "tvf_d", "tvf_s", "tvf_r",
                                "tva_a", "tva_d", "tva_s", "tva_r",
-                               "aux_a", "aux_d", "aux_s", "aux_r" })
+                               "aux_a", "aux_d", "aux_s", "aux_r",
+                               // v13 NEW per-tone (added by the concurrent DSP phase --
+                               // FINAL ids; Params.h may still be mid-edit):
+                               "hit_stretch", "hit_pitchtrim" })
             ids.add(juce::String(s) + sx);
     for (const char* s : { "master",
                            "vec_phase", "vec_orbit_rate",
@@ -35,9 +37,18 @@ juce::StringArray makeSliderIds() {
                            "mtx1_amt", "mtx2_amt", "mtx3_amt",
                            "flt1_cut", "flt1_res", "flt1_env",
                            "flt2_cut", "flt2_res", "flt2_morph", "flt_bal",
-                           "modfx_rate", "modfx_depth", "modfx_mix", "modfx_p0",
-                           "dly_time", "dly_fb", "dly_mix", "dly_p0",
-                           "rev_size", "rev_damp", "rev_mix", "rev_p0",
+                           // v13: all four FX PARAMS extras per slot (p0..p3) so the
+                           // PARAMS knob can edit whichever the focus selector picks.
+                           "modfx_rate", "modfx_depth", "modfx_mix",
+                           "modfx_p0", "modfx_p1", "modfx_p2", "modfx_p3",
+                           "dly_time", "dly_fb", "dly_mix",
+                           "dly_p0", "dly_p1", "dly_p2", "dly_p3",
+                           "rev_size", "rev_damp", "rev_mix",
+                           "rev_p0", "rev_p1", "rev_p2", "rev_p3",
+                           // v13 UTIL overlay stages (LO-FI / WIDTH / TALK)
+                           "lofi_bits", "lofi_srate", "lofi_compand",
+                           "width", "width_haas",
+                           "talk_va", "talk_vb", "talk_morph", "talk_sens",
                            "drift" })
         ids.add(s);
     return ids;
@@ -50,7 +61,10 @@ juce::StringArray makeToggleIds() {
             ids.add(juce::String(s) + sx);
     for (const char* s : { "vec_orbit_on", "vec_orbit_voice",
                            "vec_penv_on", "vec_penv_loop",
-                           "modfx_on", "dly_on", "dly_sync", "rev_on" })
+                           "modfx_on", "dly_on", "dly_sync", "rev_on",
+                           // v13 UTIL overlay toggles
+                           "lofi_on", "lofi_alias",
+                           "width_on", "width_bassmono", "talk_on" })
         ids.add(s);
     return ids;
 }
@@ -60,13 +74,20 @@ juce::StringArray makeComboIds() {
     for (const char* sx : { "_a", "_b", "_c", "_d" })
         for (const char* s : { "wave", "shape", "tvf_type",
                                "aux_dest", "lfo1_dest", "lfo2_dest",
-                               "lfo1_shape", "lfo2_shape" })   // v11 per-tone LFO shape
+                               "lfo1_shape", "lfo2_shape",   // v11 per-tone LFO shape
+                               // v13 NEW per-tone (concurrent DSP phase -- FINAL ids):
+                               "voicing", "dreamy_spread", "loop_mode", "hit_play" })
             ids.add(juce::String(s) + sx);
     for (const char* s : { "vec_orbit_shape", "lfo_shape",
                            "mtx1_src", "mtx2_src", "mtx3_src",
+                           // mtx*_dst gains a 9th choice "Fx Param" in Params.h
+                           // (DSP phase) -- the relay is unchanged; only the choice
+                           // list grows, so no new id here.
                            "mtx1_dst", "mtx2_dst", "mtx3_dst",
                            "flt_route", "flt1_type", "flt2_type",
                            "modfx_type", "dly_mode", "rev_type",
+                           // v13 FX PARAMS focus selectors + UTIL PRE/POST switch
+                           "modfx_pfocus", "dly_pfocus", "rev_pfocus", "fx_prepost",
                            "interp", "engine" })
         ids.add(s);
     return ids;
@@ -118,12 +139,15 @@ TheDreamerEditor::TheDreamerEditor(TheDreamerProcessor& p)
     webView->goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
 
     // Cubase-style proportional resize: 50%..200% of the design canvas, fixed
-    // aspect; the page's fit() scales the 1140x864 layout uniformly into the
-    // host window frame (v11: whole frame incl. screws scales as one unit).
+    // aspect; the page's fit() scales the fixed layout uniformly into the host
+    // window frame (whole frame incl. screws scales as one unit). v13: boot
+    // COLLAPSED (660) to match the master + the page's default fold state; the
+    // KEYS fold pill expands to 848 via keyboardFold() -> setKeyboardFolded().
+    keyboardFolded_ = true;
     setResizable(true, true);
-    getConstrainer()->setFixedAspectRatio((double)kBaseW / kBaseH);
-    setResizeLimits(kBaseW / 2, kBaseH / 2, kBaseW * 2, kBaseH * 2);
-    setSize(kBaseW, kBaseH);
+    getConstrainer()->setFixedAspectRatio((double)kBaseW / kFoldedH);   // 1140/660
+    setResizeLimits(kBaseW / 2, kFoldedH / 2, kBaseW * 2, kFoldedH * 2); // 570,330,2280,1320
+    setSize(kBaseW, kFoldedH);
 
     startTimerHz(30);   // output-meter feed
 }

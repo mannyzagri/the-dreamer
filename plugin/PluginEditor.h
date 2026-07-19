@@ -1,6 +1,6 @@
 // The Dreamer WebView editor: JUCE 8 WebView2 hosting plugin/gui/editor.html
-// (BinaryData), design_handoff_dreamer_gui v11 (1140x864 canvas, uniform
-// scaling incl. the keyboard/wheels strip). Panel controls bind via Web*Relay
+// (BinaryData), design-handoff v13 (1140x660 control panel, collapsible to
+// 848 with the keyboard/wheels strip; uniform scaling). Panel controls bind via Web*Relay
 // attachments by APVTS ID; non-parameter traffic is getInfo (version/build
 // stamp) plus the v11 keyboard/wheel native fns (noteOn/noteOff/pitchBend/
 // modWheel -> processor lock-free MIDI FIFO).
@@ -22,7 +22,7 @@ public:
 private:
     void timerCallback() override;   // 30 Hz output-meter feed to the page
     void setKeyboardFolded(bool folded);   // v12 collapsible keyboard (host resize)
-    bool keyboardFolded_ = false;
+    bool keyboardFolded_ = true;           // v13: boot collapsed (660); set in ctor too
     juce::WebBrowserComponent::Options makeOptions();
     std::optional<juce::WebBrowserComponent::Resource> getResource(const juce::String& url);
 
