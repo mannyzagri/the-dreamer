@@ -1662,7 +1662,7 @@ function makeFxSyncKnob(row, sliderId, baseLabel, syncState, touchName) {
   const st = sliderState(sliderId);
   const divOf = () => SYNCDIVS[Math.round(
     clamp01(st.getNormalisedValue()) * (SYNCDIVS.length - 1))];   // round(dly_time*11)
-  const wrap = el("div", "kwrap"); wrap.style.width = "36px";
+  const wrap = el("div", "kwrap"); wrap.style.width = "32px";   // match FX primary knob wrapper (w32)
   const skirt = el("div", "kskirt"); skirt.style.width = skirt.style.height = "30px";
   const cap = el("div", "kcap"); cap.style.width = cap.style.height = "23px";
   const capin = el("div", "kcapin");
@@ -1711,7 +1711,7 @@ function fxRow(name, typeId, typeArr, menuTitle, primary, prefix, focusList, onI
   // 3 primary knobs (DELAY's first, TIME, is the sync-aware knob)
   primary.forEach(([id, lbl], ki) => {
     if (syncState && ki === 0) { makeFxSyncKnob(row, id, lbl, syncState, name); return; }
-    makeKnob(row, { states: [sliderState(id)], size: 30, w: 36, label: lbl, touch: name + " " + lbl });
+    makeKnob(row, { states: [sliderState(id)], size: 30, w: 32, label: lbl, touch: name + " " + lbl });
   });
 
   if (syncState) {   // v9: DELAY SYNC btn + LED (compact column)
@@ -1742,7 +1742,7 @@ function fxRow(name, typeId, typeArr, menuTitle, primary, prefix, focusList, onI
   const pStates = [0, 1, 2, 3].map((i) => sliderState(prefix + "_p" + i));
   const paramsKnob = makeKnob(row, {
     states: pStates, cur: () => idx(focusState, focusList.length),
-    size: 30, w: 40, label: "PARAMS", ptr: "#ffd23f",
+    size: 30, w: 36, label: "PARAMS", ptr: "#ffd23f",
     touch: () => name + " " + focusList[idx(focusState, focusList.length)],
   });
   focusState.valueChangedEvent.addListener(paramsKnob);       // redraw knob on focus change
@@ -2039,8 +2039,9 @@ const KB_VEL = 0.8;                                 // fixed velocity (no aftert
 //==============================================================================
 // Uniform scaling of the fixed 1140x864 canvas (no scrollbars, centered). The
 // native plugin window is the AUTHORITATIVE resize (JUCE fixes the aspect and
-// fires resize -> fit(), which scales to innerWidth/innerHeight); the v8 grip
-// adds a cosmetic in-page zoom (uiScale) composed on top, so both paths agree.
+// fires resize -> fit(), which scales to innerWidth/innerHeight). fit() is now
+// purely host-driven -- s = min(innerW/BASE_W, innerH/currentBaseH), no in-page
+// zoom -- so the host window border is the ONLY resize affordance.
 // v11: canvas is now 1140x864 (control panel + keyboard strip). The C++ editor
 // fixes the 1140:864 aspect + limits (570x432..2280x1728) and fires resize ->
 // fit(), which scales the WHOLE #frame -- screws, finish and keyboard included,
@@ -2055,9 +2056,8 @@ const KB_VEL = 0.8;                                 // fixed velocity (no aftert
 // is the LIVE logical height fit() scales against (660 collapsed / 848 expanded).
 const BASE_W = 1140, BASE_H = 848, FOLDED_H = 660;
 let currentBaseH = FOLDED_H;   // boot COLLAPSED (README: collapsed by default)
-let uiScale = 1;
 function fit() {
-  const s = Math.min(window.innerWidth / BASE_W, window.innerHeight / currentBaseH) * uiScale;
+  const s = Math.min(window.innerWidth / BASE_W, window.innerHeight / currentBaseH);
   const f = $("frame");
   f.style.transform = "scale(" + s + ")";
   f.style.left = Math.max(0, (window.innerWidth - BASE_W * s) / 2) + "px";
@@ -2065,31 +2065,6 @@ function fit() {
 }
 window.addEventListener("resize", fit);
 fit();
-
-// v8 resize grip: drag = cosmetic zoom (.5..2) via uiScale (LCD shows GUI SIZE);
-// double-click returns to the native fit. Calls no native function -- the real
-// window size is driven by the host/JUCE, and fit() reasserts on the next
-// resize event so the grip and the native path never disagree.
-{
-  const grip = $("grip");
-  grip.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    const y0 = e.clientY, u0 = uiScale;
-    try { grip.setPointerCapture(e.pointerId); } catch (err) {}
-    const mv = (ev) => {
-      uiScale = Math.min(2, Math.max(.5, u0 + (ev.clientY - y0) / 660));
-      setTouched("GUI SIZE", (uiScale - .5) / 1.5);
-      fit();
-    };
-    const up = () => {
-      grip.removeEventListener("pointermove", mv);
-      grip.removeEventListener("pointerup", up);
-    };
-    grip.addEventListener("pointermove", mv);
-    grip.addEventListener("pointerup", up);
-  });
-  grip.addEventListener("dblclick", () => { uiScale = 1; fit(); });
-}
 
 //==============================================================================
 // v12 KEYS fold: the pill centered on the rubber band collapses / expands the

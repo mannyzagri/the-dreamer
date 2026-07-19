@@ -215,23 +215,65 @@ Row 2 — grid `420px | 296px | 1fr`, gap 10, height 212:
   (yellow bg, black text, ▸ prefix). Click row = select + close; ESC or scrim click = close.
   Slim dark scrollbar (6px, thumb `#3a3410`).
 
-## Window resize
-Default size 1140×660. Resize must work like this in the host: the HOST window frame is
-what the user drags; the fixed 1140×660 layout SCALES UNIFORMLY INTO that frame (corners
-of the plugin window stay wherever the user puts them; the artwork stretches/shrinks to
-fill). Do NOT scale the frame itself from inside. In JUCE: build the UI at 1140×660 in a
-single content Component; in the editor call setResizable(true, true),
-setResizeLimits(570, 330, 2280, 1320) and getConstrainer()->setFixedAspectRatio(1140.0/660.0);
-in resized() apply content->setTransform(AffineTransform::scale(getWidth()/1140.0f)).
-The in-prototype corner grip (15×15 diagonal lines, double-click = 100%) exists only to
-preview scaling; in the plugin the host window border replaces it.
+## Window resize  ⚠️ READ THIS — three shipped bugs came from getting it wrong
+**The window (editor) size is the ONE source of truth. The content transform is DERIVED
+from it — never the other way around.** There is exactly one number that drives scale:
+`getWidth() / 1140.0`. Everything follows from it.
+
+The whole plugin — faceplate border, all controls, AND the key bed — is one content
+Component built at its **logical** size (1140×660 collapsed, 1140×848 with keys open). The
+editor is a thin wrapper that does nothing but size that component to fill itself:
+
+```cpp
+// Editor ctor
+setResizable (true, true);
+getConstrainer()->setFixedAspectRatio (logicalW / logicalH);   // ← recompute on keybed toggle
+setResizeLimits (570, 330, 2280, 1696);                        // 0.5×…2× of the tallest logical size
+setSize (1140, 660);                                           // start collapsed
+
+void resized() override {
+    const float k = getWidth() / 1140.0f;      // uniform scale, width-driven
+    content.setTransform (AffineTransform::scale (k));
+    content.setBounds (0, 0, roundToInt (getWidth()/k), roundToInt (getHeight()/k));
+}
+```
+
+**Do NOT** add a separate "GUI scale" combo/menu that scales `content` while the editor
+stays the same size. If the user wants preset zoom steps (100/150/200 %), each step must
+call `setSize (1140*f, logicalH*f)` on the **editor** — i.e. resize the window — and let
+`resized()` derive the transform. Scale is never set from anywhere but `resized()`.
+
+**Keybed toggle** = a window resize, nothing more. On toggle: pick the new logical height
+(660 or 848), update the aspect-ratio constrainer, then `setSize` the editor to
+`(currentWidth, round(currentWidth / newAspect))`. The content component's own height
+changes 660↔848; the transform recomputes automatically in `resized()`.
+
+The in-prototype corner grip (15×15 diagonal lines, double-click = 100 %) previews this;
+in the plugin the host window border replaces it.
+
+### The three bugs to avoid (all one root cause: window size and content scale got out of sync)
+1. **Buttons/knobs overflow the panel edge.** Cause: content scaled up (e.g. a 150 % GUI
+   menu, or width dragged without a locked aspect ratio) while the window/faceplate stayed
+   1140 wide, so controls spill past the border. Fix: aspect ratio locked + scale derived
+   only from `getWidth()`; the faceplate is INSIDE `content`, so it scales with everything
+   else and can never be smaller than the controls.
+2. **Frame only grows when the key bed opens.** Cause: `setSize` is called on the keybed
+   path but not on the scale/resize path. Fix: every size change (keybed AND zoom) goes
+   through the same `setSize`-on-the-editor route above.
+3. **Window frame stays fixed while the layout grows/shrinks inside it.** Cause: a GUI-scale
+   factor transforms `content` directly instead of resizing the editor. Fix: never
+   transform `content` outside `resized()`; zoom = resize the window, and the transform
+   follows.
 
 ## Keyboard & wheels (from the Figma faceplate file — values exact)
 **Rubber band**: full-width 1140×18 strip at y=640 (just under the bottom screws),
 gradient `#101018 → #1c1c26 30% → #14141c 70% → #08080e`, drop shadow + 1px top
 highlight — separates metal panel from key bed. Centered on it: the **KEYS fold button**
 (56×12, pill, `#181b34`/`#464e94` border, "▼ KEYS"/"▲ KEYS") — toggles the whole
-keyboard strip (collapsed panel height 660, expanded 848; host window should resize with it).
+keyboard strip. Collapsed logical height 660, expanded 848. The toggle is a WINDOW resize
+(see "Window resize": update the aspect constrainer to the new logical height, then
+`setSize` the editor); the key bed lives inside the same content Component and scales with
+everything else — it is not a separately-sized panel.
 Key-bed strip at y=658, 1140×190, radius 0 0 8 8, bg `#1a1c38`, inset shadows
 `0 1px 1px rgba(255,255,255,.1)` + `0 4px 8px rgba(0,0,0,.6)`.
 - Wheel bay 128×170 at (8,10): radius 6, gradient `#0d0d1c→#171a2e`, inset `0 3px 6px rgba(0,0,0,.7)`.

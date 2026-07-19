@@ -3,6 +3,32 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-19 (v13 GUI resize/overflow fixes) — **RC 2.0.1**. GUI-only patch
+  fixing three Cubase resize bugs the user reported (all one root cause) +
+  an FX overflow. No DSP/param change → moduleinfo param list unchanged vs
+  2.0.0 (just reload the instance / restart Cubase; no full re-scan needed).
+  (1) **Removed the prototype resize grip** — the v8 corner grip (bottom-right,
+  cursor:nwse-resize) was still shipping in the plugin. It scaled content via a
+  `uiScale` transform INDEPENDENT of the window, which produced exactly the
+  three reported symptoms: buttons overflow the panel (content zoomed past the
+  fixed frame), frame grows only on keybed fold (grip never called setSize),
+  layout scales inside a fixed frame (that IS what the grip did). Per the v13
+  handoff's "Window resize" section ("the host window border replaces it"),
+  removed the grip element/CSS/handler and the `uiScale` machinery; `fit()` now
+  derives scale ONLY from the window (`min(innerW/BASE_W, innerH/currentBaseH)`).
+  The host window border is now the sole resize path (JUCE setResizable +
+  fixed-aspect constrainer, already correct). (2) **FX group overflow** — the
+  row2 `1fr` track (`minmax(auto,1fr)`) inflated to the DELAY row's min-content
+  (widened by its SYNC column), pushing the FX group 19px past the panel's
+  overflow:hidden edge so the MOD/DELAY/REVERB on/off buttons + UTIL ▸ were
+  clipped. Tightened the FX knob pitch to the master's spacing (fxrow gap 5→3;
+  primary-knob wrappers 36→32, PARAMS 40→36) so the group fits its 380px slot;
+  buttons now fully inside with margin, matching the master exactly. Validator
+  bundle/gui/deploy/host(pluginval 8) PASS; verified headless at 1×/1.5×.
+  Design-track double-check doc (design-handoff/v13, doc-only revision — master
+  PNG identical) synced; its new "three bugs to avoid" section independently
+  confirms this diagnosis.
+
 - 2026-07-19 (v13 GUI + full v3 library + voicing/loop/hit DSP) — **RC 2.0.0**.
   Major release integrating a delivered sound library, three new per-tone
   synthesis features, and an all-new faceplate. Orchestrated in four phases
