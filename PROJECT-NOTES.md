@@ -4,13 +4,15 @@
 > block. STATE is OVERWRITE-ONLY: update it in place as the last act of a work
 > pass — never append a second STATE block.
 
-## STATE (updated 2026-07-19, RC 2.1.1 — real wave names in the GUI on top of 2.1.0, validator all stages PASS + pluginval 8)
+## STATE (updated 2026-07-19, RC 2.1.2 — wave library v3 + real wave names + everything in 2.1.0, validator all stages PASS + pluginval 8)
 
-> History (0.1.0 … 2.1.0) lives in CHANGELOG.md. This block is CURRENT-ONLY.
+> History (0.1.0 … 2.1.1) lives in CHANGELOG.md. This block is CURRENT-ONLY.
 
 | Item | Value |
 |---|---|
-| Deployed version | **2.1.1 RC (real bank wave names in the GUI + everything in 2.1.0)** — binary literal `2.1.1`, `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root), build↔local↔share SHA-identical. Validator PASS all stages (dsp 10/10, staging/bundle/gui/deploy/host pluginval 8). **NO param-list change vs 2.0.x** → just reload the instance / restart Cubase (no re-scan). Coming from 1.2.0 or earlier still needs the 2.0.0 FULL RE-SCAN. |
+| Deployed version | **2.1.2 RC (loop library v3 + real GUI wave names + 2.1.0 base)** — binary literal `2.1.2`, `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root), build↔local↔share SHA-identical. Validator PASS all stages (dsp 10/10, staging/bundle/gui/deploy/host pluginval 8). **NO param-list change vs 2.0.x** → just reload the instance / restart Cubase (no re-scan). Coming from 1.2.0 or earlier still needs the 2.0.0 FULL RE-SCAN. |
+| Bank / library | **218 waves** = 78 cycles + 130 loops (**dreamer-library-v3**, same 130 names/order as v1/v2 → indices/preset refs/names retained; WAV data re-baked) + 10 HITs (unchanged). ⚠ **v3 shipped no loop_roots.json** — LoopRoots.h keeps the v2-measured roots; if v3 re-tuned, provide a v3 loop_roots.json to re-measure. LoopBankData.h (LFS) re-baked; ShotBankData/manifest unchanged. |
+| 2.1.1 fix | Real bank wave names in GUI via getWaveList() native fn (was "Loop NNN" placeholders). |
 | 2.1.1 fix | Wave list showed "Loop NNN"/"Hit NN" placeholders (regenerated GUI hardcoded them). New processor getWaveList() + editor native fn (bank3-authoritative {category,name,tag}); app.js loadWaveList() (mirrors loadPresetList) pulls real names on boot. Wave overlay/LCD now shows PAD_01/AIRY_06/MORPH_PADAIR/HIT_CHIFF. Pattern for GUI data that is a DSP-contract datum: expose via native fn, don't hardcode. |
 | 2.1.0 base | (1) v2 fixed library (130 loops re-baked); (2) 47 factory presets (processor-owned, program interface + GUI browser; bool-snap state-restore fix); (3) filter fixes (CLASSIC/LIQUID res^0.35 curve, ALLPASS audible, DreamPlane = E-MU Z-plane morph). Detail in CHANGELOG. |
 | 2.1.0 changes | (1) **v2 fixed library** (files(8)): 130 loops re-baked (corrected WAV data + roots; same names/order → indices unchanged; HITs untouched). (2) **47 factory presets** (PRESETS.md): processor-owned (BinaryData::presets_json), program interface (Cubase menu, 47) + in-GUI browser (native loadPreset/getPresetList → applyPreset, type-dispatched). State-restore fix: bool-snap to 0/1 after replaceState (AudioParameterBool stores raw normalized float; the 47-program synthetic Program param + applyPreset exposed a fractional-bool round-trip failure at pluginval 8 — now fixed, 47 programs kept). (3) **Filter fixes** (glue): CLASSIC/LIQUID res^0.35 perceptual curve (LADDER stays mild — weak port resonator); ALLPASS audible (staggered allpasses + RES fb, −13..−33 dB notches); **DreamPlane type 13 = E-MU Z-plane morph filter** (dsp/glue/ZPlaneFilter.h, 12-pole/3 frames, MORPH=flt2_morph, wired in PluginProcessor gfCtrl). |

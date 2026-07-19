@@ -3,6 +3,16 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-19 (wave library → v3) — **RC 2.1.2**. Replaced the loop library with
+  dreamer-library-v3.zip. The 130 loop **filenames are identical** to v2 (same
+  manifest order) → **wave indices, preset references, and tone wave names fully
+  retained** — only the WAV sample data changed (re-baked). HITs unchanged. Re-baked
+  LoopBankData.h; ShotBankData.h/manifest untouched. bank3 12-bit invariant + 218
+  counts PASS. ⚠ v3 shipped NO loop_roots.json — kept the v2-measured per-loop roots
+  (LoopRoots.h unchanged); if v3 re-tuned the samples, a v3 loop_roots.json is needed
+  to re-measure (tuning may drift slightly otherwise). No param/order/name change →
+  presets retained, no re-scan. Validator all stages PASS + pluginval 8.
+
 - 2026-07-19 (real wave names in the GUI) — **RC 2.1.1**. Bug fix (user report:
   the wave list showed "Loop 001..130" / "Hit 01..10" placeholders instead of the
   real bank names). The regenerated GUI hardcoded placeholder loop/hit names because
