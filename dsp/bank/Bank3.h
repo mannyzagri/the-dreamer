@@ -20,6 +20,7 @@
 #include "RomplerBank.h"
 #include "LoopBankData.h"
 #include "ShotBankData.h"
+#include "LoopRoots.h"      // per-loop measured rootHz (DSP_BUILD s1b), manifest order
 
 namespace rompler::bank3 {
 
@@ -32,7 +33,8 @@ struct Waveform {
     const int16_t* samples;   // 12-bit left-justified (low nibble zero)
     uint32_t       length;    // samples. Cycle: always 600
     uint32_t       loopStart; // Loop: loop point (baked loops: 0, full-buffer)
-    float          rootHz;    // Loop/OneShot: baked pitch (220.0). Cycle: unused
+    float          rootHz;    // Loop: per-loop MEASURED root (LoopRoots.h, s1b;
+                              // inharmonic == 220). OneShot: 220 nominal. Cycle: unused
 };
 
 inline constexpr int kNumCycles    = rompler::bank::kNumWaveforms;   // 78
@@ -55,7 +57,9 @@ constexpr std::array<Waveform, kNumWaveforms> makeTable() {
                          WaveType::Loop,
                          rompler::bank::loopdata::kLoops[i].samples,
                          rompler::bank::loopdata::kLoops[i].length,
-                         0u, 220.0f };
+                         0u, kLoopRoots[i] };   // DSP_BUILD s1b: per-loop measured
+                                                // root (manifest order); inharmonic
+                                                // loops (METAL/inharmonic MORPH) == 220
     for (int i = 0; i < kNumShots; ++i)
         t[(size_t)(kNumCycles + kNumLoops + i)] = { rompler::bank::shotdata::kShots[i].category,
                          rompler::bank::shotdata::kShots[i].name,

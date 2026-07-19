@@ -19,6 +19,7 @@
 #include "dsp/glue/LoFi.h"
 #include "dsp/glue/StereoWidth.h"
 #include "dsp/glue/Talkbox.h"
+#include "dsp/glue/OutputStage.h"       // GAIN_STAGING s5: soft-clip + ceiling
 #include "dsp/ported/fx/Effects.h"      // DCBlocker, Truncate16, StereoDelay
 #include "dsp/ported/fx/ModFx.h"        // ModDelayFx, Phaser
 
@@ -111,6 +112,7 @@ private:
     dreamer::LoFi         lofi;
     dreamer::StereoWidth  stereoWidth;
     dreamer::Talkbox      talkbox;
+    dreamer::OutputStage  outputStage;          // GAIN_STAGING s5
     std::vector<float>    reverbWetL, reverbWetR;
     struct RevCache { int type = -1; float size = -1.0f, damp = -1.0f; } revCache;
     bool reverbWasActive = false;

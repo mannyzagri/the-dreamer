@@ -19,6 +19,18 @@ class RhinoFilterSlot final : public rompler::FilterSlot {
 public:
     void setSampleRate(double sr) override { filter_.prepare(sr); }
 
+    // NOTE (GAIN_STAGING s4): the spec asked for a resonance-compensation input
+    // trim (inGain = 1 - 0.4*res) HERE, but this adapter is under an IMMUTABLE
+    // bitwise null test (tests/test_filter_port.cpp: adapter output must equal
+    // the ported RubberFilter driven directly -- CLAUDE.md "null tests
+    // immutable"), so any gain change here breaks that contract. This adapter is
+    // also NOT in the live signal path: the plugin's resonant Rhino filters run
+    // through dsp/glue/GlobalFilter.h (GlobalFilter::rhino_), which already wraps
+    // every Rhino sample in safety() (soft-limit >0.8, asymptote ~1.5) AND the
+    // ported ladder self-saturates (measured peak 1.27 under a 1.5x loud input).
+    // So the trim is left OUT here; if the resonant path still clips by ear, the
+    // right place is a 1-line input scale in GlobalFilter's type<=6 branch (glue,
+    // but outside this task's authorized file set -- flagged to the orchestrator).
     void setCutoffRes(double hz, double res01) override {
         filter_.setParams(static_cast<float>(hz), static_cast<float>(res01),
                           character_, type_);

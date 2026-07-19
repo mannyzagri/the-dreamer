@@ -1,358 +1,66 @@
-/* The Dreamer -- GUI v12 production stylesheet (v11 face + v12 handoff,
-   GUI_4/design_handoff_dreamer_gui). Fixed 1140x864 logical canvas (660
-   control panel + rubber-band separator at y=646 + 190 keyboard/wheel strip
-   below at y=664), uniformly scaled by app.js fit() as ONE frame (screws
-   included). v12 adds the KEYS fold (collapsed logical height 664 / expanded
-   864), the rubber-band separator, and the PITCH center groove. Tokens +
-   component specs verbatim from the handoff README + prototype. */
+/* The Dreamer -- WebView editor styling (regenerated from design-handoff/v13
+   "The Dreamer GUI" master, verbatim geometry). This file carries ONLY the
+   offline fonts, the page background, the scaled #frame wrapper and shared
+   scrollbar/reset rules; every control's pixel geometry is emitted inline by
+   app.js exactly as the master template specifies (so the layout is locked to
+   the master, never recomputed). Fonts are served from BinaryData by bare
+   filename -- NEVER reference Google Fonts / any network URL. */
 
-/* Fonts served from BinaryData by bare filename (fully offline). */
-@font-face{font-family:'Barlow Semi Condensed';font-style:normal;font-weight:600;
-  src:url('BarlowSemiCondensed-SemiBold.ttf') format('truetype')}
-@font-face{font-family:'Barlow Semi Condensed';font-style:normal;font-weight:700;
-  src:url('BarlowSemiCondensed-Bold.ttf') format('truetype')}
-@font-face{font-family:'Doto';font-style:normal;font-weight:100 900;
-  src:url('Doto-Variable.ttf') format('truetype')}
-@font-face{font-family:'Michroma';font-style:normal;font-weight:400;
-  src:url('Michroma-Regular.ttf') format('truetype')}
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
-*{box-sizing:border-box;margin:0;padding:0;-webkit-user-select:none;user-select:none}
-html,body{width:100%;height:100%;overflow:hidden;background:#15172e}
-#frame{position:absolute;left:0;top:0;width:1140px;height:848px;transform-origin:top left}
-#panel{position:relative;width:1140px;height:848px;background:#232850;border-radius:6px;overflow:hidden;
-  box-shadow:0 12px 40px rgba(0,0,0,.6),inset 0 1px 0 rgba(201,205,242,.12);
-  font-family:'Barlow Semi Condensed',sans-serif}
+/* ---- offline fonts (BinaryData: bare .ttf filenames) ------------------- */
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  font-style: normal; font-weight: 400; font-display: block;
+  src: url("BarlowSemiCondensed-SemiBold.ttf") format('truetype');
+}
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  font-style: normal; font-weight: 600; font-display: block;
+  src: url("BarlowSemiCondensed-SemiBold.ttf") format('truetype');
+}
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  font-style: normal; font-weight: 700; font-display: block;
+  src: url("BarlowSemiCondensed-Bold.ttf") format('truetype');
+}
+@font-face {
+  font-family: 'Doto';
+  font-style: normal; font-weight: 100 900; font-display: block;
+  src: url("Doto-Variable.ttf") format('truetype');
+}
+@font-face {
+  font-family: 'Michroma';
+  font-style: normal; font-weight: 400; font-display: block;
+  src: url("Michroma-Regular.ttf") format('truetype');
+}
 
-/* v11: faceplate finish sits BEHIND the controls (z-index 0); the header, both
-   control rows and the keyboard strip lift to z-index 1 so the metal shows only
-   through the panel gaps / group interiors -- never tinting opaque knobs or
-   keys. The 4 corner screws (#screws) render on their own layer above content
-   (z-index 6) but are cleared by the header's 26px logo/POWER margins so no
-   label is ever occluded (breakpoint #1/#4). */
-#hdr,#row1,#row2{position:relative;z-index:1}
-#kbStrip{position:absolute;z-index:1}
+html, body {
+  margin: 0; padding: 0;
+  width: 100%; height: 100%;
+  background: #15172e;                 /* page-bg (area around the panel) */
+  overflow: hidden;
+  font-family: 'Barlow Semi Condensed', sans-serif;
+}
 
-/* ============ faceplate finish (brushed metal, default ON) ============ */
-#plate{position:absolute;inset:0;pointer-events:none;z-index:0}
-#plate svg{position:absolute;inset:0;width:100%;height:100%}
-#plate .grad1{position:absolute;inset:0;
-  background:linear-gradient(180deg,rgba(255,255,255,.10) 0%,rgba(255,255,255,.03) 25%,rgba(0,0,0,.05) 80%,rgba(0,0,0,.12) 100%)}
-#plate .grad2{position:absolute;inset:0;   /* 122deg diagonal sheen */
-  background:linear-gradient(122deg,rgba(255,255,255,0) 40%,rgba(255,255,255,.05) 48%,rgba(216,222,255,.07) 56%,rgba(255,255,255,.02) 64%,rgba(255,255,255,0) 72%)}
-#plate .grad3{position:absolute;inset:0;   /* edge vignette */
-  background:radial-gradient(ellipse 75% 75% at 50% 50%,rgba(0,0,0,0) 55%,rgba(0,0,0,.16) 100%)}
-#stars{position:absolute;inset:0;pointer-events:none;display:none}   /* off-by-default variant */
-#stars div{position:absolute;border-radius:50%;background:#c9cdf2}
+/* The single scaled frame. Its width is the fixed logical width (1140);
+   height (660 collapsed / 848 expanded) and transform (uniform scale +
+   centering) are set from the WINDOW size by app.js fit() -- the window is
+   the sole source of truth, scale is DERIVED. transform-origin: top left. */
+#frame {
+  position: absolute;
+  left: 0; top: 0;
+  width: 1140px;
+  background: #232850;                 /* panel-bg (faceplate) */
+  border-radius: 6px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.6), inset 0 1px 0 rgba(201,205,242,.12);
+  overflow: hidden;
+  transform-origin: top left;
+  will-change: transform;
+}
 
-/* ============ header ============ */
-#hdr{position:relative;height:60px;background:#1b1f40;border-bottom:1px solid #464e94;
-  display:flex;align-items:center;padding:0 16px;gap:16px}
-/* v11: logo 26px in from the top-left corner screw (breakpoint #1) */
-#logo{display:flex;flex-direction:column;gap:2px;align-items:center;margin-left:26px}
-#logoName{font:400 19px 'Michroma';color:#c9cdf2;letter-spacing:.14em;white-space:nowrap}
-#logoSub{font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.34em;white-space:nowrap}
-#lcdWrap{flex:1;display:flex;justify-content:center;align-items:center;min-width:0}
-#pstep{display:flex;flex-direction:column;gap:3px;margin-right:6px}
-.pstepbtn{width:22px;height:19px;background:#181b34;border:1px solid #464e94;border-radius:2px;
-  color:#c9cdf2;font:700 9px 'Barlow Semi Condensed';display:flex;align-items:center;justify-content:center;cursor:pointer}
-.pstepbtn:active{background:#2c3160}
-#mainLcd{width:520px;height:44px;background:#07070a;border-radius:3px;
-  box-shadow:inset 0 2px 8px rgba(0,0,0,.9),0 1px 0 rgba(201,205,242,.15);
-  padding:5px 10px;display:flex;align-items:center;gap:12px}
-#waveGlyph{display:flex;align-items:flex-end;gap:1px;height:30px}
-#waveGlyph div{width:3px;background:#ffd23f;opacity:.9}
-#lcdLines{flex:1;display:flex;flex-direction:column;gap:3px;overflow:hidden}
-#lcdRow1{display:flex;justify-content:space-between;font:800 12px 'Doto';color:#ffd23f;
-  letter-spacing:.04em;white-space:nowrap}
-#presetLbl{cursor:pointer}
-#lcdRow2{display:flex;align-items:center;gap:8px;font:800 11px 'Doto';color:#ffd23f;white-space:nowrap}
-#lcdTouched{min-width:130px;white-space:pre}
-#lcdMeter{display:flex;gap:2px}
-#lcdMeter span{width:6px;height:9px;background:#1c1a10}
-/* v11: POWER LED 26px clear of the top-right corner screw (breakpoint #1) */
-#powerWrap{display:flex;flex-direction:column;align-items:center;gap:4px;margin-right:26px}
-.plab{font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.2em}
-
-/* v8 header: MIDI LEARN (visual-only, feature deferred) + stereo L/R meters */
-#midiCol{display:flex;flex-direction:column;align-items:center;gap:3px}
-.midiBtn{width:34px;height:16px;background:#181b34;border:1px solid #464e94;border-radius:3px;cursor:pointer;
-  box-shadow:0 2px 3px rgba(0,0,0,.5);color:#c9cdf2;font:700 7px 'Barlow Semi Condensed';
-  display:flex;align-items:center;justify-content:center;letter-spacing:.08em}
-.midiBtn:active{background:#10122a}
-.midiLab{font:600 7px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.12em}
-#meters{display:flex;gap:3px;align-items:flex-end;height:40px}
-.meterCol{display:flex;flex-direction:column;align-items:center;gap:2px}
-.meterBar{width:7px;height:34px;background:#07070a;border-radius:1px;box-shadow:inset 0 1px 3px #000;
-  position:relative;overflow:hidden}
-.meterFill{position:absolute;left:0;right:0;bottom:0;height:0;
-  background:linear-gradient(180deg,#ff2b3e 0%,#ffd23f 20%,#ffd23f 100%)}
-.meterLbl{font:600 6.5px 'Barlow Semi Condensed';color:#9aa1d8}
-
-/* ============ LEDs (strictly binary, no transitions) ============ */
-.led{width:6px;height:6px;border-radius:50%;background:#4a1020;flex:none}
-.led.on{background:#ff2b3e;box-shadow:0 0 8px rgba(255,43,62,.85)}
-.led.big{width:8px;height:8px}
-
-/* ============ rows / function groups ============ */
-#row1{display:grid;grid-template-columns:172px 1fr 200px;gap:10px;padding:14px 12px 0;height:352px}
-#row2{display:grid;grid-template-columns:420px 296px 1fr;gap:10px;padding:14px 12px 0;height:212px}
-.group{border:1px solid #464e94;border-radius:4px;position:relative}
-.gtitle{position:absolute;top:-7px;left:8px;background:#232850;padding:0 5px;
-  font:700 10px 'Barlow Semi Condensed';color:#c9cdf2;letter-spacing:.18em;white-space:nowrap}
-#editToneName{color:#ff5b6e}
-
-/* ============ shared control faces ============ */
-.lcd{background:#07070a;border-radius:2px;box-shadow:inset 0 1px 4px #000;color:#ffd23f;
-  font:800 11px 'Doto';display:flex;align-items:center;white-space:nowrap;overflow:hidden;cursor:pointer;flex:none}
-.lcd.ctr{justify-content:center}
-.lcd.sm{font-size:10px}
-.step{width:20px;height:18px;flex:none;background:#181b34;border:1px solid #464e94;border-radius:2px;
-  color:#c9cdf2;font:700 10px 'Barlow Semi Condensed';display:flex;align-items:center;justify-content:center;cursor:pointer}
-.step:active{background:#2c3160}
-.step.stepn{width:14px}   /* v8: narrow stepper arrows (FX / GLFO / vector shape) */
-.cbtn{height:18px;flex:none;background:#181b34;border:1px solid #464e94;border-radius:2px;color:#c9cdf2;
-  font:700 8px 'Barlow Semi Condensed';display:flex;align-items:center;justify-content:center;cursor:pointer}
-.cbtn:active{background:#2c3160}
-.pbtn{background:#181b34;border:1px solid #464e94;border-radius:3px;cursor:pointer;
-  box-shadow:0 2px 3px rgba(0,0,0,.5);flex:none}
-.pbtn:active{background:#10122a}
-.pbtn.tog{width:26px;height:14px}
-.lbl{font:600 8px 'Barlow Semi Condensed';letter-spacing:.08em;color:#9aa1d8;white-space:nowrap}
-.lbl7{font:600 7px 'Barlow Semi Condensed';letter-spacing:.06em;color:#9aa1d8;white-space:nowrap}
-.plbl{font:600 8.5px 'Barlow Semi Condensed';letter-spacing:.1em;color:#9aa1d8;white-space:nowrap}
-.plab8{font:600 8px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.08em}
-.plab7{font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8}
-.bttl{font:700 8px 'Barlow Semi Condensed';letter-spacing:.14em;color:#c9cdf2;white-space:nowrap}
-
-/* knob: skirt + fluted cap + solid centre + rotating pointer (-135..+135) */
-.kwrap{display:flex;flex-direction:column;align-items:center;gap:3px;flex:none}
-.kwrap.horiz{flex-direction:row;gap:3px;align-items:center}
-.kskirt{border-radius:50%;background:#14162c;display:flex;align-items:center;justify-content:center;
-  cursor:ns-resize;box-shadow:0 2px 4px rgba(0,0,0,.5);flex:none}
-.kcap{border-radius:50%;background:repeating-conic-gradient(#2a2d48 0deg 12deg,#20233c 12deg 24deg);position:relative}
-.kcapin{position:absolute;inset:5px;border-radius:50%;background:#2a2d48}
-.krot{position:absolute;inset:0}
-.kptr{position:absolute;left:50%;top:2px;width:2px;margin-left:-1px;border-radius:1px;background:#e8eaff}
-
-/* vertical slider: 9px track + 19x9 cap with white top line */
-.vsl{position:relative;width:9px;background:#0c0e20;border-radius:2px;cursor:ns-resize;
-  box-shadow:inset 0 1px 3px rgba(0,0,0,.8);flex:none}
-.vcap{position:absolute;left:-5px;width:19px;height:9px;border-radius:2px;background:#2a2d48;
-  border-top:2px solid #e8eaff;box-shadow:0 2px 3px rgba(0,0,0,.6)}
-
-/* ============ TONES strip (mixer: fader + PAN mini-knob) ============ */
-#gTones{padding:16px 6px 8px}
-#toneCols{display:flex;gap:4px;width:100%;justify-content:space-around}
-.tcol{display:flex;flex-direction:column;align-items:center;gap:5px}
-.tname{font:700 9px 'Barlow Semi Condensed';color:#c9cdf2;letter-spacing:.08em}
-.tbtn{width:20px;height:14px}
-.tonlbl{font:600 7px 'Barlow Semi Condensed';color:#9aa1d8}
-
-/* ============ TONE EDIT ============ */
-#gToneEdit{padding:16px 12px 8px;display:flex;flex-direction:column;gap:9px}
-.terow{display:flex;align-items:center;gap:6px}
-#teKnobs{display:flex;align-items:flex-start;gap:2px}
-.tekgap{flex:1 1 auto;min-width:20px}   /* pushes the shape compartment (STRETCH/P.TRIM/SHAPE DEPTH/NOISE/NOISE COLOR) right, above the FILTER/AMP/AUX banks */
-.tekdiv{width:1px;align-self:stretch;background:#464e94;opacity:.5;margin:2px 3px}   /* v13: 1px divider after RND, before LEVEL */
-.rndcol{display:flex;flex-direction:column;align-items:center;gap:3px;width:26px;padding-top:4px;flex:none}
-.rndcol .pbtn{width:22px;height:14px}
-/* v13 wrapping knob label (full-word silkscreen; 2-word labels stack) */
-.klbl{font:600 7.5px 'Barlow Semi Condensed';letter-spacing:.05em;color:#9aa1d8;
-  text-align:center;line-height:1.05;white-space:normal;max-width:100%}
-/* v13 greyed-in-place control (STRETCH/P.TRIM when not a HIT+STRETCH wave; the
-   CYCLE-wave LOOP placeholder). Never hidden -- dimmed + non-interactive. */
-.disabled{opacity:.32;pointer-events:none}
-#teTvfRow{display:flex;align-items:flex-start;gap:10px}
-#tvfVert{font:700 9px 'Barlow Semi Condensed';color:#ff5b6e;letter-spacing:.14em;
-  writing-mode:vertical-rl;transform:rotate(180deg);height:56px;display:flex;align-items:center}
-#tvfTypeCol{display:flex;flex-direction:column;align-items:center;gap:3px;justify-content:center;height:62px}
-#tvfKnobs{display:flex;gap:4px}
-.bank{display:flex;flex-direction:column;align-items:center;gap:3px}
-.bankrow{display:flex;gap:8px}
-.bankdiv{width:1px;align-self:stretch;background:#464e94;opacity:.4}
-.bcol{display:flex;flex-direction:column;align-items:center;gap:3px;width:20px}
-.banktitle{display:flex;align-items:center;gap:4px}
-
-/* per-tone LFO1 / LFO2 / AUX ENV rows */
-.lfor{display:flex;align-items:center;gap:8px}
-.lfoname{width:32px;flex:none;font:700 8px 'Barlow Semi Condensed';letter-spacing:.14em;color:#c9cdf2}
-.syncbtn{width:32px;height:15px;background:#181b34;border:1px solid #464e94;border-radius:3px;cursor:pointer;
-  box-shadow:0 2px 3px rgba(0,0,0,.5);color:#c9cdf2;font:700 7px 'Barlow Semi Condensed';
-  display:flex;align-items:center;justify-content:center;letter-spacing:.1em;flex:none}
-.syncbtn:active{background:#10122a}
-.destbtn{width:56px;height:16px}
-/* v13 LOOP/PLAY selector (WAVE/SHAPE row): LED + label + mode button, one fixed
-   slot swapped by wave bank tag; greyed in place (.disabled) for cycle waves. */
-#loopSel{display:flex;align-items:center;gap:5px;margin-left:auto}
-#loopLbl{min-width:60px;text-align:right}
-/* v13 DREAMY-spread stepper wrapper (shown only when VOICING=DREAMY) */
-.dsWrap{display:flex;align-items:center;gap:5px}
-
-/* ============ FILTERS ============ */
-#gFilters{padding:16px 10px 8px;display:flex;flex-direction:column;gap:7px;align-items:center}
-.fstrip{display:flex;align-items:center;gap:5px;width:100%}
-.fstrip .lcd{flex:1}
-.fnum{font:700 9px 'Barlow Semi Condensed';color:#c9cdf2;width:10px;flex:none}
-.fknobs{display:flex;justify-content:space-around;width:100%}
-#fDivider{width:100%;height:1px;background:#464e94;opacity:.55}
-#routeRow{margin-top:auto;display:flex;align-items:center;gap:8px;padding-bottom:2px}
-.ledlbl{display:flex;align-items:center;gap:4px}
-
-/* ============ DREAM VECTOR ============ */
-#gVector{padding:16px 10px 8px;display:flex;gap:10px}
-#vecLeft{display:flex;flex-direction:column;align-items:center;gap:4px}
-#flowBox{position:relative;width:150px;height:132px;background:#07070a;border-radius:3px;
-  box-shadow:inset 0 2px 8px rgba(0,0,0,.9)}
-#flowSvg{position:absolute;inset:0;width:100%;height:100%}
-#flowCap{font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.12em}
-#vecRight{display:flex;flex-direction:column;gap:6px;justify-content:center}
-#vecDiv{width:1px;align-self:stretch;background:#464e94;opacity:.4}
-#vecTones{display:flex;flex-direction:column;gap:4px;justify-content:center}
-.vtrow{display:flex;align-items:center;gap:6px}
-.vtletter{width:10px;flex:none;font:800 9px 'Doto';color:#9aa1d8}
-.vtletter.sel{color:#ff5b6e}
-#vecCap{font:600 7px 'Barlow Semi Condensed';color:#7d84c0;letter-spacing:.1em;text-align:center}
-.togrow{display:flex;align-items:center;gap:5px}
-
-/* ============ MOD MATRIX + GLOBAL LFO ============ */
-#gMatrix{padding:16px 10px 8px;display:flex;flex-direction:column;gap:5px}
-.mrowline{display:flex;align-items:center;gap:5px}
-.mnumcol{font:700 8px 'Barlow Semi Condensed';color:#9aa1d8;width:8px;flex:none}
-.marrow{font:800 10px 'Doto';color:#ffd23f}
-.mbar{flex:1;height:8px;background:#0c0e20;border-radius:2px;position:relative;overflow:hidden}
-.mfill{position:absolute;left:0;top:0;bottom:0;background:#ffd23f;opacity:.8}
-#glfoRow{display:flex;align-items:center;gap:8px;margin-top:auto}
-
-/* ============ FX ============ */
-#gFx{padding:16px 12px 8px;display:flex;flex-direction:column;gap:6px}
-.fxrow{display:flex;align-items:center;gap:3px}   /* v13: 3 primary knobs + focus LCD + PARAMS knob.
-   gap + FX knob wrapper widths (app.js: primary w32 / PARAMS w36) tightened to the master's FX
-   pitch so the row's min-content stays within the row2 1fr track (380px); otherwise the widest row
-   (DELAY, with the SYNC column) inflated the 1fr track to ~411px, pushing the FX group past the
-   panel's overflow:hidden edge and clipping the on/off buttons + UTIL. */
-.fxname{width:30px;flex:none;font:700 7.5px 'Barlow Semi Condensed';letter-spacing:.1em;color:#c9cdf2}
-.fxtype{width:52px;flex:none;font-size:10px}   /* v13: FX type LCD (click = menu, no arrows) */
-/* v13 PARAMS-FOCUS mini-LCD (click cycles the algorithm's secondary-param list) */
-.fxfocuscol{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none}
-.fxfocus{width:48px;height:16px;flex:none;font-size:9px}
-/* v13 UTIL button (top-right of the FX group title strip) */
-#utilBtn{position:absolute;top:-9px;right:8px;background:#232850;padding:0 5px;cursor:pointer;
-  font:700 8px 'Barlow Semi Condensed';color:#c9cdf2;letter-spacing:.14em}
-#utilBtn:active{color:#ffd23f}
-.fxdiv{width:100%;height:1px;background:#464e94;opacity:.4}
-.fxright{margin-left:auto;display:flex;align-items:center;gap:5px}
-/* v9: DELAY tempo-sync SYNC btn + LED (compact column, fits the 4-knob FX row) */
-.fxsync{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none}
-.fxsync .led.sled{width:5px;height:5px}
-.fxsyncbtn{width:30px;height:13px;background:#181b34;border:1px solid #464e94;border-radius:3px;cursor:pointer;
-  box-shadow:0 2px 3px rgba(0,0,0,.5);color:#c9cdf2;font:700 6.5px 'Barlow Semi Condensed';
-  display:flex;align-items:center;justify-content:center;letter-spacing:.08em;flex:none}
-.fxsyncbtn:active{background:#10122a}
-
-/* v11 version stamp (getInfo): silkscreen VER <n> at bottom-right, just left of
-   the bottom-right corner screw, on the screw layer so it is never occluded
-   (breakpoint #4). Populated from the real built version by the getInfo call. */
-#verStamp{position:absolute;right:34px;top:626px;z-index:6;font:600 7.5px 'Barlow Semi Condensed';
-  color:#7d84c0;letter-spacing:.16em}
-
-/* v11 corner screws: 4 separate heads on their own layer (z-index 6), centered
-   22px from each corner of the CONTROL panel (top corners + the corners just
-   above the keyboard strip). Radial head + rotated slot, matching the PNG. */
-#screws{position:absolute;inset:0;pointer-events:none;z-index:6}
-.screw{position:absolute;width:16px;height:16px;border-radius:50%;
-  background:radial-gradient(circle at 38% 38%,#6b708f,#292b42 70%,#0d0d1a);
-  box-shadow:0 1px 2px rgba(0,0,0,.6)}
-.screw i{position:absolute;left:3.5px;top:7.2px;width:9px;height:1.6px;border-radius:1px;background:#05050c}
-
-/* ============ v12 rubber-band separator + KEYS fold button =============== */
-/* Full-width 1140x18 strip at y=646 (just under the bottom screws): dark
-   gradient + drop shadow + 1px top highlight, a separator between the metal
-   panel and the key bed. Lives INSIDE the scaled #frame like everything else.
-   The screws (#screws, z-index 6) render over its ends. */
-#rubberBand{position:absolute;left:0;top:640px;width:1140px;height:18px;z-index:1;
-  background:linear-gradient(180deg,#101018 0%,#1c1c26 30%,#14141c 70%,#08080e 100%);
-  box-shadow:0 3px 6px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.08)}
-/* KEYS fold pill (56x12), centered on the rubber band. "\25BC KEYS" expanded /
-   "\25B2 KEYS" collapsed. Toggles the whole keyboard/wheels strip + resizes
-   the plugin window via keyboardFold(folded) (app.js). Stays visible when
-   collapsed so it can re-expand. */
-#keysFold{position:absolute;left:542px;top:643px;width:56px;height:12px;z-index:2;
-  background:#181b34;border:1px solid #464e94;border-radius:6px;cursor:pointer;
-  color:#c9cdf2;font:700 7px 'Barlow Semi Condensed';letter-spacing:.1em;
-  display:flex;align-items:center;justify-content:center;white-space:nowrap}
-#keysFold:active{background:#10122a}
-
-/* ============ v11 keyboard + pitch/mod wheel strip (y=664, 1140x190) ====== */
-#kbStrip{left:0;top:658px;width:1140px;height:190px;overflow:hidden;border-radius:8px;
-  background:#1a1c38;box-shadow:inset 0 1px 1px rgba(255,255,255,.1),inset 0 4px 8px rgba(0,0,0,.6)}
-#wheelBay{position:absolute;left:8px;top:10px;width:128px;height:170px;border-radius:6px;
-  background:linear-gradient(180deg,#0d0d1c 0%,#171a2e 100%);box-shadow:inset 0 3px 6px rgba(0,0,0,.7)}
-.wheelSlot{position:absolute;top:25px;width:40px;height:140px;border-radius:20px;background:#05050d;
-  box-shadow:inset 0 2px 5px rgba(0,0,0,.9)}
-.wheel{position:absolute;top:36px;width:32px;height:118px;border-radius:16px;
-  background:linear-gradient(180deg,#121426 0%,#383d61 35%,#454a73 50%,#383d61 65%,#121426 100%);
-  box-shadow:0 2px 4px rgba(0,0,0,.6);cursor:ns-resize;overflow:hidden}
-.wheel .rib{position:absolute;left:0;width:32px;height:2px;background:rgba(0,0,0,.55)}
-/* v12 PITCH red center groove stripe (32x3): travels with the bend position,
-   painted on top of the ribs. */
-.pgroove{position:absolute;left:0;width:32px;height:3px;background:#ff2b3e;
-  box-shadow:0 0 4px rgba(255,43,62,.7);pointer-events:none}
-.wheelLbl{position:absolute;top:12px;font:600 7px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.14em}
-#keybed{position:absolute;left:144px;top:0;right:0;bottom:0}
-.wkey{position:absolute;top:0;width:32.662px;height:170px;border-radius:0 0 3px 3px;
-  box-shadow:1px 0 1px rgba(0,0,0,.35),inset 0 -3px 3px rgba(0,0,0,.25);cursor:pointer;
-  background:linear-gradient(180deg,#c7c9d6 0%,#e0e3ed 75%,#f7f7fc 94%,#b2b5c7 100%)}
-.wkey.held{background:linear-gradient(180deg,#b2b5c7 0%,#c7c9d6 75%,#e0e3ed 94%,#a4a8bd 100%)}
-.bkey{position:absolute;top:0;width:20px;height:104px;border-radius:0 0 3px 3px;
-  box-shadow:0 3px 5px rgba(0,0,0,.5);cursor:pointer;z-index:2;
-  background:linear-gradient(180deg,#1a1a24 0%,#0a0a12 60%,#383b52 92%,#05050a 100%)}
-.bkey.held{background:linear-gradient(180deg,#05050a 0%,#0a0a12 60%,#383b52 92%,#1a1a24 100%)}
-
-/* v11 per-tone LFO SHAPE mini-LCD (34x16, click = menu, no arrows) */
-.shapeLcd{width:34px;height:16px;flex:none}
-
-/* ============ menu overlay ============ */
-#menuOverlay{position:absolute;inset:0;background:rgba(7,7,10,.82);display:none;
-  align-items:center;justify-content:center;z-index:10}
-#menuBox{width:430px;max-height:520px;background:#07070a;border:1px solid #464e94;border-radius:4px;
-  box-shadow:0 8px 40px #000;padding:12px;display:flex;flex-direction:column;gap:8px}
-#menuHead{display:flex;justify-content:space-between;font:800 12px 'Doto';color:#ffd23f}
-#menuList{overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;min-height:0}
-.mrow{display:flex;gap:10px;padding:3px 6px;cursor:pointer;font:800 12px 'Doto';color:#ffd23f;flex:none}
-.mrow.cur{background:#ffd23f;color:#07070a}
-.mrow .mnum{width:20px;flex:none}
-.mrow .mcat{width:44px;flex:none}
-.mrow .mtag{margin-left:auto;flex:none;color:#7d84c0}   /* dim silkscreen entry-type tag */
-.mrow.cur .mtag{color:#07070a;opacity:.65}
-.lcd-scroll{scrollbar-width:thin;scrollbar-color:#3a3410 #07070a}
-.lcd-scroll::-webkit-scrollbar{width:6px}
-.lcd-scroll::-webkit-scrollbar-track{background:#07070a}
-.lcd-scroll::-webkit-scrollbar-thumb{background:#3a3410;border-radius:3px}
-
-/* ============ P-ENV mini page (small page on scrim, wave-menu style) */
-#penvOverlay{position:absolute;inset:0;background:rgba(7,7,10,.82);display:none;
-  align-items:center;justify-content:center;z-index:10}
-#penvBox{background:#1b1f40;border:1px solid #464e94;border-radius:4px;
-  box-shadow:0 8px 40px #000;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
-#penvHead{display:flex;justify-content:space-between;gap:30px;
-  font:700 10px 'Barlow Semi Condensed';color:#c9cdf2;letter-spacing:.18em}
-#penvHead span:last-child{color:#9aa1d8}
-#penvKnobs{display:flex;align-items:center;gap:14px;justify-content:space-around}
-#penvLoopRow{display:flex;align-items:center;gap:5px;justify-content:center}
-
-/* ============ v13 UTILITY overlay (LO-FI / WIDTH / TALK + PRE/POST) ======== */
-#utilOverlay{position:absolute;inset:0;background:rgba(7,7,10,.82);display:none;
-  align-items:center;justify-content:center;z-index:10}
-#utilBox{width:560px;background:#1b1f40;border:1px solid #464e94;border-radius:4px;
-  box-shadow:0 8px 40px #000;padding:14px 18px;display:flex;flex-direction:column;gap:12px}
-#utilHead{display:flex;justify-content:space-between;gap:30px;
-  font:700 10px 'Barlow Semi Condensed';color:#c9cdf2;letter-spacing:.18em}
-#utilHead span:last-child{color:#9aa1d8}
-#utilRows{display:flex;flex-direction:column;gap:12px}
-.utilrow{display:flex;align-items:flex-start;gap:14px;padding-bottom:10px;
-  border-bottom:1px solid rgba(70,78,148,.4)}
-.utilrow:last-child{border-bottom:none;padding-bottom:0}
-.utilname{width:52px;flex:none;padding-top:8px;
-  font:700 9px 'Barlow Semi Condensed';letter-spacing:.14em;color:#c9cdf2}
-.utilcell{display:flex;flex-direction:column;align-items:center;gap:3px;flex:none;padding-top:2px}
-.utilcell .pbtn{width:22px;height:14px}
+/* slim dark LCD scrollbar (menu overlay list) */
+.lcd-scroll { scrollbar-width: thin; scrollbar-color: #3a3410 #07070a; }
+.lcd-scroll::-webkit-scrollbar { width: 6px; height: 0; }
+.lcd-scroll::-webkit-scrollbar-track { background: #07070a; }
+.lcd-scroll::-webkit-scrollbar-thumb { background: #3a3410; border-radius: 3px; }
