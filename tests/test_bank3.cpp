@@ -24,6 +24,7 @@
 #include <cmath>
 
 #include "dsp/bank/Bank3.h"
+#include "dsp/bank/LoopRoots.h"       // per-loop measured root (DSP_BUILD s1b)
 #include "dsp/bank/PcmOscillator.h"   // v2, parity reference
 #include "dsp/glue/PcmOsc3.h"
 
@@ -41,8 +42,9 @@ int main() {
     std::printf("[table]\n");
     {
         CHECK(bank3::kNumWaveforms == 218, "218 waveforms total");
-        int badNibble = 0, badLen = 0;
+        int badNibble = 0, badLen = 0, badRoot = 0;
         int nCycle = 0, nLoop = 0, nShot = 0;
+        int nTonal = 0, nInharmonic = 0;   // s1b: measured-root split
         for (int w = 0; w < bank3::kNumWaveforms; ++w) {
             const auto& e = bank3::kWaveforms[(size_t)w];
             switch (e.type) {
@@ -52,7 +54,13 @@ int main() {
                 break;
             case bank3::WaveType::Loop:
                 ++nLoop;
-                if (e.length < 44100 || e.rootHz != 220.0f) ++badLen;
+                // DSP_BUILD s1b: each loop now carries its MEASURED root (not a
+                // flat 220). Invariant: root must equal the manifest-order value
+                // baked into LoopRoots.h, and be a sane audio-range pitch.
+                if (e.length < 44100) ++badLen;
+                if (e.rootHz != bank3::kLoopRoots[nLoop - 1]) ++badRoot;
+                if (e.rootHz < 200.0f || e.rootHz > 240.0f)   ++badRoot;
+                if (e.rootHz == 220.0f) ++nInharmonic; else ++nTonal;
                 break;
             case bank3::WaveType::OneShot:
                 ++nShot;
@@ -63,8 +71,13 @@ int main() {
                 if (e.samples[i] & 0xF) { ++badNibble; break; }
         }
         std::printf("  cycles=%d loops=%d shots=%d\n", nCycle, nLoop, nShot);
+        std::printf("  loop roots: tonal=%d inharmonic(220)=%d\n", nTonal, nInharmonic);
         CHECK(nCycle == 78 && nLoop == 130 && nShot == 10, "type counts");
-        CHECK(badLen == 0, "lengths/roots sane");
+        CHECK(badLen == 0, "lengths sane");
+        CHECK(badRoot == 0, "loop rootHz == LoopRoots.h (measured, manifest order)");
+        // s1b: 15 inharmonic loops pinned to 220 (12 METAL + MORPH ETHMETAL/
+        // METALAIR/VOXMETAL); the remaining 115 carry a measured, detuned root.
+        CHECK(nInharmonic == 15 && nTonal == 115, "measured-root split (15 inharmonic)");
         CHECK(badNibble == 0, "12-bit low-nibble invariant, all types");
     }
 
@@ -122,29 +135,31 @@ int main() {
     // ---- [pitch] --------------------------------------------------------
     std::printf("[pitch]\n");
     {
-        const int w = bank3::kNumCycles + 4;              // SOLINA_DREAM
+        const int w = bank3::kNumCycles + 4;              // PAD_05 (tonal loop)
         const auto& e = bank3::kWaveforms[(size_t)w];
+        const double root = (double)e.rootHz;             // s1b: per-loop measured
+        CHECK(root != 220.0, "pitch-test loop carries a measured (non-220) root");
         dreamer::PcmOsc3 o;
         o.setSampleRate(44100.0);
         o.setWaveform(w);
         o.setInterp(dreamer::PcmOsc3::Interp::Linear);
-        o.setFrequency(220.0);                            // == rootHz -> ratio 1
+        o.setFrequency(root);                             // freq == rootHz -> ratio 1
         o.reset(0.0);
         bool exact = true;
         for (uint32_t i = 0; i < 20000; ++i) {
             const float expect = (float)e.samples[i] * (1.0f / 32768.0f);
             if (o.process() != expect) { exact = false; break; }
         }
-        CHECK(exact, "ratio 1.0 renders the raw buffer");
+        CHECK(exact, "ratio 1.0 (freq==measured root) renders the raw buffer");
 
-        o.setFrequency(440.0);                            // ratio 2 -> every 2nd
+        o.setFrequency(2.0 * root);                       // ratio 2 -> every 2nd
         o.reset(0.0);
         bool skip2 = true;
         for (uint32_t i = 0; i < 9000; ++i) {
             const float expect = (float)e.samples[i * 2] * (1.0f / 32768.0f);
             if (o.process() != expect) { skip2 = false; break; }
         }
-        CHECK(skip2, "ratio 2.0 skips exactly one sample");
+        CHECK(skip2, "ratio 2.0 (2x measured root) skips exactly one sample");
     }
 
     // ---- [shot] ---------------------------------------------------------

@@ -121,6 +121,7 @@ void TheDreamerProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     lofi.prepare(sampleRate);
     stereoWidth.prepare(sampleRate);
     talkbox.prepare(sampleRate);
+    outputStage.prepare(0.5f);        // GAIN_STAGING s5: gentle soft-clip drive
     reverbWasActive = false;
     revCache = {};
 
@@ -327,7 +328,11 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     masterSmoothed.setTargetValue(pMaster->load());
 
-    constexpr float kVoiceHeadroom = 0.5f;    // fixed pre-FX headroom (master is post-FX)
+    // Modest pre-FX headroom. The PRINCIPLED per-voice summing fix now lives in
+    // DreamVoice (GAIN_STAGING s1: 1/sqrt(nEnabledTones) tone-sum trim), so this
+    // is no longer the anti-clip crutch it once was -- just headroom that leaves
+    // room for polyphony ahead of the output soft-clip/ceiling (s5).
+    constexpr float kVoiceHeadroom = 0.5f;
 
     auto* left  = buffer.getWritePointer(0);
     auto* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : nullptr;
@@ -405,8 +410,12 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
         float wetL, wetR;
         delay.processSampleWet(0.5f * (l + r), dfb, wetL, wetR);
-        l += wetL * dwet;
-        r += wetR * dwet;
+        // GAIN_STAGING s3: linear dry/wet, NOT additive. Old `l += wetL*dwet`
+        // stacked full dry + wet -> instant clip as mix rose. dmix==0 -> pure
+        // dry (bypass preserved); dmix==1 -> pure wet. Feedback is capped at
+        // 0.9 (< 0.95) above via dfb, so high fb can't build to clipping.
+        l = l * (1.0f - dwet) + wetL * dwet;
+        r = r * (1.0f - dwet) + wetR * dwet;
 
         left[n] = l;
         if (right != nullptr) right[n] = r;
@@ -449,15 +458,22 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         else
             reverb.processMono(reverbWetL.data(), numSamples);
 
-        // Dry gain must be CONTINUOUS with the bypass path (dry x1.0 when
-        // reverb is off): the donor's kDryScale=2.0 doubled the dry level the
-        // instant mix crossed the 1% threshold -> a click + a huge ROOM/HALL
-        // level jump. With pure-wet render (dryLevel=0) the manual mix needs
-        // no 2x compensation: at rmix->0 dry->1.0 (= bypass), so no step.
+        // GAIN_STAGING s3: proper equal-power/linear dry/wet. The old form
+        // (dry*(1-0.4*rmix) + wet*0.8*rmix) summed to ~1.4x at mix=1 and never
+        // fully removed the dry -> the "reverb clips" smoking gun. New law:
+        //   dry*(1-rmix) + wet*(kReverbWetNorm*rmix)
+        // fully crossfades (dry gone at mix=1) and normalizes the wet so a
+        // max-size hall from a unity input stays <= unity. Bypass continuity is
+        // PRESERVED: the render is pure-wet (dryLevel=0) so at rmix->0 the dry
+        // coeff -> 1.0 (= bypass), no click/step (the property the old comment
+        // guarded). kReverbWetNorm gives the wet path a little headroom too.
+        constexpr float kReverbWetNorm = 0.7f;   // wet leg gain at full mix (-3 dB)
         for (int n = 0; n < numSamples; ++n) {
-            left[n] = left[n] * (1.0f - 0.4f * rmix) + reverbWetL[(size_t)n] * (0.8f * rmix);
+            const float dg = 1.0f - rmix;
+            const float wg = kReverbWetNorm * rmix;
+            left[n] = left[n] * dg + reverbWetL[(size_t)n] * wg;
             if (right != nullptr)
-                right[n] = right[n] * (1.0f - 0.4f * rmix) + reverbWetR[(size_t)n] * (0.8f * rmix);
+                right[n] = right[n] * dg + reverbWetR[(size_t)n] * wg;
         }
         reverbWasActive = true;
     } else if (reverbWasActive) {
@@ -484,6 +500,10 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
         const float g = masterSmoothed.getNextValue();
         l *= g; r *= g;
+        // GAIN_STAGING s5: gentle tanh soft-clip for character + a hard ceiling
+        // at -0.1 dBFS so nothing ever leaves the plugin digitally clipped
+        // (safety net for residual peaks from s1-s4). RT-safe, stateless.
+        outputStage.process(l, r);
         left[n] = l;
         if (right != nullptr) right[n] = r;
         peakL = std::fmax(peakL, std::fabs(l));

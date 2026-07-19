@@ -483,6 +483,22 @@ public:
         orbitRng_.seed(0xB16B00B5u + voiceIdx * 0x9E3779B9u);
         walk_ = walkTarget_ = 0.0f;
         walkCount_ = 0;
+        // GAIN_STAGING s1: tone-sum normalization one-pole (~10 ms) so the
+        // 1/sqrt(nEnabledTones) scale glides on preset load / tone toggle.
+        toneNormCoef_  = 1.0f - std::exp(-1.0f / (float)(sr * kToneNormTau));
+        toneNormScale_ = 1.0f;
+    }
+
+    // GAIN_STAGING s1: equal-power tone-sum trim = 1/sqrt(nEnabledTones), so a
+    // 4-tone patch sits near unity instead of ~3x. NEVER a per-voice/polyphony
+    // scale (a chord must not duck). n==1 -> 1.0f so a single-tone voice stays
+    // bit-identical to the pre-fix path.
+    static float toneNormTarget(const DreamPatch& patch) noexcept {
+        int n = 0;
+        for (int i = 0; i < 4; ++i) if (patch.tone[i].enabled) ++n;
+        static constexpr float k[5] = {
+            1.0f, 1.0f, 0.70710678118654752f, 0.57735026918962576f, 0.5f };
+        return k[n];
     }
 
     void noteOn(const DreamPatch& patch, int midiNote, float velocity01,
@@ -491,6 +507,9 @@ public:
         serial_ = stamp;
         penvT_ = 0.0;
         voicePhiOffset_ = patch.vec.orbitPerVoice ? orbitRng_.unipolar() : 0.0f;
+        // GAIN_STAGING s1: snap the tone-sum scale to the current enabled count on
+        // a fresh note (no fade-in); the one-pole only glides live toggles.
+        toneNormScale_ = toneNormTarget(patch);
         for (int i = 0; i < 4; ++i) {
             tones_[i].setInterpMode(patch.interp);
             tones_[i].noteOn(patch.tone[i], midiNote, velocity01);
@@ -548,15 +567,28 @@ public:
         m.phi += penvValue(patch.vec) + voicePhiOffset_;
         m.phi -= std::floor(m.phi);
         penvT_ += 1.0 / sr_;
-        for (auto& t : tones_) t.process(l, r, m);
+
+        // GAIN_STAGING s1: sum THIS voice's tones locally, apply the smoothed
+        // 1/sqrt(nEnabledTones) trim, then add to the shared bus. For a single
+        // enabled tone the target is 1.0 and the scale stays 1.0, so lv==tone
+        // output and l += 1.0f*lv is bit-identical to the pre-fix direct sum.
+        const float target = toneNormTarget(patch);
+        toneNormScale_ += toneNormCoef_ * (target - toneNormScale_);
+        float lv = 0.0f, rv = 0.0f;
+        for (auto& t : tones_) t.process(lv, rv, m);
+        l += toneNormScale_ * lv;
+        r += toneNormScale_ * rv;
     }
 
 private:
+    static constexpr double kToneNormTau = 0.010;   // s, tone-sum scale one-pole
+
     Tone tones_[4];
     GlueRng walkRng_, orbitRng_;
     double sr_ = 44100.0, penvT_ = 0.0;
     float  walk_ = 0.0f, walkTarget_ = 0.0f, driftSemis_ = 0.0f;
     float  voicePhiOffset_ = 0.0f;
+    float  toneNormScale_ = 1.0f, toneNormCoef_ = 1.0f;   // GAIN_STAGING s1
     int    walkCount_ = 0;
     int note_ = -1;
     uint64_t serial_ = 0;
