@@ -326,6 +326,19 @@ public:
             params_.tvfMode = p.tvfMode;
             svf_.setMode(p.tvfMode);
         }
+        // D2 (felt bug): envelopes must read their A/D/S/R CONTINUOUSLY, not
+        // latch them at note-on. Push the live rates into all three envelopes
+        // every control block. EnvelopeAdsr::set() only recomputes per-sample
+        // increments (pure arithmetic, RT-safe) -- it does NOT restart a stage,
+        // so a currently-releasing voice picks up a shorter release immediately,
+        // and attack/decay edits affect voices in those stages. (set() with the
+        // same values is idempotent, so a static patch stays bit-identical.)
+        params_.tvfA = p.tvfA; params_.tvfD = p.tvfD; params_.tvfS = p.tvfS; params_.tvfR = p.tvfR;
+        params_.tvaA = p.tvaA; params_.tvaD = p.tvaD; params_.tvaS = p.tvaS; params_.tvaR = p.tvaR;
+        params_.auxA = p.auxA; params_.auxD = p.auxD; params_.auxS = p.auxS; params_.auxR = p.auxR;
+        tvfEnv_.set(p.tvfA, p.tvfD, p.tvfS, p.tvfR);
+        tvaEnv_.set(p.tvaA, p.tvaD, p.tvaS, p.tvaR);
+        auxEnv_.set(p.auxA, p.auxD, p.auxS, p.auxR);
     }
 
     void process(float& l, float& r, const ModContext& m) noexcept {

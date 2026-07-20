@@ -51,6 +51,7 @@ void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
 #include "dsp/glue/DreamVoice.h"
+#include "plugin/ParamLaws.h"   // D1 shared time law (JUCE-free part)
 
 static int failures = 0;
 #define CHECK(cond, msg) do { \
@@ -627,6 +628,71 @@ int main(int argc, char** argv) {
             writeWav((dir + "\\dream_vector_pad.wav").c_str(), L, R, SR);
             std::printf("  wav written to %s\n", dir.c_str());
         }
+    }
+
+    // ---- [param_law] D1: envelope-time log map + inverse round-trip -----
+    std::printf("[param_law]\n");
+    {
+        using namespace dreamer::lawv;
+        CHECK(std::fabs(envTimeSec(0.0) - 0.001) < 1e-9, "env time v=0 -> 1 ms");
+        CHECK(std::fabs(envTimeSec(1.0) - 10.0)  < 1e-6, "env time v=1 -> 10 s");
+        bool mono = true;
+        for (int i = 1; i <= 100; ++i)
+            if (envTimeSec(i / 100.0) <= envTimeSec((i - 1) / 100.0)) mono = false;
+        CHECK(mono, "env time strictly increasing (log)");
+        double maxErr = 0.0;
+        for (int i = 0; i <= 100; ++i) {
+            const double v = i / 100.0;
+            maxErr = std::fmax(maxErr, std::fabs(envTimeInv(envTimeSec(v)) - v));
+        }
+        CHECK(maxErr < 1e-6, "env time inverse round-trips");
+        // migration law: a value carried from the old cubic map keeps its seconds
+        const double oldSec = 0.001 + 8.0 * 0.35 * 0.35 * 0.35;   // old v=0.35
+        const double nv = envTimeInv(oldSec);
+        CHECK(std::fabs(envTimeSec(nv) - oldSec) < 1e-6, "migration preserves seconds");
+        CHECK(std::fabs(penvTimeSec(0.0) - 0.02) < 1e-9, "penv time v=0 -> 20 ms");
+        CHECK(std::fabs(penvTimeSec(1.0) - 10.0) < 1e-6, "penv time v=1 -> 10 s");
+    }
+
+    // ---- [live_env] D2: cutting the release knob mid-tail shortens it ----
+    std::printf("[live_env]\n");
+    {
+        auto longPatch = [] {
+            auto p = sinePatch();
+            p.tone[0].tvaA = 0.001; p.tone[0].tvaS = 1.0; p.tone[0].tvaR = 3.0;  // 3 s release
+            return p;
+        };
+        // Play to sustain, release, wait 150 ms into the 3 s tail, then (maybe)
+        // cut the release to 20 ms live; report the tone level over the FINAL
+        // 50 ms of a 400 ms post-cut window.
+        auto run = [&](bool cutRelease) {
+            auto s = std::make_unique<dreamer::DreamSynth>();
+            s->prepare(SR);
+            s->patch() = longPatch();
+            s->updateLive();
+            auto render = [&](int ms, int tailMs) {
+                const int n = SR * ms / 1000;
+                const int tailStart = n - SR * tailMs / 1000;
+                float mx = 0.0f;
+                for (int i = 0; i < n; ++i) {
+                    float l = 0, r = 0; s->process(l, r);
+                    if (i >= tailStart) mx = std::fmax(mx, std::fabs(l));
+                }
+                return mx;
+            };
+            s->noteOn(69, 0.8f);
+            render(50, 1);            // reach sustain
+            s->noteOff(69);
+            render(150, 1);           // 150 ms into the long release
+            if (cutRelease) { s->patch().tone[0].tvaR = 0.02; s->updateLive(); }
+            return render(400, 50);   // level over the final 50 ms
+        };
+        const float longTail = run(false);
+        const float cutTail  = run(true);
+        std::printf("  longTail=%.4f cutTail=%.4f\n", longTail, cutTail);
+        CHECK(longTail > 0.10f, "uncut 3 s release is still ringing after ~0.6 s");
+        CHECK(cutTail  < 0.01f, "release cut to 20 ms silences the live tail");
+        CHECK(cutTail < longTail * 0.15f, "live release edit reaches the sounding voice");
     }
 
     if (failures) { std::printf("%d FAILURE(S)\n", failures); return 1; }

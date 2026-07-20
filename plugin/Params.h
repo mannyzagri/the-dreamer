@@ -31,8 +31,39 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "dsp/bank/Bank3.h"
+#include "plugin/ParamLaws.h"
 
 namespace dreamer::params {
+
+// ---- D1: envelope-time real-unit display -----------------------------------
+// The knob value (normalized 0..1) maps to seconds via lawv::envTimeSec; the
+// LCD shows "340 ms" under 1 s and "1.2 s" above. textToValue parses either.
+inline juce::String envTimeToText(float v01) {
+    const double sec = lawv::envTimeSec((double)v01);
+    if (sec < 1.0)  return juce::String(juce::roundToInt(sec * 1000.0)) + " ms";
+    return juce::String(sec, sec < 10.0 ? 2 : 1) + " s";
+}
+inline float envTimeFromText(const juce::String& t) {
+    const juce::String s = t.trim().toLowerCase();
+    double sec;
+    if (s.endsWith("ms"))     sec = s.dropLastCharacters(2).getDoubleValue() * 0.001;
+    else if (s.endsWith("s")) sec = s.dropLastCharacters(1).getDoubleValue();
+    else                      sec = s.getDoubleValue() * 0.001;   // bare number = ms
+    return (float)lawv::envTimeInv(sec);
+}
+inline juce::String penvTimeToText(float v01) {
+    const double sec = lawv::penvTimeSec((double)v01);
+    if (sec < 1.0)  return juce::String(juce::roundToInt(sec * 1000.0)) + " ms";
+    return juce::String(sec, sec < 10.0 ? 2 : 1) + " s";
+}
+inline float penvTimeFromText(const juce::String& t) {
+    const juce::String s = t.trim().toLowerCase();
+    double sec;
+    if (s.endsWith("ms"))     sec = s.dropLastCharacters(2).getDoubleValue() * 0.001;
+    else if (s.endsWith("s")) sec = s.dropLastCharacters(1).getDoubleValue();
+    else                      sec = s.getDoubleValue();           // bare number = s
+    return (float)lawv::penvTimeInv(sec);
+}
 
 // ---- global ----------------------------------------------------------------
 inline constexpr auto kMaster        = "master";
@@ -121,6 +152,21 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     auto choice = [](const String& id, const String& name, const StringArray& items, int def) {
         return std::make_unique<AudioParameterChoice>(ParameterID { id, 1 }, name, items, def);
     };
+    // D1: env A/D/R time knob -- 0..1 range (log law in ParamLaws), LCD in ms/s.
+    auto envt = [](const String& id, const String& name, float def) {
+        return std::make_unique<AudioParameterFloat>(
+            ParameterID { id, 1 }, name, NormalisableRange<float>(0.0f, 1.0f, 0.001f), def,
+            AudioParameterFloatAttributes()
+                .withStringFromValueFunction([](float v, int) { return envTimeToText(v); })
+                .withValueFromStringFunction([](const String& s) { return envTimeFromText(s); }));
+    };
+    auto penvt = [](const String& id, const String& name, float def) {
+        return std::make_unique<AudioParameterFloat>(
+            ParameterID { id, 1 }, name, NormalisableRange<float>(0.0f, 1.0f, 0.001f), def,
+            AudioParameterFloatAttributes()
+                .withStringFromValueFunction([](float v, int) { return penvTimeToText(v); })
+                .withValueFromStringFunction([](const String& s) { return penvTimeFromText(s); }));
+    };
 
     // wave list from bank3 (218, order LOCKED)
     StringArray waves;
@@ -198,18 +244,20 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         layout.add(uni(tid("tvf_res", t), P + "TVF Reso", 0.0f));
         layout.add(uni(tid("tvf_env", t), P + "TVF Env", 0.0f));
         layout.add(uni(tid("tvf_kf", t), P + "TVF KeyFollow", 0.5f));
-        layout.add(uni(tid("tvf_a", t), P + "TVF Attack", 0.05f));
-        layout.add(uni(tid("tvf_d", t), P + "TVF Decay", 0.35f));
-        layout.add(uni(tid("tvf_s", t), P + "TVF Sustain", 1.0f));
-        layout.add(uni(tid("tvf_r", t), P + "TVF Release", 0.35f));
-        layout.add(uni(tid("tva_a", t), P + "TVA Attack", 0.05f));
-        layout.add(uni(tid("tva_d", t), P + "TVA Decay", 0.35f));
-        layout.add(uni(tid("tva_s", t), P + "TVA Sustain", 1.0f));
-        layout.add(uni(tid("tva_r", t), P + "TVA Release", 0.35f));
-        layout.add(uni(tid("aux_a", t), P + "Aux Attack", 0.05f));
-        layout.add(uni(tid("aux_d", t), P + "Aux Decay", 0.35f));
-        layout.add(uni(tid("aux_s", t), P + "Aux Sustain", 1.0f));
-        layout.add(uni(tid("aux_r", t), P + "Aux Release", 0.35f));
+        // D1: env A/D/R defaults re-expressed for the new log law so a fresh
+        // tone keeps its pre-D1 SECONDS (0.05->~2 ms attack, 0.35->~344 ms).
+        layout.add(envt(tid("tvf_a", t), P + "TVF Attack", 0.075f));
+        layout.add(envt(tid("tvf_d", t), P + "TVF Decay", 0.634f));
+        layout.add(uni (tid("tvf_s", t), P + "TVF Sustain", 1.0f));
+        layout.add(envt(tid("tvf_r", t), P + "TVF Release", 0.634f));
+        layout.add(envt(tid("tva_a", t), P + "TVA Attack", 0.075f));
+        layout.add(envt(tid("tva_d", t), P + "TVA Decay", 0.634f));
+        layout.add(uni (tid("tva_s", t), P + "TVA Sustain", 1.0f));
+        layout.add(envt(tid("tva_r", t), P + "TVA Release", 0.634f));
+        layout.add(envt(tid("aux_a", t), P + "Aux Attack", 0.075f));
+        layout.add(envt(tid("aux_d", t), P + "Aux Decay", 0.634f));
+        layout.add(uni (tid("aux_s", t), P + "Aux Sustain", 1.0f));
+        layout.add(envt(tid("aux_r", t), P + "Aux Release", 0.634f));
     }
 
     // ---- global ------------------------------------------------------------
@@ -222,7 +270,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add(boolean(kVecPenvOn, "P-Env On", false));
     layout.add(uni(kVecPenvStart, "P-Env Start", 0.0f));
     layout.add(uni(kVecPenvEnd, "P-Env End", 0.5f));
-    layout.add(uni(kVecPenvTime, "P-Env Time", 0.3f));
+    layout.add(penvt(kVecPenvTime, "P-Env Time", 0.3f));
     layout.add(boolean(kVecPenvLoop, "P-Env Loop", false));
 
     layout.add(choice(kFltRoute, "Filter Routing", StringArray { "Ser", "Par" }, 0));

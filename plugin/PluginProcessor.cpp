@@ -9,9 +9,9 @@ namespace {
 // ---- normalized 0..1 -> unit maps (documented contract addenda) -----------
 inline double cutHz(double v)   { return 60.0 * std::pow(200.0, v); }        // 60..12000
 inline double envHz(double v)   { return v * 9600.0; }                       // unipolar (s9)
-inline double adsrSec(double v) { return 0.001 + 8.0 * v * v * v; }          // 1ms..8s
+inline double adsrSec(double v) { return dreamer::lawv::envTimeSec(v); }     // D1: log 1ms..10s
 inline double dlyMs(double v)   { return std::pow(1000.0, v); }              // 1..1000
-inline double penvSec(double v) { return 0.02 * std::pow(500.0, v); }        // 0.02..10
+inline double penvSec(double v) { return dreamer::lawv::penvTimeSec(v); }    // 0.02..10 (D1 display)
 }
 
 //==============================================================================
