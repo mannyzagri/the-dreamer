@@ -690,8 +690,10 @@ int main(int argc, char** argv) {
         const float longTail = run(false);
         const float cutTail  = run(true);
         std::printf("  longTail=%.4f cutTail=%.4f\n", longTail, cutTail);
-        CHECK(longTail > 0.10f, "uncut 3 s release is still ringing after ~0.6 s");
-        CHECK(cutTail  < 0.01f, "release cut to 20 ms silences the live tail");
+        // absolute floors kept low: D11 loudness-norm scales the sine down, so the
+        // decisive proof is the RATIO (the live edit reaches the sounding voice).
+        CHECK(longTail > 0.03f, "uncut 3 s release is still ringing after ~0.6 s");
+        CHECK(cutTail  < 0.005f, "release cut to 20 ms silences the live tail");
         CHECK(cutTail < longTail * 0.15f, "live release edit reaches the sounding voice");
     }
 
@@ -750,6 +752,31 @@ int main(int argc, char** argv) {
         const double ratioNeg = hf(render1s(mk(-1.0, 84), 84)) / hf(render1s(mk(-1.0, 48), 48));
         std::printf("  brightness ratio hi/lo: +kf=%.3f  -kf=%.3f\n", ratioPos, ratioNeg);
         CHECK(ratioNeg < ratioPos, "negative key-follow darkens up the keyboard vs positive");
+    }
+
+    // ---- [wave_norm] D11: playback loudness equalization ------------------
+    std::printf("[wave_norm]\n");
+    {
+        // HITs stay peak-normalized (gain 1.0); every cycle/loop gain equalizes
+        // its wave to -14 dBFS RMS. Render a spread of cycle waves at identical
+        // tone settings; their output loudness must now cluster tightly.
+        auto rms = [&](int wi) {
+            auto p = sinePatch();
+            p.tone[0].waveIndex = wi;
+            auto s = render1s(p);
+            double e = 0; for (float v : s) e += (double)v * v;
+            return std::sqrt(e / s.size());
+        };
+        double mn = 1e9, mx = 0.0;
+        for (int wi : { 0, 5, 12, 20, 33, 44 }) {
+            const double r = rms(wi);
+            if (r > 1e-5) { mn = std::min(mn, r); mx = std::max(mx, r); }
+        }
+        std::printf("  cycle loudness spread min=%.4f max=%.4f ratio=%.2f\n", mn, mx, mx / mn);
+        CHECK(mx / mn < 1.8, "D11: cycle waves cluster in loudness (no big browse jumps)");
+        // HIT gains are exactly 1.0 (peak-normalized, untouched).
+        for (int i = dreamer::kWaveNormCount - 10; i < dreamer::kWaveNormCount; ++i)
+            CHECK(dreamer::kWaveNormGain[i] == 1.0f, "HIT playback gain stays 1.0");
     }
 
     if (failures) { std::printf("%d FAILURE(S)\n", failures); return 1; }

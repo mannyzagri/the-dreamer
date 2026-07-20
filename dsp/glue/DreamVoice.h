@@ -34,6 +34,7 @@
 #include "dsp/glue/PcmOsc3.h"
 #include "dsp/glue/Waveshaper.h"
 #include "dsp/glue/ToneSvf.h"
+#include "dsp/glue/WaveNormTable.h"     // D11: per-wave playback loudness gain
 #include "dsp/ported/RhinoLfo.h"
 
 namespace dreamer {
@@ -272,6 +273,9 @@ public:
             waveType_ = wf.type;
             rootHz_   = wf.rootHz > 0.0f ? (double)wf.rootHz : 220.0;
         }
+        // D11: per-wave loudness gain (equalizes browse level; bank untouched).
+        waveNormGain_ = (p.waveIndex >= 0 && p.waveIndex < kWaveNormCount)
+                            ? kWaveNormGain[p.waveIndex] : 1.0f;
         rebuildTaps();                                 // s11 voicing x D9 detune
         const bool pingpong = (p.loopMode == 1);
         for (auto& o : osc_) { o.setWaveform(p.waveIndex); o.setLoopMode(pingpong); }
@@ -466,7 +470,7 @@ public:
         // exactly (tapGain_ == 1.0f), so a SINGLE tone stays bit-identical.
         float x = 0.0f;
         for (int k = 0; k < nTaps_; ++k) x += osc_[k].process();
-        x *= tapGain_;
+        x *= tapGain_ * waveNormGain_;                 // D11 loudness normalization
         if (noiseEff_ > 0.0f) {
             noiseLp_ += noiseCoef_ * (rng_.bipolar() - noiseLp_);
             x += noiseEff_ * requant12(noiseLp_ * 0.9995f);   // 12-bit noise
@@ -519,6 +523,7 @@ private:
     float  tapGain_  = 1.0f;
     rompler::bank3::WaveType waveType_ = rompler::bank3::WaveType::Cycle;
     double rootHz_   = 220.0;
+    float  waveNormGain_ = 1.0f;      // D11 per-wave loudness gain (cached at noteOn)
 };
 
 // ---------------------------------------------------------------- voice
