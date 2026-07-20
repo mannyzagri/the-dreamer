@@ -695,6 +695,63 @@ int main(int argc, char** argv) {
         CHECK(cutTail < longTail * 0.15f, "live release edit reaches the sounding voice");
     }
 
+    // ---- [detune] D9: symmetric detune taps, equal-power, voices=1 no-op --
+    std::printf("[detune]\n");
+    {
+        using dreamer::detuneCents;
+        CHECK(detuneCents(1, 0, 25.0) == 0.0, "detune n=1 is zero");
+        CHECK(std::fabs(detuneCents(3, 0, 25.0) + detuneCents(3, 2, 25.0)) < 1e-12,
+              "detune n=3 symmetric about 0");
+        CHECK(std::fabs(detuneCents(3, 1, 25.0)) < 1e-12, "detune n=3 centre tap = 0");
+        double sum4 = 0.0;
+        for (int i = 0; i < 4; ++i) sum4 += detuneCents(4, i, 25.0);
+        CHECK(std::fabs(sum4) < 1e-12, "detune n=4 symmetric (sums to 0)");
+        CHECK(std::fabs(detuneCents(4, 0, 25.0) + 25.0) < 1e-12, "detune n=4 spans +/-25c");
+
+        // voices=1 is a bit-exact no-op regardless of amount.
+        auto base = sinePatch();
+        auto a = render1s(base);
+        auto b = base; b.tone[0].detuneVoices = 1; b.tone[0].detuneAmount = 0.8;
+        auto rb = render1s(b);
+        bool identical = a.size() == rb.size();
+        for (size_t i = 0; i < a.size() && identical; ++i) if (a[i] != rb[i]) identical = false;
+        CHECK(identical, "detune voices=1 is a bit-exact no-op");
+
+        // 3 detuned voices: real output, but equal-power keeps it FAR below the
+        // 3x that an additive (non-normalized) sum would produce.
+        auto c = base; c.tone[0].detuneVoices = 3; c.tone[0].detuneAmount = 0.5;
+        auto rc = render1s(c);
+        double rmsA = 0, rmsC = 0;
+        for (size_t i = 0; i < a.size(); ++i) { rmsA += a[i] * a[i]; rmsC += rc[i] * rc[i]; }
+        rmsA = std::sqrt(rmsA / a.size()); rmsC = std::sqrt(rmsC / rc.size());
+        std::printf("  detune rmsA=%.4f rms3=%.4f (ratio %.2f)\n", rmsA, rmsC, rmsC / rmsA);
+        CHECK(rmsC > 0.01, "3-voice detune produces output");
+        CHECK(rmsC < rmsA * 2.0, "equal-power detune is not the 3x additive bug");
+    }
+
+    // ---- [keytrack] D10: bipolar key-follow sign controls slope -----------
+    std::printf("[keytrack]\n");
+    {
+        const int saw = findWave("Basic", "Saw");
+        auto mk = [&](double kf, int /*note via render*/) {
+            auto p = sinePatch();
+            if (saw >= 0) p.tone[0].waveIndex = saw;
+            p.tone[0].cutoffHz = 500.0; p.tone[0].tvfMode = 0;   // LP24, low cut
+            p.tone[0].resonance = 0.0; p.tone[0].tvfEnvAmount = 0.0;
+            p.tone[0].tvfKeyFollow = kf;
+            return p;
+        };
+        auto hf = [](const std::vector<float>& s) {   // first-difference energy
+            double e = 0; for (size_t i = 1; i < s.size(); ++i) { double d = s[i] - s[i-1]; e += d*d; }
+            return std::sqrt(e / s.size());
+        };
+        // ratio of high-note to low-note brightness cancels the fundamental bias.
+        const double ratioPos = hf(render1s(mk(+1.0, 84), 84)) / hf(render1s(mk(+1.0, 48), 48));
+        const double ratioNeg = hf(render1s(mk(-1.0, 84), 84)) / hf(render1s(mk(-1.0, 48), 48));
+        std::printf("  brightness ratio hi/lo: +kf=%.3f  -kf=%.3f\n", ratioPos, ratioNeg);
+        CHECK(ratioNeg < ratioPos, "negative key-follow darkens up the keyboard vs positive");
+    }
+
     if (failures) { std::printf("%d FAILURE(S)\n", failures); return 1; }
     std::printf("ALL CHECKS PASSED\n");
     return 0;

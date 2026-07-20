@@ -62,6 +62,9 @@ TheDreamerProcessor::TheDreamerProcessor()
     pTalkMorph = p(kTalkMorph); pTalkSens = p(kTalkSens);
     pFxPrePost = p(kFxPrePost);
     pDrift = p(kDrift); pInterp = p(kInterp); pEngine = p(kEngine);
+    pGEnvA = p(kGEnvA); pGEnvD = p(kGEnvD); pGEnvS = p(kGEnvS); pGEnvR = p(kGEnvR);
+    pGCutoff = p(kGCutoff); pGRes = p(kGRes);
+    pGOctave = p(kGOctave); pLimiterOn = p(kLimiterOn);
 
     loadFactoryPresets();   // parse embedded bank once (message thread, ctor)
 }
@@ -219,12 +222,13 @@ void TheDreamerProcessor::cacheTonePtrs(TonePtrs& dst, int t)
 {
     auto p = [&](const char* base) { return apvts.getRawParameterValue(tid(base, t)); };
     dst.wave = p("wave"); dst.on = p("on"); dst.level = p("level");
-    dst.oct = p("oct"); dst.fine = p("fine");
+    dst.oct = p("oct"); dst.semi = p("semi"); dst.fine = p("fine");
     dst.start = p("start"); dst.startRandom = p("start_random");
     dst.velo = p("velo"); dst.pan = p("pan");
     dst.shape = p("shape"); dst.shapeDepth = p("shape_depth");
     dst.noise = p("noise"); dst.noiseColor = p("noise_color");
     dst.dir = p("dir"); dst.vint = p("vint");
+    dst.detuneVoices = p("detune_voices"); dst.detuneAmount = p("detune_amount");
     dst.voicing = p("voicing"); dst.dreamySpread = p("dreamy_spread");
     dst.loopMode = p("loop_mode"); dst.hitPlay = p("hit_play");
     dst.hitStretch = p("hit_stretch"); dst.hitPitchTrim = p("hit_pitchtrim");
@@ -294,12 +298,23 @@ void TheDreamerProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 //==============================================================================
 void TheDreamerProcessor::buildPatch(dreamer::DreamPatch& patch) const
 {
+    // D5 global offsets (bipolar, normalized-space; added to each tone's knob
+    // value before its unit map, then clamped). D8 global octave folds into
+    // every tone's coarse. All default 0 -> a static patch is bit-identical.
+    const float gEnvA = pGEnvA->load(), gEnvD = pGEnvD->load(),
+                gEnvS = pGEnvS->load(), gEnvR = pGEnvR->load();
+    const float gCut  = pGCutoff->load(), gRes = pGRes->load();
+    const int   gOct  = (int)pGOctave->load();
+    auto off01 = [](float base, float offs) {                 // clamp(base+offs, 0..1)
+        return juce::jlimit(0.0f, 1.0f, base + offs);
+    };
     for (int t = 0; t < 4; ++t) {
         auto& d = patch.tone[t];
         const auto& s = pTone[t];
         d.enabled      = s.on->load() > 0.5f;
         d.waveIndex    = (int)s.wave->load();
-        d.coarse       = (int)s.oct->load() * 12;          // oct -> semitones
+        // D7 semi + D8 global octave: pitch = (oct + g_octave)*12 + semi (+ fine + mod)
+        d.coarse       = ((int)s.oct->load() + gOct) * 12 + (int)s.semi->load();
         d.fineCents    = s.fine->load();
         d.level        = s.level->load();
         d.velSens      = s.velo->load();
@@ -312,6 +327,8 @@ void TheDreamerProcessor::buildPatch(dreamer::DreamPatch& patch) const
         d.vecInt       = s.vint->load();
         d.voicing      = (int)s.voicing->load();        // s11
         d.dreamySpread = (int)s.dreamySpread->load();   // s11
+        d.detuneVoices = (int)s.detuneVoices->load();   // D9
+        d.detuneAmount = s.detuneAmount->load();        // D9
         d.loopMode     = (int)s.loopMode->load();       // s12
         d.hitPlay      = (int)s.hitPlay->load();        // s13
         d.hitStretch   = s.hitStretch->load();          // s13 (0..1)
@@ -319,14 +336,16 @@ void TheDreamerProcessor::buildPatch(dreamer::DreamPatch& patch) const
         d.shapeMode    = (int)s.shape->load();
         d.shapeDepth   = s.shapeDepth->load();
         d.tvfMode      = (int)s.tvfType->load();
-        d.cutoffHz     = cutHz(s.tvfCut->load());
-        d.resonance    = s.tvfRes->load();
+        // D5 g_cutoff / g_res offset every tone's TVF (normalized, then mapped).
+        d.cutoffHz     = cutHz(off01(s.tvfCut->load(), gCut));
+        d.resonance    = off01(s.tvfRes->load(), gRes);
         d.tvfEnvAmount = envHz(s.tvfEnv->load());
-        d.tvfKeyFollow = s.tvfKf->load();
+        d.tvfKeyFollow = s.tvfKf->load();               // D10 bipolar -1..+1
         d.tvfA = adsrSec(s.tvfA->load()); d.tvfD = adsrSec(s.tvfD->load());
         d.tvfS = s.tvfS->load();          d.tvfR = adsrSec(s.tvfR->load());
-        d.tvaA = adsrSec(s.tvaA->load()); d.tvaD = adsrSec(s.tvaD->load());
-        d.tvaS = s.tvaS->load();          d.tvaR = adsrSec(s.tvaR->load());
+        // D5 g_env_* offset the TVA envelope of every tone (normalized-space).
+        d.tvaA = adsrSec(off01(s.tvaA->load(), gEnvA)); d.tvaD = adsrSec(off01(s.tvaD->load(), gEnvD));
+        d.tvaS = off01(s.tvaS->load(), gEnvS);          d.tvaR = adsrSec(off01(s.tvaR->load(), gEnvR));
         d.auxA = adsrSec(s.auxA->load()); d.auxD = adsrSec(s.auxD->load());
         d.auxS = s.auxS->load();          d.auxR = adsrSec(s.auxR->load());
         d.auxDest = (int)s.auxDest->load();
@@ -639,7 +658,9 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // WIDTH is fixed POST-filter (architect F4: pre-delay width only reaches
     // the dry + reverb, so POST widens the whole image predictably). TALK
     // sits after the POST slot (F-review recommended order).
+    const bool limiterOn = pLimiterOn->load() > 0.5f;   // D12
     float peakL = 0.0f, peakR = 0.0f;
+    float grMin = 1.0f;                                  // D12: worst gain ratio
     for (int n = 0; n < numSamples; ++n) {
         float l = left[n];
         float r = right != nullptr ? right[n] : left[n];
@@ -653,10 +674,19 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
         const float g = masterSmoothed.getNextValue();
         l *= g; r *= g;
-        // GAIN_STAGING s5: gentle tanh soft-clip for character + a hard ceiling
-        // at -0.1 dBFS so nothing ever leaves the plugin digitally clipped
-        // (safety net for residual peaks from s1-s4). RT-safe, stateless.
-        outputStage.process(l, r);
+        // D12: the GAIN_STAGING s5 soft-clip + -0.1 dBFS ceiling is now a
+        // switchable option (default ON). While on, track the worst-case gain
+        // reduction so the GUI can light an activity LED. OFF = clean pass-through
+        // (no character, no safety ceiling -- the user's choice, documented).
+        if (limiterOn) {
+            const float preMax = std::fmax(std::fabs(l), std::fabs(r));
+            outputStage.process(l, r);
+            const float postMax = std::fmax(std::fabs(l), std::fabs(r));
+            if (preMax > 1.0e-6f) {
+                const float ratio = postMax / preMax;
+                if (ratio < grMin) grMin = ratio;
+            }
+        }
         left[n] = l;
         if (right != nullptr) right[n] = r;
         peakL = std::fmax(peakL, std::fabs(l));
@@ -664,6 +694,9 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     }
     meterL.store(peakL, std::memory_order_relaxed);
     meterR.store(peakR, std::memory_order_relaxed);
+    // D12: gain reduction in dB (>=0); 0 when off or not limiting.
+    limiterGR.store((limiterOn && grMin < 1.0f) ? -20.0f * std::log10(grMin) : 0.0f,
+                    std::memory_order_relaxed);
 }
 
 //==============================================================================

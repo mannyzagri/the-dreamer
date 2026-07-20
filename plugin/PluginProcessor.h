@@ -74,6 +74,8 @@ public:
     // output metering feed for the editor's header L/R meters (peak per block)
     float getMeterL() const noexcept { return meterL.load(std::memory_order_relaxed); }
     float getMeterR() const noexcept { return meterR.load(std::memory_order_relaxed); }
+    // D12: output-limiter gain reduction (dB, >=0) for the GUI activity LED.
+    float getLimiterGR() const noexcept { return limiterGR.load(std::memory_order_relaxed); }
 
     // v11: on-screen keyboard + pitch/mod wheels -> engine. Called by the
     // editor's WebView native functions on the MESSAGE thread; each just
@@ -157,14 +159,16 @@ private:
 
     // output metering feed to the editor (peak-hold in the GUI)
     std::atomic<float> meterL { 0.0f }, meterR { 0.0f };
+    std::atomic<float> limiterGR { 0.0f };   // D12 output-stage GR in dB
 
     juce::SmoothedValue<float> masterSmoothed;
 
     struct LfoPtrs { std::atomic<float> *rate, *depth, *sync, *dest, *shape; };
     struct TonePtrs {
-        std::atomic<float> *wave, *on, *level, *oct, *fine, *start, *startRandom,
+        std::atomic<float> *wave, *on, *level, *oct, *semi, *fine, *start, *startRandom,
                            *velo, *pan, *shape, *shapeDepth, *noise, *noiseColor,
                            *dir, *vint,
+                           *detuneVoices, *detuneAmount,          // D9
                            *voicing, *dreamySpread, *loopMode,     // s11/s12
                            *hitPlay, *hitStretch, *hitPitchTrim,   // s13
                            *auxDest, *auxAmt,
@@ -193,7 +197,10 @@ private:
                        *pWidthOn, *pWidth, *pWidthHaas, *pWidthBassMono,
                        *pTalkOn, *pTalkVa, *pTalkVb, *pTalkMorph, *pTalkSens,
                        *pFxPrePost,
-                       *pDrift, *pInterp, *pEngine;
+                       *pDrift, *pInterp, *pEngine,
+                       // UX round: D5 global offsets, D8 g-octave, D12 limiter
+                       *pGEnvA, *pGEnvD, *pGEnvS, *pGEnvR, *pGCutoff, *pGRes,
+                       *pGOctave, *pLimiterOn;
 
     void cacheTonePtrs(TonePtrs& dst, int toneIdx);
 
