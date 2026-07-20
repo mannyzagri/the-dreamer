@@ -8,6 +8,7 @@
 // Parameters: DSP_BUILD.md section 9 canonical table (see Params.h for the
 // flagged additions). Normalized 0..1 -> unit maps live in this file.
 #pragma once
+#include <array>
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include "dsp/glue/DreamVoice.h"
@@ -45,9 +46,11 @@ public:
     // Factory preset bank -- processor-owned (PRESETS.md). The standard program
     // interface exposes the whole bank to the host's own preset menu; every
     // program IS a factory preset. Presets are parsed once at construction.
-    int getNumPrograms() override { return juce::jmax(1, (int)presets.size()); }
+    // D4: program 0 = INIT (synthetic); programs 1..N = factory presets. The
+    // GUI's applyPreset()/getPresetList() stay 0-based over the FACTORY bank.
+    int getNumPrograms() override { return (int)presets.size() + 1; }
     int getCurrentProgram() override { return currentProgram; }
-    void setCurrentProgram(int i) override { applyPreset(i); }
+    void setCurrentProgram(int i) override { if (i <= 0) resetToInit(); else applyPreset(i - 1); }
     const juce::String getProgramName(int i) override;
     void changeProgramName(int, const juce::String&) override {}
 
@@ -56,7 +59,24 @@ public:
     // becomes a viewer: it asks for names/categories and calls applyPreset --
     // it never holds the preset data itself.
     void         applyPreset(int index);   // atomic APVTS swap (message thread)
+    void         resetToInit();            // D4: INIT patch (basic saw, FX off)
+    void         panic() noexcept;         // D13: all-notes-off + FX flush (msg thread)
+    juce::var    getScopeData(int n = 2048) const;  // D3: final-output tap for GUI FFT
     int          presetCount() const noexcept { return (int)presets.size(); }
+
+    // ---- D6 MIDI learn (message thread; GUI right-click drives it) ----------
+    void midiLearnStart(const juce::String& paramId);   // arm: next CC binds paramId
+    void midiLearnCancel();                              // disarm
+    void midiLearnClearParam(const juce::String& paramId);  // drop paramId's CC map
+    int  midiLearnCcForParam(const juce::String& paramId) const;  // -1 if unmapped
+    bool midiLearnIsArmed() const noexcept { return midiLearnTarget.load() >= 0; }
+
+    // ---- D14 user presets (message thread; factory bank stays read-only) ----
+    bool      saveUserPreset(const juce::String& name);
+    bool      renameUserPreset(const juce::String& oldName, const juce::String& newName);
+    bool      deleteUserPreset(const juce::String& name);
+    bool      loadUserPreset(const juce::String& name);
+    juce::var getUserPresetList() const;   // Array<{name,category,bank:"USER"}>
     juce::String presetName(int index) const;
     juce::String presetCategory(int index) const;
     juce::var    getPresetList() const;     // Array<{name,category}> for editors
@@ -74,6 +94,8 @@ public:
     // output metering feed for the editor's header L/R meters (peak per block)
     float getMeterL() const noexcept { return meterL.load(std::memory_order_relaxed); }
     float getMeterR() const noexcept { return meterR.load(std::memory_order_relaxed); }
+    // D12: output-limiter gain reduction (dB, >=0) for the GUI activity LED.
+    float getLimiterGR() const noexcept { return limiterGR.load(std::memory_order_relaxed); }
 
     // v11: on-screen keyboard + pitch/mod wheels -> engine. Called by the
     // editor's WebView native functions on the MESSAGE thread; each just
@@ -113,6 +135,19 @@ private:
     void drainGuiMidi() noexcept;              // audio thread, top of processBlock
 
     void buildPatch(dreamer::DreamPatch& p) const;
+
+    // ---- D6 MIDI-learn state -----------------------------------------------
+    // CC (0..127) -> flat parameter index (-1 = unmapped). Written on the
+    // message thread (learn/clear/state-load) and the audio thread (learn
+    // capture); atomic ints keep it lock-free. midiLearnTarget is the param
+    // index armed for the next incoming CC (-1 = not learning).
+    std::atomic<int> ccToParam[128];
+    std::atomic<int> midiLearnTarget { -1 };
+    std::vector<juce::RangedAudioParameter*> paramByIndex;   // flat index -> param
+    int  paramIndexForId(const juce::String& id) const;      // -1 if not found
+    void applyParamMap(const std::vector<std::pair<juce::String, juce::var>>& values);
+    juce::DynamicObject::Ptr captureParamMap() const;        // current APVTS -> JSON map
+    juce::File userPresetDir() const;                        // ~/The Dreamer/Presets
 
     // ---- factory preset bank (parsed once from BinaryData::presets_json) -----
     // Values are stored exactly as the JSON holds them: normalized 0..1 for all
@@ -157,14 +192,30 @@ private:
 
     // output metering feed to the editor (peak-hold in the GUI)
     std::atomic<float> meterL { 0.0f }, meterR { 0.0f };
+    std::atomic<float> limiterGR { 0.0f };   // D12 output-stage GR in dB
+
+    // D13 panic: GUI button / NaN-recovery -> flush voices + FX on the audio
+    // thread (never mutate DSP state from the message thread). Consumed at the
+    // top of processBlock.
+    std::atomic<bool> panicRequested { false };
+    void flushFx() noexcept;                 // kill FX tails (audio thread)
+
+    // D3 analyzer tap: lock-free ring of the FINAL output (post-master/limiter),
+    // written per-sample on the audio thread, snapshotted by the editor ~20 fps.
+    // Single producer (audio) / single consumer (GUI); a torn read only shows a
+    // slightly stale scope, never UB.
+    static constexpr int kScopeSize = 2048;   // power of two
+    std::array<float, (size_t)kScopeSize> scopeBuf {};
+    std::atomic<uint32_t> scopeWrite { 0 };
 
     juce::SmoothedValue<float> masterSmoothed;
 
     struct LfoPtrs { std::atomic<float> *rate, *depth, *sync, *dest, *shape; };
     struct TonePtrs {
-        std::atomic<float> *wave, *on, *level, *oct, *fine, *start, *startRandom,
+        std::atomic<float> *wave, *on, *level, *oct, *semi, *fine, *start, *startRandom,
                            *velo, *pan, *shape, *shapeDepth, *noise, *noiseColor,
                            *dir, *vint,
+                           *detuneVoices, *detuneAmount,          // D9
                            *voicing, *dreamySpread, *loopMode,     // s11/s12
                            *hitPlay, *hitStretch, *hitPitchTrim,   // s13
                            *auxDest, *auxAmt,
@@ -193,7 +244,10 @@ private:
                        *pWidthOn, *pWidth, *pWidthHaas, *pWidthBassMono,
                        *pTalkOn, *pTalkVa, *pTalkVb, *pTalkMorph, *pTalkSens,
                        *pFxPrePost,
-                       *pDrift, *pInterp, *pEngine;
+                       *pDrift, *pInterp, *pEngine,
+                       // UX round: D5 global offsets, D8 g-octave, D12 limiter
+                       *pGEnvA, *pGEnvD, *pGEnvS, *pGEnvR, *pGCutoff, *pGRes,
+                       *pGOctave, *pLimiterOn;
 
     void cacheTonePtrs(TonePtrs& dst, int toneIdx);
 

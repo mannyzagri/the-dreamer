@@ -51,6 +51,7 @@ void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
 #include "dsp/glue/DreamVoice.h"
+#include "plugin/ParamLaws.h"   // D1 shared time law (JUCE-free part)
 
 static int failures = 0;
 #define CHECK(cond, msg) do { \
@@ -627,6 +628,155 @@ int main(int argc, char** argv) {
             writeWav((dir + "\\dream_vector_pad.wav").c_str(), L, R, SR);
             std::printf("  wav written to %s\n", dir.c_str());
         }
+    }
+
+    // ---- [param_law] D1: envelope-time log map + inverse round-trip -----
+    std::printf("[param_law]\n");
+    {
+        using namespace dreamer::lawv;
+        CHECK(std::fabs(envTimeSec(0.0) - 0.001) < 1e-9, "env time v=0 -> 1 ms");
+        CHECK(std::fabs(envTimeSec(1.0) - 10.0)  < 1e-6, "env time v=1 -> 10 s");
+        bool mono = true;
+        for (int i = 1; i <= 100; ++i)
+            if (envTimeSec(i / 100.0) <= envTimeSec((i - 1) / 100.0)) mono = false;
+        CHECK(mono, "env time strictly increasing (log)");
+        double maxErr = 0.0;
+        for (int i = 0; i <= 100; ++i) {
+            const double v = i / 100.0;
+            maxErr = std::fmax(maxErr, std::fabs(envTimeInv(envTimeSec(v)) - v));
+        }
+        CHECK(maxErr < 1e-6, "env time inverse round-trips");
+        // migration law: a value carried from the old cubic map keeps its seconds
+        const double oldSec = 0.001 + 8.0 * 0.35 * 0.35 * 0.35;   // old v=0.35
+        const double nv = envTimeInv(oldSec);
+        CHECK(std::fabs(envTimeSec(nv) - oldSec) < 1e-6, "migration preserves seconds");
+        CHECK(std::fabs(penvTimeSec(0.0) - 0.02) < 1e-9, "penv time v=0 -> 20 ms");
+        CHECK(std::fabs(penvTimeSec(1.0) - 10.0) < 1e-6, "penv time v=1 -> 10 s");
+    }
+
+    // ---- [live_env] D2: cutting the release knob mid-tail shortens it ----
+    std::printf("[live_env]\n");
+    {
+        auto longPatch = [] {
+            auto p = sinePatch();
+            p.tone[0].tvaA = 0.001; p.tone[0].tvaS = 1.0; p.tone[0].tvaR = 3.0;  // 3 s release
+            return p;
+        };
+        // Play to sustain, release, wait 150 ms into the 3 s tail, then (maybe)
+        // cut the release to 20 ms live; report the tone level over the FINAL
+        // 50 ms of a 400 ms post-cut window.
+        auto run = [&](bool cutRelease) {
+            auto s = std::make_unique<dreamer::DreamSynth>();
+            s->prepare(SR);
+            s->patch() = longPatch();
+            s->updateLive();
+            auto render = [&](int ms, int tailMs) {
+                const int n = SR * ms / 1000;
+                const int tailStart = n - SR * tailMs / 1000;
+                float mx = 0.0f;
+                for (int i = 0; i < n; ++i) {
+                    float l = 0, r = 0; s->process(l, r);
+                    if (i >= tailStart) mx = std::fmax(mx, std::fabs(l));
+                }
+                return mx;
+            };
+            s->noteOn(69, 0.8f);
+            render(50, 1);            // reach sustain
+            s->noteOff(69);
+            render(150, 1);           // 150 ms into the long release
+            if (cutRelease) { s->patch().tone[0].tvaR = 0.02; s->updateLive(); }
+            return render(400, 50);   // level over the final 50 ms
+        };
+        const float longTail = run(false);
+        const float cutTail  = run(true);
+        std::printf("  longTail=%.4f cutTail=%.4f\n", longTail, cutTail);
+        // absolute floors kept low: D11 loudness-norm scales the sine down, so the
+        // decisive proof is the RATIO (the live edit reaches the sounding voice).
+        CHECK(longTail > 0.03f, "uncut 3 s release is still ringing after ~0.6 s");
+        CHECK(cutTail  < 0.005f, "release cut to 20 ms silences the live tail");
+        CHECK(cutTail < longTail * 0.15f, "live release edit reaches the sounding voice");
+    }
+
+    // ---- [detune] D9: symmetric detune taps, equal-power, voices=1 no-op --
+    std::printf("[detune]\n");
+    {
+        using dreamer::detuneCents;
+        CHECK(detuneCents(1, 0, 25.0) == 0.0, "detune n=1 is zero");
+        CHECK(std::fabs(detuneCents(3, 0, 25.0) + detuneCents(3, 2, 25.0)) < 1e-12,
+              "detune n=3 symmetric about 0");
+        CHECK(std::fabs(detuneCents(3, 1, 25.0)) < 1e-12, "detune n=3 centre tap = 0");
+        double sum4 = 0.0;
+        for (int i = 0; i < 4; ++i) sum4 += detuneCents(4, i, 25.0);
+        CHECK(std::fabs(sum4) < 1e-12, "detune n=4 symmetric (sums to 0)");
+        CHECK(std::fabs(detuneCents(4, 0, 25.0) + 25.0) < 1e-12, "detune n=4 spans +/-25c");
+
+        // voices=1 is a bit-exact no-op regardless of amount.
+        auto base = sinePatch();
+        auto a = render1s(base);
+        auto b = base; b.tone[0].detuneVoices = 1; b.tone[0].detuneAmount = 0.8;
+        auto rb = render1s(b);
+        bool identical = a.size() == rb.size();
+        for (size_t i = 0; i < a.size() && identical; ++i) if (a[i] != rb[i]) identical = false;
+        CHECK(identical, "detune voices=1 is a bit-exact no-op");
+
+        // 3 detuned voices: real output, but equal-power keeps it FAR below the
+        // 3x that an additive (non-normalized) sum would produce.
+        auto c = base; c.tone[0].detuneVoices = 3; c.tone[0].detuneAmount = 0.5;
+        auto rc = render1s(c);
+        double rmsA = 0, rmsC = 0;
+        for (size_t i = 0; i < a.size(); ++i) { rmsA += a[i] * a[i]; rmsC += rc[i] * rc[i]; }
+        rmsA = std::sqrt(rmsA / a.size()); rmsC = std::sqrt(rmsC / rc.size());
+        std::printf("  detune rmsA=%.4f rms3=%.4f (ratio %.2f)\n", rmsA, rmsC, rmsC / rmsA);
+        CHECK(rmsC > 0.01, "3-voice detune produces output");
+        CHECK(rmsC < rmsA * 2.0, "equal-power detune is not the 3x additive bug");
+    }
+
+    // ---- [keytrack] D10: bipolar key-follow sign controls slope -----------
+    std::printf("[keytrack]\n");
+    {
+        const int saw = findWave("Basic", "Saw");
+        auto mk = [&](double kf, int /*note via render*/) {
+            auto p = sinePatch();
+            if (saw >= 0) p.tone[0].waveIndex = saw;
+            p.tone[0].cutoffHz = 500.0; p.tone[0].tvfMode = 0;   // LP24, low cut
+            p.tone[0].resonance = 0.0; p.tone[0].tvfEnvAmount = 0.0;
+            p.tone[0].tvfKeyFollow = kf;
+            return p;
+        };
+        auto hf = [](const std::vector<float>& s) {   // first-difference energy
+            double e = 0; for (size_t i = 1; i < s.size(); ++i) { double d = s[i] - s[i-1]; e += d*d; }
+            return std::sqrt(e / s.size());
+        };
+        // ratio of high-note to low-note brightness cancels the fundamental bias.
+        const double ratioPos = hf(render1s(mk(+1.0, 84), 84)) / hf(render1s(mk(+1.0, 48), 48));
+        const double ratioNeg = hf(render1s(mk(-1.0, 84), 84)) / hf(render1s(mk(-1.0, 48), 48));
+        std::printf("  brightness ratio hi/lo: +kf=%.3f  -kf=%.3f\n", ratioPos, ratioNeg);
+        CHECK(ratioNeg < ratioPos, "negative key-follow darkens up the keyboard vs positive");
+    }
+
+    // ---- [wave_norm] D11: playback loudness equalization ------------------
+    std::printf("[wave_norm]\n");
+    {
+        // HITs stay peak-normalized (gain 1.0); every cycle/loop gain equalizes
+        // its wave to -14 dBFS RMS. Render a spread of cycle waves at identical
+        // tone settings; their output loudness must now cluster tightly.
+        auto rms = [&](int wi) {
+            auto p = sinePatch();
+            p.tone[0].waveIndex = wi;
+            auto s = render1s(p);
+            double e = 0; for (float v : s) e += (double)v * v;
+            return std::sqrt(e / s.size());
+        };
+        double mn = 1e9, mx = 0.0;
+        for (int wi : { 0, 5, 12, 20, 33, 44 }) {
+            const double r = rms(wi);
+            if (r > 1e-5) { mn = std::min(mn, r); mx = std::max(mx, r); }
+        }
+        std::printf("  cycle loudness spread min=%.4f max=%.4f ratio=%.2f\n", mn, mx, mx / mn);
+        CHECK(mx / mn < 1.8, "D11: cycle waves cluster in loudness (no big browse jumps)");
+        // HIT gains are exactly 1.0 (peak-normalized, untouched).
+        for (int i = dreamer::kWaveNormCount - 10; i < dreamer::kWaveNormCount; ++i)
+            CHECK(dreamer::kWaveNormGain[i] == 1.0f, "HIT playback gain stays 1.0");
     }
 
     if (failures) { std::printf("%d FAILURE(S)\n", failures); return 1; }

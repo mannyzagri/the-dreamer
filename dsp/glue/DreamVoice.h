@@ -34,6 +34,7 @@
 #include "dsp/glue/PcmOsc3.h"
 #include "dsp/glue/Waveshaper.h"
 #include "dsp/glue/ToneSvf.h"
+#include "dsp/glue/WaveNormTable.h"     // D11: per-wave playback loudness gain
 #include "dsp/ported/RhinoLfo.h"
 
 namespace dreamer {
@@ -61,6 +62,8 @@ struct ToneParams {
     // bit-identical to the pre-s11 single-tap forward-loop engine.
     int    voicing      = 0;       // 0 SINGLE, 1 OCT, 2 POWER, 3 DREAMY (s11)
     int    dreamySpread = 0;       // 0 ADD9, 1 MIN7, 2 SUS2 (s11, DREAMY only)
+    int    detuneVoices = 1;       // D9: 1..4 symmetric detuned taps PER voicing tap
+    double detuneAmount = 0.0;     // D9: 0..1 -> 0..+/-25 cents (gentle width)
     int    loopMode     = 0;       // 0 FORWARD, 1 PINGPONG (s12, Loop waves)
     int    hitPlay      = 0;       // 0 NORMAL, 1 STRETCH (s13, OneShot waves)
     double hitStretch   = 0.5;     // 0..1 -> 0.25x..4x speed (log, 0.5=1.0x)
@@ -202,6 +205,21 @@ inline float voicingTapGain(int nTaps) noexcept {
     }
 }
 
+// ---------------------------------------------------------------- detune D9
+// Max oscillator taps per tone = voicing(<=4) x detune(<=4). SINGLE + detune 1
+// -> 1 tap, tapGain 1.0f, bit-identical to the pre-D9 single-osc path.
+inline constexpr int kMaxTaps = 16;
+// Symmetric detune offset (cents) for tap i of n voices spanning +/-`cents`.
+// n=1 ->{0}; n=2 ->{-c,+c}; n=3 ->{-c,0,+c}; n=4 ->{-c,-c/3,+c/3,+c}. Symmetry
+// is REQUIRED (asymmetric detune was the historical pitch-wander bug).
+inline double detuneCents(int n, int i, double cents) noexcept {
+    if (n <= 1) return 0.0;
+    return cents * (2.0 * (double)i / (double)(n - 1) - 1.0);
+}
+// Equal-power gain over the FULL tap set = voicingTapGain(nVoicing) *
+// voicingTapGain(nDetune) = 1/sqrt(nVoicing*nDetune). Split so nDetune==1
+// leaves the voicing gain byte-exact (voicingTapGain reuse, same constants).
+
 // deterministic per-instance RNG (glue idiom)
 struct GlueRng {
     uint32_t s = 1u;
@@ -255,8 +273,10 @@ public:
             waveType_ = wf.type;
             rootHz_   = wf.rootHz > 0.0f ? (double)wf.rootHz : 220.0;
         }
-        nTaps_   = voicingIntervals(p.voicing, p.dreamySpread, intervalSemis_);
-        tapGain_ = voicingTapGain(nTaps_);
+        // D11: per-wave loudness gain (equalizes browse level; bank untouched).
+        waveNormGain_ = (p.waveIndex >= 0 && p.waveIndex < kWaveNormCount)
+                            ? kWaveNormGain[p.waveIndex] : 1.0f;
+        rebuildTaps();                                 // s11 voicing x D9 detune
         const bool pingpong = (p.loopMode == 1);
         for (auto& o : osc_) { o.setWaveform(p.waveIndex); o.setLoopMode(pingpong); }
         baseSemis_ = midiNote - 69 + p.coarse + p.fineCents / 100.0;
@@ -313,6 +333,8 @@ public:
         // mode is stateful in the oscillator, so push it on change.
         params_.voicing      = p.voicing;
         params_.dreamySpread = p.dreamySpread;
+        params_.detuneVoices = p.detuneVoices;   // D9
+        params_.detuneAmount = p.detuneAmount;   // D9
         params_.hitPlay      = p.hitPlay;
         params_.hitStretch   = p.hitStretch;
         params_.hitPitchTrim = p.hitPitchTrim;
@@ -326,6 +348,19 @@ public:
             params_.tvfMode = p.tvfMode;
             svf_.setMode(p.tvfMode);
         }
+        // D2 (felt bug): envelopes must read their A/D/S/R CONTINUOUSLY, not
+        // latch them at note-on. Push the live rates into all three envelopes
+        // every control block. EnvelopeAdsr::set() only recomputes per-sample
+        // increments (pure arithmetic, RT-safe) -- it does NOT restart a stage,
+        // so a currently-releasing voice picks up a shorter release immediately,
+        // and attack/decay edits affect voices in those stages. (set() with the
+        // same values is idempotent, so a static patch stays bit-identical.)
+        params_.tvfA = p.tvfA; params_.tvfD = p.tvfD; params_.tvfS = p.tvfS; params_.tvfR = p.tvfR;
+        params_.tvaA = p.tvaA; params_.tvaD = p.tvaD; params_.tvaS = p.tvaS; params_.tvaR = p.tvaR;
+        params_.auxA = p.auxA; params_.auxD = p.auxD; params_.auxS = p.auxS; params_.auxR = p.auxR;
+        tvfEnv_.set(p.tvfA, p.tvfD, p.tvfS, p.tvfR);
+        tvaEnv_.set(p.tvaA, p.tvaD, p.tvaS, p.tvaR);
+        auxEnv_.set(p.auxA, p.auxD, p.auxS, p.auxR);
     }
 
     void process(float& l, float& r, const ModContext& m) noexcept {
@@ -372,11 +407,10 @@ public:
                 }
             }
 
-            // ---- s11/s13 multi-tap oscillator control ----------------------
-            // Recompute the tap table live (voicing/spread are host params).
-            nTaps_   = voicingIntervals(params_.voicing, params_.dreamySpread,
-                                        intervalSemis_);
-            tapGain_ = voicingTapGain(nTaps_);
+            // ---- s11/s13/D9 multi-tap oscillator control -------------------
+            // Recompute the tap table live (voicing/spread/detune are host
+            // params). Fills tapOff_ (voicing intervals + symmetric detune).
+            rebuildTaps();
             // s13 HIT STRETCH (OneShot only): varispeed replaces note tracking.
             // hit_stretch 0..1 -> speed 0.25x..4x (log, 0.5=1.0x); pitch FOLLOWS
             // speed; hit_pitchtrim re-tunes (still varispeed). setSpeedMul feeds
@@ -395,8 +429,8 @@ public:
                 baseFreq = 440.0 * std::pow(2.0, pitchSemis / 12.0);        // note-tracked
                 speedMul = 1.0;
             }
-            for (int k = 0; k < 4; ++k) {
-                const double r = std::pow(2.0, intervalSemis_[k] / 12.0);   // ET detune
+            for (int k = 0; k < nTaps_; ++k) {
+                const double r = std::pow(2.0, tapOff_[k] / 12.0);   // voicing+detune
                 osc_[k].setFrequency(baseFreq * r);
                 osc_[k].setSpeedMul(speedMul);
             }
@@ -436,7 +470,7 @@ public:
         // exactly (tapGain_ == 1.0f), so a SINGLE tone stays bit-identical.
         float x = 0.0f;
         for (int k = 0; k < nTaps_; ++k) x += osc_[k].process();
-        x *= tapGain_;
+        x *= tapGain_ * waveNormGain_;                 // D11 loudness normalization
         if (noiseEff_ > 0.0f) {
             noiseLp_ += noiseCoef_ * (rng_.bipolar() - noiseLp_);
             x += noiseEff_ * requant12(noiseLp_ * 0.9995f);   // 12-bit noise
@@ -450,9 +484,25 @@ public:
     }
 
 private:
+    // D9: (re)build the voicing x detune tap table from params_. Fills tapOff_
+    // (semitone offsets, detune folded in) and sets nTaps_/tapGain_. Called at
+    // note-on and every control block (voicing/detune are live params).
+    void rebuildTaps() noexcept {
+        nVoicing_ = voicingIntervals(params_.voicing, params_.dreamySpread, intervalSemis_);
+        int nd = params_.detuneVoices; if (nd < 1) nd = 1; else if (nd > 4) nd = 4;
+        double cents = params_.detuneAmount * 25.0;              // 0..+/-25 c
+        if (cents < 0.0) cents = 0.0; else if (cents > 25.0) cents = 25.0;
+        int k = 0;
+        for (int vi = 0; vi < nVoicing_ && k < kMaxTaps; ++vi)
+            for (int di = 0; di < nd && k < kMaxTaps; ++di)
+                tapOff_[k++] = (double)intervalSemis_[vi] + detuneCents(nd, di, cents) / 100.0;
+        nTaps_   = k;
+        tapGain_ = voicingTapGain(nVoicing_) * voicingTapGain(nd);  // 1/sqrt(nV*nd)
+    }
+
     static constexpr float kVecSmooth = 0.3f;
 
-    PcmOsc3                osc_[4];      // s11 multi-tap voicing (root + detuned)
+    PcmOsc3                osc_[kMaxTaps]; // s11 voicing x D9 detune taps (<=16)
     rompler::EnvelopeAdsr  tvfEnv_, tvaEnv_, auxEnv_;
     ToneSvf                svf_;
     Lfo                    lfo_[2];      // v7 per-tone LFO pair (v11: per-LFO shape)
@@ -465,12 +515,15 @@ private:
     float  lastAux_ = 0.0f;
     float  panL_ = 0.70710678f, panR_ = 0.70710678f;
     int    note_ = 60, ctrlCount_ = 0;
-    // s11/12/13 tap state
-    int    intervalSemis_[4] = { 0, 0, 0, 0 };
+    // s11/12/13 + D9 tap state
+    int    intervalSemis_[4] = { 0, 0, 0, 0 };  // voicing ET intervals
+    double tapOff_[kMaxTaps] = {};              // voicing+detune semitone offsets
+    int    nVoicing_ = 1;
     int    nTaps_    = 1;
     float  tapGain_  = 1.0f;
     rompler::bank3::WaveType waveType_ = rompler::bank3::WaveType::Cycle;
     double rootHz_   = 220.0;
+    float  waveNormGain_ = 1.0f;      // D11 per-wave loudness gain (cached at noteOn)
 };
 
 // ---------------------------------------------------------------- voice
