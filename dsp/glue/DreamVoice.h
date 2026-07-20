@@ -68,6 +68,11 @@ struct ToneParams {
     int    hitPlay      = 0;       // 0 NORMAL, 1 STRETCH (s13, OneShot waves)
     double hitStretch   = 0.5;     // 0..1 -> 0.25x..4x speed (log, 0.5=1.0x)
     double hitPitchTrim = 0.0;     // -24..+24 semitone re-tune (still varispeed)
+    // D15: PLAY MODE (hitPlay) now applies to ALL wave types. LOOP + STRETCH:
+    double loopRate      = 0.5;    // 0..1 -> 0.25x..4x (log, 0.5=1.0x)
+    bool   loopRateSync  = false;  // sync loop traversal to host tempo
+    int    loopRateBeats = 5;      // beat-division index (toneLfoDivisionBeats)
+    bool   loopVarispeed = false;  // NORMAL/STRETCH loop: plain pitch-follows varispeed
 
     int    shapeMode    = 0;       // 0 OFF, 1..5 ShaperTables order
     double shapeDepth   = 0.0;
@@ -127,7 +132,8 @@ struct DreamPatch {
 namespace mtx {
     enum Src  : int { srcNone = 0, srcGlfo, srcVecPhs, srcAux, srcVelo, srcWheel };
     enum Dest : int { dstNone = 0, dstPitch, dstCut1, dstCut2, dstMorph,
-                      dstShape, dstVecPhs, dstPan, dstNoise, dstFxParam };
+                      dstShape, dstVecPhs, dstPan, dstNoise, dstFxParam,
+                      dstLoopRate };   // D15 (=10): loop-rate offset, all tones
     // dstFxParam (=9) is the "FX PARAM" matrix dest from DSP_BUILD s9 (which
     // WINS): s9 lists FX PARAM -- NOT hit_stretch -- as the new dest. It is
     // RESERVED/inert here (GUI parity only, like dstMorph) until the GUI gives
@@ -144,6 +150,7 @@ struct ModContext {
     float mtxShapeAdd    = 0.0f;
     float mtxPanAdd      = 0.0f;
     float mtxNoiseAdd    = 0.0f;
+    float mtxLoopRateAdd = 0.0f;   // D15 loop-rate matrix dest (normalized offset)
 };
 
 // 12 tempo divisions (GUI v7 order): 4/1 2/1 1/1 1/2 1/2T 1/4 1/4T 1/8 1/8T
@@ -272,6 +279,7 @@ public:
                     ? 0 : (size_t)p.waveIndex];
             waveType_ = wf.type;
             rootHz_   = wf.rootHz > 0.0f ? (double)wf.rootHz : 220.0;
+            wfLen_    = wf.length;                  // D15: loop length for sync
         }
         // D11: per-wave loudness gain (equalizes browse level; bank untouched).
         waveNormGain_ = (p.waveIndex >= 0 && p.waveIndex < kWaveNormCount)
@@ -338,6 +346,10 @@ public:
         params_.hitPlay      = p.hitPlay;
         params_.hitStretch   = p.hitStretch;
         params_.hitPitchTrim = p.hitPitchTrim;
+        params_.loopRate      = p.loopRate;       // D15
+        params_.loopRateSync  = p.loopRateSync;
+        params_.loopRateBeats = p.loopRateBeats;
+        params_.loopVarispeed = p.loopVarispeed;
         if (p.loopMode != params_.loopMode) {
             params_.loopMode = p.loopMode;
             const bool pingpong = (p.loopMode == 1);
@@ -411,28 +423,48 @@ public:
             // Recompute the tap table live (voicing/spread/detune are host
             // params). Fills tapOff_ (voicing intervals + symmetric detune).
             rebuildTaps();
-            // s13 HIT STRETCH (OneShot only): varispeed replaces note tracking.
-            // hit_stretch 0..1 -> speed 0.25x..4x (log, 0.5=1.0x); pitch FOLLOWS
-            // speed; hit_pitchtrim re-tunes (still varispeed). setSpeedMul feeds
-            // the Loop/OneShot phase increment; Cycle path is never touched.
-            const bool stretch =
-                (waveType_ == rompler::bank3::WaveType::OneShot) && (params_.hitPlay == 1);
-            double baseFreq, speedMul;
-            if (stretch) {
+            // D15: PLAY MODE (hitPlay: 0 NORMAL / 1 STRETCH) applies to ALL types.
+            //  * OneShot+STRETCH -> s13 varispeed (note-detached, pitch follows).
+            //  * Loop+STRETCH -> LOOP RATE: decoupled granular morph sweep (pitch
+            //    note-locked) unless loop_varispeed (plain pitch-follows varispeed).
+            //  * Cycle -> STRETCH has no meaning; note-tracked no-op.
+            const bool stretchMode = (params_.hitPlay == 1);
+            double baseFreq = 440.0 * std::pow(2.0, pitchSemis / 12.0);     // note-tracked
+            double speedMul = 1.0;
+            bool   loopGranular = false;
+            double morphInc = 0.0;
+            if (waveType_ == rompler::bank3::WaveType::OneShot && stretchMode) {
                 double hs = params_.hitStretch;
                 if (hs < 0.0) hs = 0.0; else if (hs > 1.0) hs = 1.0;
                 const double speed = 0.25 * std::pow(2.0, 4.0 * hs);        // 0.25..4x
                 const double trim  = std::pow(2.0, params_.hitPitchTrim / 12.0);
-                baseFreq = rootHz_;                    // native pitch, note-detached
+                baseFreq = rootHz_;
                 speedMul = speed * trim;
-            } else {
-                baseFreq = 440.0 * std::pow(2.0, pitchSemis / 12.0);        // note-tracked
-                speedMul = 1.0;
+            } else if (waveType_ == rompler::bank3::WaveType::Loop && stretchMode) {
+                double v = params_.loopRate + (double)m.mtxLoopRateAdd;
+                if (v < 0.0) v = 0.0; else if (v > 1.0) v = 1.0;
+                double lrMul;
+                if (params_.loopRateSync) {             // traverse buffer once per beat-div
+                    const double beats = toneLfoDivisionBeats(params_.loopRateBeats);
+                    const double naturalSec = (double)wfLen_ / 44100.0;
+                    const double bpm = (double)(m.bpm > 1.0f ? m.bpm : 120.0f);
+                    const double syncSec = beats * 60.0 / bpm;
+                    lrMul = syncSec > 1e-6 ? naturalSec / syncSec : 1.0;
+                } else {
+                    lrMul = 0.25 * std::pow(2.0, 4.0 * v);                  // 0.25..4x
+                }
+                if (params_.loopVarispeed) {
+                    speedMul = lrMul;                   // coupled: pitch follows traversal
+                } else {
+                    loopGranular = true;                // decoupled: pitch note-locked
+                    morphInc = (44100.0 / sr_) * lrMul; // buffer-samples / output-sample
+                }
             }
             for (int k = 0; k < nTaps_; ++k) {
                 const double r = std::pow(2.0, tapOff_[k] / 12.0);   // voicing+detune
                 osc_[k].setFrequency(baseFreq * r);
                 osc_[k].setSpeedMul(speedMul);
+                osc_[k].setLoopRate(loopGranular, morphInc);         // D15
             }
 
             const double keyHz = params_.cutoffHz *
@@ -523,6 +555,7 @@ private:
     float  tapGain_  = 1.0f;
     rompler::bank3::WaveType waveType_ = rompler::bank3::WaveType::Cycle;
     double rootHz_   = 220.0;
+    uint32_t wfLen_  = 1;             // D15 loop length (cached at noteOn, for sync)
     float  waveNormGain_ = 1.0f;      // D11 per-wave loudness gain (cached at noteOn)
 };
 
@@ -762,6 +795,7 @@ public:
         m.mtxShapeAdd   = mtxShapeAdd_;
         m.mtxPanAdd     = mtxPanAdd_;
         m.mtxNoiseAdd   = mtxNoiseAdd_;
+        m.mtxLoopRateAdd = mtxLoopRateAdd_;
 
         for (auto& v : voices_) v.process(l, r, patch_, m);
     }
@@ -790,7 +824,8 @@ private:
             }
         };
 
-        float pitch = 0, cut1 = 0, cut2 = 0, shape = 0, vecAdd = 0, pan = 0, noise = 0;
+        float pitch = 0, cut1 = 0, cut2 = 0, shape = 0, vecAdd = 0, pan = 0, noise = 0,
+              loopRate = 0;
         for (const auto& s : patch_.slot) {
             if (s.src == mtx::srcNone || s.dest == mtx::dstNone) continue;
             if (s.src == mtx::srcVecPhs && s.dest == mtx::dstVecPhs) continue;
@@ -803,6 +838,7 @@ private:
             case mtx::dstVecPhs: vecAdd += v * 0.5f;  break;
             case mtx::dstPan:    pan    += v;         break;
             case mtx::dstNoise:  noise  += v;         break;
+            case mtx::dstLoopRate: loopRate += v;     break;   // D15 (normalized offset)
             case mtx::dstMorph:  break;               // reserved (V1.1/V2)
             case mtx::dstFxParam: break;              // s9 FX PARAM: reserved/inert
                                                       //  (needs GUI slot/focus target)
@@ -810,12 +846,13 @@ private:
             }
         }
 
-        mtxPitchSemis_ = pitch;
-        mtxCut1Oct_    = cut1;
-        mtxCut2Oct_    = cut2;
-        mtxShapeAdd_   = shape;
-        mtxPanAdd_     = pan;
-        mtxNoiseAdd_   = noise;
+        mtxPitchSemis_   = pitch;
+        mtxCut1Oct_      = cut1;
+        mtxCut2Oct_      = cut2;
+        mtxShapeAdd_     = shape;
+        mtxPanAdd_       = pan;
+        mtxNoiseAdd_     = noise;
+        mtxLoopRateAdd_  = loopRate;
         phi += vecAdd;
         basePhi_ = (float)(phi - std::floor(phi));
     }
@@ -833,7 +870,8 @@ private:
     float      basePhi_ = 0.0f, auxMax_ = 0.0f;
     float      shHeld_ = 0.0f, shSlewed_ = 0.0f;
     float      mtxPitchSemis_ = 0, mtxCut1Oct_ = 0, mtxCut2Oct_ = 0,
-               mtxShapeAdd_ = 0, mtxPanAdd_ = 0, mtxNoiseAdd_ = 0;
+               mtxShapeAdd_ = 0, mtxPanAdd_ = 0, mtxNoiseAdd_ = 0,
+               mtxLoopRateAdd_ = 0;   // D15
     bool       sustainDown_ = false;
     int        ctrlCount_ = 0;
 };

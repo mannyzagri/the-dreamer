@@ -218,6 +218,7 @@ private:
                            *detuneVoices, *detuneAmount,          // D9
                            *voicing, *dreamySpread, *loopMode,     // s11/s12
                            *hitPlay, *hitStretch, *hitPitchTrim,   // s13
+                           *loopRate, *loopRateSync, *loopRateBeats, *loopVarispeed, // D15
                            *auxDest, *auxAmt,
                            *tvfType, *tvfCut, *tvfRes, *tvfEnv, *tvfKf,
                            *tvfA, *tvfD, *tvfS, *tvfR,

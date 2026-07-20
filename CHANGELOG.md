@@ -3,6 +3,24 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-21 (PLAY MODE all-types + granular LOOP RATE, D15/D16) — **RC 2.3.0**.
+  Follow-up DSP round (UX_DSP_TASKS D15/D16, added after 2.2.0). **PARAM-LIST
+  CHANGE (16 new per-tone params + matrix dest 9→10) → Cubase FULL RE-SCAN.**
+  (D15) per-tone PLAY MODE (hit_play, displayed "Play Mode") now applies to ALL
+  wave types. LOOP + STRETCH = new **LOOP RATE**: the default is a **decoupled
+  granular** morph sweep — PcmOsc3 reads the buffer at NOTE PITCH via a 2-grain
+  50%-overlap Hann read (COLA→unity, click-free) while a separate morph clock
+  sweeps the grain start at loop_rate, so a pad's texture breathes slower/faster
+  **without detuning**. `loop_varispeed` = plain pitch-follows varispeed instead;
+  `loop_rate` 0..1→0.25×..4× (log, 0.5=1×); `loop_rate_sync`+`loop_rate_beats`
+  lock traversal to one buffer sweep per beat-division; loop_rate is mod-matrix
+  dest 10. CYCLE+STRETCH = graceful no-op. Granular path is gated → NORMAL loops
+  and every existing render stay byte-identical (dsp 10/10 incl loop/cycle
+  bit-identity + loop_tuning). (D16) naming only — `start_random` already exposes
+  automation name "Start Random" (not "RND"); GUI relabels. New params:
+  loop_rate/loop_rate_sync/loop_rate_beats/loop_varispeed_[t]. Validator dsp 10/10
+  + pluginval 8; clean build, no new warnings.
+
 - 2026-07-20 (UX polish round, D1–D14 + D11) — **RC 2.2.0**. Usability/product
   round from UX_DSP_TASKS.md (GUI-side counterpart flagged in
   design-handoff/UX_ROUND_HANDOFF.md). **PARAM-LIST CHANGE (~276→~296) → Cubase

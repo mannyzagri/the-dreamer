@@ -25,7 +25,7 @@
 // there); GUI displays 0-127 (bipolar -63..+63) regardless.
 //
 // Choice-count freezes: wave 218 (78 cycle + 130 Loop + 10 Shot, bank3 order);
-// flt type 14; shaper 6; tvf type 4; lfo/orbit shapes 5; mtx src 5, dst 9;
+// flt type 14; shaper 6; tvf type 4; lfo/orbit shapes 5; mtx src 5, dst 10;
 // voicing 4; dreamy_spread 3; loop_mode 2; hit_play 2; modfx 7; dly 3; rev 3.
 
 #pragma once
@@ -197,11 +197,15 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     const StringArray mtxSrcs     { "G-LFO", "Vec Phs", "Aux", "Velo", "Wheel" };
     const StringArray mtxDests    { "Pitch", "Cut 1", "Cut 2", "Morph",
                                     "Shape", "Vec Phs", "Pan", "Noise",
-                                    "Fx Param" };   // s9 dst 9 (reserved/inert)
+                                    "Fx Param", "Loop Rate" };   // s9 dst 9 (inert)
+                                                                 // + D15 dst 10 loop rate
     const StringArray voicings    { "Single", "Oct", "Power", "Dreamy" };
     const StringArray dreamySpreads { "Add9", "Min7", "Sus2" };
     const StringArray loopModes   { "Fwd", "Pingpong" };
     const StringArray hitPlays    { "Normal", "Stretch" };
+    // D15: loop-rate tempo divisions (one loop-morph sweep per division).
+    const StringArray loopRateBeats { "4/1", "2/1", "1/1", "1/2", "1/2T", "1/4",
+                                      "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32" };
 
     // ---- per-tone blocks (suffix _a.._d) -----------------------------------
     const char* toneNames[4] = { "A ", "B ", "C ", "D " };
@@ -236,10 +240,19 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
             ParameterID { tid("detune_voices", t), 1 }, P + "Detune Voices", 1, 4, 1));
         layout.add(uni(tid("detune_amount", t), P + "Detune Amount", 0.0f));
         layout.add(choice(tid("loop_mode", t), P + "Loop Mode", loopModes, 0));
-        layout.add(choice(tid("hit_play", t), P + "Hit Play", hitPlays, 0));
+        // D15: PLAY MODE (was hit-only) now applies to ALL wave types. Kept the
+        // id "hit_play" (no preset break); display generalized to "Play Mode".
+        layout.add(choice(tid("hit_play", t), P + "Play Mode", hitPlays, 0));
         layout.add(uni(tid("hit_stretch", t), P + "Hit Stretch", 0.5f));
         layout.add(std::make_unique<AudioParameterInt>(
             ParameterID { tid("hit_pitchtrim", t), 1 }, P + "Hit Pitch Trim", -24, 24, 0));
+        // D15: LOOP + STRETCH -> decoupled morph speed (pitch stays on the note)
+        // unless loop_varispeed (plain pitch-follows varispeed). loop_rate is
+        // 0..1 -> 0.25x..4x (log, 0.5 = 1.0x); tempo-syncable via the beat list.
+        layout.add(uni(tid("loop_rate", t), P + "Loop Rate", 0.5f));
+        layout.add(boolean(tid("loop_rate_sync", t), P + "Loop Rate Sync", false));
+        layout.add(choice(tid("loop_rate_beats", t), P + "Loop Rate Beats", loopRateBeats, 5));
+        layout.add(boolean(tid("loop_varispeed", t), P + "Loop Varispeed", false));
         // v7: two per-tone LFOs (rate free-Hz or tempo-synced to 12 divisions)
         for (int lf = 1; lf <= 2; ++lf) {
             const String LB = "lfo" + String(lf) + "_";
