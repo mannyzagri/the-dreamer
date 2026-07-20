@@ -56,5 +56,24 @@ parameter's formatted text, don't compute 0–127.
   to JUCE's VST3 wrapper; the internal learn routes CCs host-agnostically.
 - **D16** `start_random_[t]` already exposes the automation name **"Start Random"**
   (not "RND"); GUI just relabels the button.
-- **D15** (PLAY MODE all-types + granular LOOP RATE) is the **next** DSP round —
-  not in v2.2.0.
+- **D15/D16 shipped in v2.3.0** (see below).
+
+## v2.3.0 additions (D15 PLAY MODE all-types + LOOP RATE; D16 naming)
+
+Param-list changed again → **RE-SCAN**. New per-tone params (bind by ID):
+
+| ID | Type / range | Default | Notes |
+|---|---|---|---|
+| `hit_play_[t]` | Choice Normal/Stretch | Normal | **now "Play Mode", all wave types** (was hit-only) |
+| `loop_rate_[t]` | Float 0..1 | 0.5 | LOOP+STRETCH morph speed → 0.25×..4× (log, 0.5=1×); mod-matrix dest "Loop Rate" |
+| `loop_rate_sync_[t]` | Bool | false | lock traversal to host tempo |
+| `loop_rate_beats_[t]` | Choice (12 divs) | 1/4 | beat-division when synced (4/1…1/32) |
+| `loop_varispeed_[t]` | Bool | false | ON = plain pitch-follows varispeed instead of the decoupled granular sweep |
+
+GUI (UX_GUI): expose PLAY MODE on all tones; on a LOOP wave + STRETCH show a
+LOOP RATE knob (+ SYNC toggle / beats stepper) and a VARISPEED toggle. On a HIT
+wave STRETCH keeps HIT STRETCH/PITCH TRIM; on a CYCLE wave STRETCH is inert
+(dim/hide). `loop_rate` also appears as mod-matrix destination "Loop Rate".
+
+- **D16** `start_random_[t]` automation name is already "Start Random" — GUI just
+  relabels the RND button; no new param.
