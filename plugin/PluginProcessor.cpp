@@ -162,15 +162,75 @@ void TheDreamerProcessor::applyPreset(int index)
             param->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, (float)(double)value));
         }
     }
-    currentProgram = index;
+    currentProgram = index + 1;             // D4: host program 0 is INIT
+}
+
+// D4 INIT patch. Reset every parameter to its APVTS default, then apply the
+// INIT-specific delta (tone A = Basic Saw cycle). The layout defaults already
+// encode the rest of the spec: tone A on / B-D off, serial routing, filter 1
+// LP fully open + res 0, filter 2 neutral, all FX off, no orbit/p-env, master
+// 0.78, limiter on. Message thread only (setValueNotifyingHost).
+void TheDreamerProcessor::resetToInit()
+{
+    for (auto* p : getParameters())
+        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*>(p))
+            rp->setValueNotifyingHost(rp->getDefaultValue());
+
+    if (auto* w = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(tid("wave", 0))))
+    {
+        int sawIdx = 0;
+        for (int i = 0; i < rompler::bank3::kNumWaveforms; ++i)
+            if (juce::String(rompler::bank3::kWaveforms[(size_t)i].category) == "Basic"
+                && juce::String(rompler::bank3::kWaveforms[(size_t)i].name) == "Saw")
+            { sawIdx = i; break; }
+        w->setValueNotifyingHost(w->convertTo0to1((float)sawIdx));
+    }
+    currentProgram = 0;
 }
 
 const juce::String TheDreamerProcessor::getProgramName(int index)
 {
-    if (index < 0 || index >= (int)presets.size())
-        return {};
-    const auto& p = presets[(size_t)index];
+    if (index <= 0) return "INIT";                       // D4 program 0
+    const int f = index - 1;
+    if (f >= (int)presets.size()) return {};
+    const auto& p = presets[(size_t)f];
     return p.category.isNotEmpty() ? (p.category + ": " + p.name) : p.name;
+}
+
+// D13 panic (message thread): request an audio-thread flush. Never touch synth
+// or FX state from here -- that would race processBlock.
+void TheDreamerProcessor::panic() noexcept { panicRequested.store(true, std::memory_order_relaxed); }
+
+// D13 flush (audio thread): hard-off all voices and zero the FX tails so no
+// delay/reverb energy survives. Also the NaN-recovery sink (GAIN_STAGING 7d).
+void TheDreamerProcessor::flushFx() noexcept
+{
+    synth.killAll();
+    delay.reset();                          // long tails -- the D13 priority
+    reverb.reset();
+    reverbWasActive = false;
+    revCache.type = -1;
+    for (auto& c : reverbWetL) c = 0.0f;
+    for (auto& c : reverbWetR) c = 0.0f;
+    ensemble.reset(); dimension.reset(); rotary.reset(); barberpole.reset();
+    chorus.reset();   flanger.reset();      phaser.reset();
+    for (int ch = 0; ch < 2; ++ch) dcBlock[ch].reset();
+}
+
+// D3: snapshot the last n final-output samples (in order) as an Array<var> for
+// the WebView analyzer. n clamped to the ring size. Message thread (editor timer).
+juce::var TheDreamerProcessor::getScopeData(int n) const
+{
+    if (n < 1) n = 1; else if (n > kScopeSize) n = kScopeSize;
+    const uint32_t w = scopeWrite.load(std::memory_order_acquire);
+    juce::Array<juce::var> out;
+    out.ensureStorageAllocated(n);
+    for (int i = n; i > 0; --i)
+    {
+        const uint32_t idx = (w - (uint32_t)i) & (uint32_t)(kScopeSize - 1);
+        out.add((double)scopeBuf[(size_t)idx]);
+    }
+    return out;
 }
 
 juce::String TheDreamerProcessor::presetName(int index) const
@@ -395,6 +455,10 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     buildPatch(synth.patch());
     synth.updateLive();
+
+    // D13: consume a pending panic (GUI button) on the audio thread.
+    if (panicRequested.exchange(false, std::memory_order_relaxed))
+        flushFx();
 
     // host tempo for the tone-LFO + delay sync divisions (fallback 120)
     double bpm = 120.0;
@@ -661,6 +725,7 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     const bool limiterOn = pLimiterOn->load() > 0.5f;   // D12
     float peakL = 0.0f, peakR = 0.0f;
     float grMin = 1.0f;                                  // D12: worst gain ratio
+    uint32_t sw = scopeWrite.load(std::memory_order_relaxed);   // D3 ring index
     for (int n = 0; n < numSamples; ++n) {
         float l = left[n];
         float r = right != nullptr ? right[n] : left[n];
@@ -689,8 +754,21 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         }
         left[n] = l;
         if (right != nullptr) right[n] = r;
+        // D3: tap the FINAL output (post-master/limiter) into the scope ring.
+        scopeBuf[(size_t)(sw & (uint32_t)(kScopeSize - 1))] = 0.5f * (l + r);
+        ++sw;
         peakL = std::fmax(peakL, std::fabs(l));
         peakR = std::fmax(peakR, std::fabs(r));
+    }
+    scopeWrite.store(sw, std::memory_order_release);        // D3 publish
+    // D13 NaN-recovery (GAIN_STAGING 7d): a non-finite peak means the chain blew
+    // up -- clear the audio out, flush voices+FX, and blank the scope window so
+    // nothing propagates NaN downstream or into the GUI FFT.
+    if (! std::isfinite(peakL) || ! std::isfinite(peakR)) {
+        buffer.clear();
+        flushFx();
+        scopeBuf.fill(0.0f);
+        peakL = peakR = 0.0f;
     }
     meterL.store(peakL, std::memory_order_relaxed);
     meterR.store(peakR, std::memory_order_relaxed);

@@ -8,6 +8,7 @@
 // Parameters: DSP_BUILD.md section 9 canonical table (see Params.h for the
 // flagged additions). Normalized 0..1 -> unit maps live in this file.
 #pragma once
+#include <array>
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include "dsp/glue/DreamVoice.h"
@@ -45,9 +46,11 @@ public:
     // Factory preset bank -- processor-owned (PRESETS.md). The standard program
     // interface exposes the whole bank to the host's own preset menu; every
     // program IS a factory preset. Presets are parsed once at construction.
-    int getNumPrograms() override { return juce::jmax(1, (int)presets.size()); }
+    // D4: program 0 = INIT (synthetic); programs 1..N = factory presets. The
+    // GUI's applyPreset()/getPresetList() stay 0-based over the FACTORY bank.
+    int getNumPrograms() override { return (int)presets.size() + 1; }
     int getCurrentProgram() override { return currentProgram; }
-    void setCurrentProgram(int i) override { applyPreset(i); }
+    void setCurrentProgram(int i) override { if (i <= 0) resetToInit(); else applyPreset(i - 1); }
     const juce::String getProgramName(int i) override;
     void changeProgramName(int, const juce::String&) override {}
 
@@ -56,6 +59,9 @@ public:
     // becomes a viewer: it asks for names/categories and calls applyPreset --
     // it never holds the preset data itself.
     void         applyPreset(int index);   // atomic APVTS swap (message thread)
+    void         resetToInit();            // D4: INIT patch (basic saw, FX off)
+    void         panic() noexcept;         // D13: all-notes-off + FX flush (msg thread)
+    juce::var    getScopeData(int n = 2048) const;  // D3: final-output tap for GUI FFT
     int          presetCount() const noexcept { return (int)presets.size(); }
     juce::String presetName(int index) const;
     juce::String presetCategory(int index) const;
@@ -160,6 +166,20 @@ private:
     // output metering feed to the editor (peak-hold in the GUI)
     std::atomic<float> meterL { 0.0f }, meterR { 0.0f };
     std::atomic<float> limiterGR { 0.0f };   // D12 output-stage GR in dB
+
+    // D13 panic: GUI button / NaN-recovery -> flush voices + FX on the audio
+    // thread (never mutate DSP state from the message thread). Consumed at the
+    // top of processBlock.
+    std::atomic<bool> panicRequested { false };
+    void flushFx() noexcept;                 // kill FX tails (audio thread)
+
+    // D3 analyzer tap: lock-free ring of the FINAL output (post-master/limiter),
+    // written per-sample on the audio thread, snapshotted by the editor ~20 fps.
+    // Single producer (audio) / single consumer (GUI); a torn read only shows a
+    // slightly stale scope, never UB.
+    static constexpr int kScopeSize = 2048;   // power of two
+    std::array<float, (size_t)kScopeSize> scopeBuf {};
+    std::atomic<uint32_t> scopeWrite { 0 };
 
     juce::SmoothedValue<float> masterSmoothed;
 
