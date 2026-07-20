@@ -3,6 +3,34 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-20 (UX polish round, D1–D14 + D11) — **RC 2.2.0**. Usability/product
+  round from UX_DSP_TASKS.md (GUI-side counterpart flagged in
+  design-handoff/UX_ROUND_HANDOFF.md). **PARAM-LIST CHANGE (~276→~296) → Cubase
+  FULL RE-SCAN.** Also added `VERSION ${PROJECT_VERSION}` to juce_add_plugin so
+  the Windows PE tracks the real version ([[juce-pe-version-resource-gotcha]]).
+  (D1) env A/D/R map cubic→exponential (1 ms–10 s) in a shared JUCE-free
+  ParamLaws.h; params show real units ("340 ms"/"1.2 s"); preset env-times
+  migrated (1488 values) to preserve authored seconds. (D2, felt bug) envelopes
+  read A/D/S/R **continuously** (updateLive re-sets all three) so a ringing tail
+  shortens the moment you cut RELEASE. (D5) global bipolar offsets g_env_a/d/s/r
+  + g_cutoff/g_res add to every tone's normalized value, clamped, relationships
+  preserved. (D7) per-tone `semi` −12..+12; (D8) `g_octave` −2..+2. (D9) per-tone
+  engine detune: detune_voices 1..4 × detune_amount (0..±25 c) = symmetric taps
+  per voicing tap, equal-power, phase-coherent (voices=1 bit-exact no-op). (D10)
+  `tvf_kf` unipolar→bipolar (−100..+100, detent 0; darker up the keyboard);
+  presets migrated old[0..1]→[0.5..1] (188 values). (D12) `limiter_on` (default
+  ON) gates the output soft-clip+ceiling; `getLimiterGR()` dB telemetry. (D4)
+  host program 0 = INIT (basic saw, FX off); factory presets shift to programs
+  1..N; GUI preset API unchanged. (D13) `panic()` = all-notes-off + FX flush
+  (audio-thread, also NaN-recovery). (D3) lock-free 2048-sample output tap
+  `getScopeData()` for the GUI FFT. (D6) MIDI learn (CC→any param, persisted in a
+  new DreamerState wrapper; legacy states still load); (D14) user presets
+  save/rename/delete/load in userAppData, factory bank read-only, list tagged
+  FACTORY/USER. (D11) per-wave **playback** loudness gain (bank bytes untouched,
+  rule 3): cycles+loops normalized to −14 dBFS RMS, HITs keep peak 0.98; baked by
+  tools/bake_wave_norm.cpp → dsp/glue/WaveNormTable.h. Validator dsp 10/10 +
+  pluginval 8; clean build, no new warnings. D15/D16 deferred to the next round.
+
 - 2026-07-19 (wave library → v3) — **RC 2.1.2**. Replaced the loop library with
   dreamer-library-v3.zip. The 130 loop **filenames are identical** to v2 (same
   manifest order) → **wave indices, preset references, and tone wave names fully
