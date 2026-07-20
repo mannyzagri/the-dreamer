@@ -63,6 +63,20 @@ public:
     void         panic() noexcept;         // D13: all-notes-off + FX flush (msg thread)
     juce::var    getScopeData(int n = 2048) const;  // D3: final-output tap for GUI FFT
     int          presetCount() const noexcept { return (int)presets.size(); }
+
+    // ---- D6 MIDI learn (message thread; GUI right-click drives it) ----------
+    void midiLearnStart(const juce::String& paramId);   // arm: next CC binds paramId
+    void midiLearnCancel();                              // disarm
+    void midiLearnClearParam(const juce::String& paramId);  // drop paramId's CC map
+    int  midiLearnCcForParam(const juce::String& paramId) const;  // -1 if unmapped
+    bool midiLearnIsArmed() const noexcept { return midiLearnTarget.load() >= 0; }
+
+    // ---- D14 user presets (message thread; factory bank stays read-only) ----
+    bool      saveUserPreset(const juce::String& name);
+    bool      renameUserPreset(const juce::String& oldName, const juce::String& newName);
+    bool      deleteUserPreset(const juce::String& name);
+    bool      loadUserPreset(const juce::String& name);
+    juce::var getUserPresetList() const;   // Array<{name,category,bank:"USER"}>
     juce::String presetName(int index) const;
     juce::String presetCategory(int index) const;
     juce::var    getPresetList() const;     // Array<{name,category}> for editors
@@ -121,6 +135,19 @@ private:
     void drainGuiMidi() noexcept;              // audio thread, top of processBlock
 
     void buildPatch(dreamer::DreamPatch& p) const;
+
+    // ---- D6 MIDI-learn state -----------------------------------------------
+    // CC (0..127) -> flat parameter index (-1 = unmapped). Written on the
+    // message thread (learn/clear/state-load) and the audio thread (learn
+    // capture); atomic ints keep it lock-free. midiLearnTarget is the param
+    // index armed for the next incoming CC (-1 = not learning).
+    std::atomic<int> ccToParam[128];
+    std::atomic<int> midiLearnTarget { -1 };
+    std::vector<juce::RangedAudioParameter*> paramByIndex;   // flat index -> param
+    int  paramIndexForId(const juce::String& id) const;      // -1 if not found
+    void applyParamMap(const std::vector<std::pair<juce::String, juce::var>>& values);
+    juce::DynamicObject::Ptr captureParamMap() const;        // current APVTS -> JSON map
+    juce::File userPresetDir() const;                        // ~/The Dreamer/Presets
 
     // ---- factory preset bank (parsed once from BinaryData::presets_json) -----
     // Values are stored exactly as the JSON holds them: normalized 0..1 for all

@@ -66,6 +66,12 @@ TheDreamerProcessor::TheDreamerProcessor()
     pGCutoff = p(kGCutoff); pGRes = p(kGRes);
     pGOctave = p(kGOctave); pLimiterOn = p(kLimiterOn);
 
+    // D6: flat param index table + empty CC map.
+    for (auto* rp : getParameters())
+        if (auto* r = dynamic_cast<juce::RangedAudioParameter*>(rp))
+            paramByIndex.push_back(r);
+    for (auto& c : ccToParam) c.store(-1, std::memory_order_relaxed);
+
     loadFactoryPresets();   // parse embedded bank once (message thread, ctor)
 }
 
@@ -137,31 +143,31 @@ void TheDreamerProcessor::loadFactoryPresets()
 //
 // NaN/Inf: values are JSON literals already in range; convertTo0to1 and the
 // direct 0..1 pass-through cannot manufacture NaN/Inf, so no sanitising needed.
+// Shared preset decoder (factory + user). Encoding contract: bool -> true/false;
+// choice -> integer index; Float/Int -> the normalized 0..1 value straight
+// through. Message thread only (setValueNotifyingHost).
+void TheDreamerProcessor::applyParamMap(
+    const std::vector<std::pair<juce::String, juce::var>>& values)
+{
+    for (const auto& [id, value] : values)
+    {
+        auto* param = apvts.getParameter(id);
+        if (param == nullptr) continue;     // unknown id -> skip (belt-and-braces)
+
+        if (dynamic_cast<juce::AudioParameterBool*>(param) != nullptr)
+            param->setValueNotifyingHost((bool)value ? 1.0f : 0.0f);
+        else if (auto* cp = dynamic_cast<juce::AudioParameterChoice*>(param))
+            param->setValueNotifyingHost(cp->convertTo0to1((float)(int)value));
+        else
+            param->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, (float)(double)value));
+    }
+}
+
 void TheDreamerProcessor::applyPreset(int index)
 {
     if (index < 0 || index >= (int)presets.size())
         return;
-
-    const auto& preset = presets[(size_t)index];
-    for (const auto& [id, value] : preset.values)
-    {
-        auto* param = apvts.getParameter(id);
-        if (param == nullptr)   // validated at parse time; belt-and-braces
-            continue;
-
-        if (dynamic_cast<juce::AudioParameterBool*>(param) != nullptr)
-        {
-            param->setValueNotifyingHost((bool)value ? 1.0f : 0.0f);
-        }
-        else if (auto* cp = dynamic_cast<juce::AudioParameterChoice*>(param))
-        {
-            param->setValueNotifyingHost(cp->convertTo0to1((float)(int)value));
-        }
-        else   // Float / Int: JSON value IS the normalized 0..1 value
-        {
-            param->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, (float)(double)value));
-        }
-    }
+    applyParamMap(presets[(size_t)index].values);
     currentProgram = index + 1;             // D4: host program 0 is INIT
 }
 
@@ -253,6 +259,7 @@ juce::var TheDreamerProcessor::getPresetList() const
         auto* o = new juce::DynamicObject();
         o->setProperty("name", p.name);
         o->setProperty("category", p.category);
+        o->setProperty("bank", "FACTORY");   // D14: GUI distinguishes FACTORY/USER
         list.add(juce::var(o));
     }
     return juce::var(list);
@@ -497,8 +504,22 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             pushEvent({ ofs, NoteEvent::Type::allNotesOff, 0, 0.0f });
         else if (msg.isAllSoundOff())
             pushEvent({ ofs, NoteEvent::Type::allSoundOff, 0, 0.0f });
-        else if (msg.isControllerOfType(1))
-            synth.setWheel(msg.getControllerValue() / 127.0f);
+        else if (msg.isController()) {
+            const int   cc = juce::jlimit(0, 127, msg.getControllerNumber());
+            const float v  = msg.getControllerValue() / 127.0f;
+            if (cc == 1) synth.setWheel(v);          // CC1 stays the wheel mod source
+            // D6 MIDI learn: if armed, bind this CC to the target param; then
+            // route any mapped CC to its param. setValueNotifyingHost moves the
+            // host + GUI too (the accepted MIDI-learn idiom; not per-sample).
+            const int lt = midiLearnTarget.load(std::memory_order_relaxed);
+            if (lt >= 0) {
+                ccToParam[cc].store(lt, std::memory_order_relaxed);
+                midiLearnTarget.store(-1, std::memory_order_relaxed);
+            }
+            const int pi = ccToParam[cc].load(std::memory_order_relaxed);
+            if (pi >= 0 && pi < (int)paramByIndex.size())
+                paramByIndex[(size_t)pi]->setValueNotifyingHost(v);
+        }
     }
 
     const int   routing = (int)pFltRoute->load();
@@ -830,18 +851,174 @@ void TheDreamerProcessor::drainGuiMidi() noexcept
 }
 
 //==============================================================================
+// ---- D6 MIDI learn (message thread) ----------------------------------------
+int TheDreamerProcessor::paramIndexForId(const juce::String& id) const
+{
+    for (int i = 0; i < (int)paramByIndex.size(); ++i)
+        if (paramByIndex[(size_t)i]->paramID == id) return i;
+    return -1;
+}
+void TheDreamerProcessor::midiLearnStart(const juce::String& id)
+{ midiLearnTarget.store(paramIndexForId(id), std::memory_order_relaxed); }
+void TheDreamerProcessor::midiLearnCancel()
+{ midiLearnTarget.store(-1, std::memory_order_relaxed); }
+void TheDreamerProcessor::midiLearnClearParam(const juce::String& id)
+{
+    const int idx = paramIndexForId(id);
+    if (idx < 0) return;
+    for (auto& c : ccToParam)
+        if (c.load(std::memory_order_relaxed) == idx) c.store(-1, std::memory_order_relaxed);
+}
+int TheDreamerProcessor::midiLearnCcForParam(const juce::String& id) const
+{
+    const int idx = paramIndexForId(id);
+    if (idx < 0) return -1;
+    for (int cc = 0; cc < 128; ++cc)
+        if (ccToParam[cc].load(std::memory_order_relaxed) == idx) return cc;
+    return -1;
+}
+
+// ---- D14 user presets (message thread; factory bank stays read-only) -------
+juce::File TheDreamerProcessor::userPresetDir() const
+{
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+             .getChildFile("The Dreamer").getChildFile("Presets");
+}
+// Current APVTS -> a JSON param map in the same encoding as the factory bank.
+juce::DynamicObject::Ptr TheDreamerProcessor::captureParamMap() const
+{
+    juce::DynamicObject::Ptr obj = new juce::DynamicObject();
+    for (auto* rp : paramByIndex)
+    {
+        const juce::String id = rp->paramID;
+        if (auto* b = dynamic_cast<juce::AudioParameterBool*>(rp))   obj->setProperty(id, b->get());
+        else if (auto* c = dynamic_cast<juce::AudioParameterChoice*>(rp)) obj->setProperty(id, c->getIndex());
+        else obj->setProperty(id, (double)rp->getValue());          // normalized 0..1
+    }
+    return obj;
+}
+bool TheDreamerProcessor::saveUserPreset(const juce::String& name)
+{
+    const juce::String safe = juce::File::createLegalFileName(name).trim();
+    if (safe.isEmpty()) return false;
+    auto dir = userPresetDir();
+    if (! dir.isDirectory()) dir.createDirectory();
+    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    root->setProperty("name", name);
+    root->setProperty("category", "USER");
+    root->setProperty("bank", "USER");
+    root->setProperty("params", juce::var(captureParamMap().get()));
+    return dir.getChildFile(safe + ".json").replaceWithText(juce::JSON::toString(juce::var(root.get())));
+}
+bool TheDreamerProcessor::loadUserPreset(const juce::String& name)
+{
+    auto f = userPresetDir().getChildFile(juce::File::createLegalFileName(name) + ".json");
+    if (! f.existsAsFile()) return false;
+    auto parsed = juce::JSON::parse(f);
+    auto* o = parsed.getDynamicObject();
+    if (o == nullptr) return false;
+    auto* po = o->getProperty("params").getDynamicObject();
+    if (po == nullptr) return false;
+    std::vector<std::pair<juce::String, juce::var>> values;
+    for (auto& prop : po->getProperties())
+        values.emplace_back(prop.name.toString(), prop.value);
+    applyParamMap(values);
+    return true;
+}
+bool TheDreamerProcessor::renameUserPreset(const juce::String& oldName, const juce::String& newName)
+{
+    auto dir = userPresetDir();
+    auto a = dir.getChildFile(juce::File::createLegalFileName(oldName) + ".json");
+    const juce::String safeNew = juce::File::createLegalFileName(newName).trim();
+    if (! a.existsAsFile() || safeNew.isEmpty()) return false;
+    auto parsed = juce::JSON::parse(a);
+    if (auto* o = parsed.getDynamicObject()) o->setProperty("name", newName);
+    auto b = dir.getChildFile(safeNew + ".json");
+    if (! b.replaceWithText(juce::JSON::toString(parsed))) return false;
+    if (b != a) a.deleteFile();
+    return true;
+}
+bool TheDreamerProcessor::deleteUserPreset(const juce::String& name)
+{
+    return userPresetDir().getChildFile(juce::File::createLegalFileName(name) + ".json").deleteFile();
+}
+juce::var TheDreamerProcessor::getUserPresetList() const
+{
+    juce::Array<juce::var> list;
+    auto dir = userPresetDir();
+    if (dir.isDirectory())
+        for (auto& f : dir.findChildFiles(juce::File::findFiles, false, "*.json"))
+        {
+            auto parsed = juce::JSON::parse(f);
+            auto* o = parsed.getDynamicObject();
+            auto* e = new juce::DynamicObject();
+            e->setProperty("name", o != nullptr ? o->getProperty("name")
+                                                : juce::var(f.getFileNameWithoutExtension()));
+            e->setProperty("category", o != nullptr ? o->getProperty("category") : juce::var("USER"));
+            e->setProperty("bank", "USER");
+            list.add(juce::var(e));
+        }
+    return juce::var(list);
+}
+
+//==============================================================================
+// State = a wrapper element holding the APVTS param tree + the D6 MIDI-learn
+// map. Old (pre-D6) states whose root IS the APVTS tree still load (legacy
+// branch), so existing projects are not broken.
+static const juce::Identifier kStateRoot   { "DreamerState" };
+static const juce::Identifier kMidiLearnTag { "MIDILEARN" };
+
 void TheDreamerProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    if (auto xml = apvts.copyState().createXml())
-        copyXmlToBinary(*xml, destData);
+    juce::XmlElement root(kStateRoot);
+    if (auto params = apvts.copyState().createXml())
+        root.addChildElement(params.release());       // owned by root now
+    auto* ml = root.createNewChildElement(kMidiLearnTag);
+    for (int cc = 0; cc < 128; ++cc)
+    {
+        const int idx = ccToParam[cc].load(std::memory_order_relaxed);
+        if (idx >= 0 && idx < (int)paramByIndex.size())
+        {
+            auto* m = ml->createNewChildElement("MAP");
+            m->setAttribute("cc", cc);
+            m->setAttribute("param", paramByIndex[(size_t)idx]->paramID);
+        }
+    }
+    copyXmlToBinary(root, destData);
 }
 
 void TheDreamerProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
-    if (auto xml = getXmlFromBinary(data, sizeInBytes))
-        if (xml->hasTagName(apvts.state.getType()))
+    auto xml = getXmlFromBinary(data, sizeInBytes);
+    if (xml == nullptr) return;
+
+    juce::XmlElement* paramsXml = nullptr;
+    juce::XmlElement* mlXml     = nullptr;
+    if (xml->hasTagName(kStateRoot))                       // D6 wrapper format
+    {
+        paramsXml = xml->getChildByName(apvts.state.getType());
+        mlXml     = xml->getChildByName(kMidiLearnTag);
+    }
+    else if (xml->hasTagName(apvts.state.getType()))       // legacy pre-D6 state
+    {
+        paramsXml = xml.get();
+    }
+
+    // D6: rebuild the CC map (empty if none stored / legacy state).
+    for (auto& c : ccToParam) c.store(-1, std::memory_order_relaxed);
+    if (mlXml != nullptr)
+        for (auto* m = mlXml->getChildByName("MAP"); m != nullptr;
+             m = m->getNextElementWithTagName("MAP"))
         {
-            apvts.replaceState(juce::ValueTree::fromXml(*xml));
+            const int cc  = m->getIntAttribute("cc", -1);
+            const int idx = paramIndexForId(m->getStringAttribute("param"));
+            if (cc >= 0 && cc < 128 && idx >= 0)
+                ccToParam[cc].store(idx, std::memory_order_relaxed);
+        }
+
+    if (paramsXml != nullptr)
+        {
+            apvts.replaceState(juce::ValueTree::fromXml(*paramsXml));
 
             // --- pluginval strictness-8 "Plugin state restoration" fix --------
             // Snap every AudioParameterBool to a clean 0.0/1.0 after a state load.
