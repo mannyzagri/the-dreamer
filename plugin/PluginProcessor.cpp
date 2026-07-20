@@ -299,6 +299,8 @@ void TheDreamerProcessor::cacheTonePtrs(TonePtrs& dst, int t)
     dst.voicing = p("voicing"); dst.dreamySpread = p("dreamy_spread");
     dst.loopMode = p("loop_mode"); dst.hitPlay = p("hit_play");
     dst.hitStretch = p("hit_stretch"); dst.hitPitchTrim = p("hit_pitchtrim");
+    dst.loopRate = p("loop_rate"); dst.loopRateSync = p("loop_rate_sync");
+    dst.loopRateBeats = p("loop_rate_beats"); dst.loopVarispeed = p("loop_varispeed");
     for (int lf = 0; lf < 2; ++lf) {
         const juce::String lb = "lfo" + juce::String(lf + 1) + "_";
         auto q = [&](const char* s) {
@@ -400,6 +402,10 @@ void TheDreamerProcessor::buildPatch(dreamer::DreamPatch& patch) const
         d.hitPlay      = (int)s.hitPlay->load();        // s13
         d.hitStretch   = s.hitStretch->load();          // s13 (0..1)
         d.hitPitchTrim = s.hitPitchTrim->load();        // s13 (Int -24..+24)
+        d.loopRate      = s.loopRate->load();           // D15
+        d.loopRateSync  = s.loopRateSync->load() > 0.5f;
+        d.loopRateBeats = (int)s.loopRateBeats->load();
+        d.loopVarispeed = s.loopVarispeed->load() > 0.5f;
         d.shapeMode    = (int)s.shape->load();
         d.shapeDepth   = s.shapeDepth->load();
         d.tvfMode      = (int)s.tvfType->load();

@@ -18,6 +18,7 @@
 
 #pragma once
 #include <cstdint>
+#include <cmath>
 #include "dsp/bank/Bank3.h"
 
 namespace dreamer {
@@ -39,6 +40,17 @@ public:
     // increment (Cycle path deliberately untouched -> stays v2 bit-identical).
     // Default 1.0 keeps every existing render byte-for-byte identical.
     void setSpeedMul(double m) noexcept { speedMul_ = m; updateIncrement(); }
+
+    // D15: decoupled LOOP RATE (Loop type only). When on, the buffer is read at
+    // NOTE PITCH (inc64_, unchanged) via a 2-grain 50%-overlap Hann granular
+    // read, while the grain start position (the "morph clock") sweeps the buffer
+    // at morphInc buffer-samples/output-sample -- so the texture evolves at
+    // loop_rate independent of pitch. Off by default -> the plain loop path runs
+    // and every existing render stays byte-identical. Cycle/OneShot ignore it.
+    void setLoopRate(bool on, double morphInc) noexcept {
+        loopRateMode_ = on;
+        morphInc_     = morphInc;
+    }
 
     // --- test-only observers (RT-neutral, no state) ---------------------------
     uint32_t sampleIndexForTest() const noexcept { return (uint32_t)(phase64_ >> 32); }
@@ -62,6 +74,10 @@ public:
         } else {
             const double s = start01 * (double)(wf_->length - 1);
             phase64_ = (uint64_t)(s * 4294967296.0);
+            // D15 granular state (harmless when loopRateMode_ is off)
+            morphPos_   = s;
+            grainAge_[0] = grainAge_[1] = grainLen_;   // both inactive
+            retrig_     = 0;                            // spawn on first sample
         }
     }
 
@@ -87,6 +103,10 @@ public:
             if (phase32_ >= kCycleWrap) phase32_ -= kCycleWrap;
             return out;
         }
+
+        // ---- D15 decoupled loop-rate granular read (Loop only) ----------
+        if (loopRateMode_ && w->type == rompler::bank3::WaveType::Loop)
+            return processLoopGrain(w);
 
         // ---- Loop / OneShot: 32.32 phase over the buffer ----------------
         if (finished_) return 0.0f;
@@ -150,6 +170,46 @@ public:
 private:
     static constexpr uint32_t kCycleWrap = 600u << 16;
     static constexpr float    kNorm      = 1.0f / 32768.0f;
+    static constexpr uint32_t kGrainLen  = 2048u;   // ~43 ms @48k, 50% overlap
+
+    // D15: 2-grain 50%-overlap Hann granular read. Each grain reads the buffer
+    // forward at NOTE PITCH (inc64_) from a start captured at the morph clock;
+    // the morph clock sweeps at morphInc_ (loop_rate). Two Hann grains hopped by
+    // grainLen_/2 sum to unity (COLA), so pitch is note-locked and click-free
+    // while the traversed region evolves at loop_rate.
+    float processLoopGrain(const rompler::bank3::Waveform* w) noexcept {
+        const double lo = (double)w->loopStart, hi = (double)w->length;
+        const double span = hi - lo;
+        if (span < 2.0) return 0.0f;
+        const double pitchInc = (double)inc64_ * (1.0 / 4294967296.0);   // note pitch
+        float out = 0.0f;
+        for (int g = 0; g < 2; ++g) {
+            if (grainAge_[g] >= grainLen_) continue;
+            double rp = grainStart_[g] + (double)grainAge_[g] * pitchInc;
+            rp = lo + std::fmod(rp - lo, span);
+            if (rp < lo) rp += span;
+            uint32_t idx = (uint32_t)rp;
+            if (idx >= (uint32_t)hi) idx = w->loopStart;
+            uint32_t nxt = idx + 1; if (nxt >= (uint32_t)hi) nxt = w->loopStart;
+            const double frac = rp - (double)(uint32_t)rp;
+            const double a = (double)w->samples[idx], b = (double)w->samples[nxt];
+            const float s = (float)((a + (b - a) * frac) * (double)kNorm);
+            const float ph  = (float)grainAge_[g] / (float)grainLen_;         // 0..1
+            const float win = 0.5f - 0.5f * std::cos(6.28318530717959f * ph); // Hann
+            out += s * win;
+            ++grainAge_[g];
+        }
+        if (--retrig_ <= 0) {                    // 50% hop -> reuse the older slot
+            retrig_ = (int)(grainLen_ / 2u);
+            const int slot = (grainAge_[0] >= grainAge_[1]) ? 0 : 1;
+            grainStart_[slot] = morphPos_;
+            grainAge_[slot]   = 0;
+        }
+        morphPos_ += morphInc_;                  // morph clock (loop_rate)
+        if (morphPos_ >= hi) morphPos_ = lo + std::fmod(morphPos_ - lo, span);
+        if (morphPos_ < lo)  morphPos_ = lo;
+        return out;
+    }
 
     void updateIncrement() noexcept {
         if (wf_->type == rompler::bank3::WaveType::Cycle) {
@@ -174,6 +234,13 @@ private:
     bool     finished_   = false;
     bool     pingpong_   = false;   // s12 loop mode (Loop only)
     int      dir_        = 1;       // pingpong travel direction (+1/-1)
+    // D15 granular decoupled loop-rate state
+    bool     loopRateMode_ = false;
+    uint32_t grainLen_     = kGrainLen;
+    double   morphPos_     = 0.0, morphInc_ = 0.0;
+    double   grainStart_[2] = { 0.0, 0.0 };
+    uint32_t grainAge_[2]  = { kGrainLen, kGrainLen };
+    int      retrig_       = 0;
 };
 
 } // namespace dreamer

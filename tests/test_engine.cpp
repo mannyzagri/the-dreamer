@@ -779,6 +779,41 @@ int main(int argc, char** argv) {
             CHECK(dreamer::kWaveNormGain[i] == 1.0f, "HIT playback gain stays 1.0");
     }
 
+    // ---- [loop_rate] D15: decoupled granular loop rate --------------------
+    std::printf("[loop_rate]\n");
+    {
+        const int loopWave = rompler::bank3::kNumCycles;   // first Loop (index 78)
+        auto loopPatch = [&](bool stretch, bool varispeed, double rate) {
+            auto p = sinePatch();
+            p.tone[0].waveIndex   = loopWave;
+            p.tone[0].cutoffHz    = 18000.0; p.tone[0].tvfKeyFollow = 0.0;
+            p.tone[0].hitPlay     = stretch ? 1 : 0;   // PLAY MODE STRETCH
+            p.tone[0].loopVarispeed = varispeed;
+            p.tone[0].loopRate    = rate;              // 0.5 = 1x, 1.0 = 4x
+            return p;
+        };
+        auto stat = [](const std::vector<float>& s, double& rms, double& maxJump) {
+            rms = 0; maxJump = 0;
+            for (size_t i = 0; i < s.size(); ++i) {
+                rms += (double)s[i] * s[i];
+                if (i) maxJump = std::fmax(maxJump, (double)std::fabs(s[i] - s[i-1]));
+            }
+            rms = std::sqrt(rms / s.size());
+        };
+        const auto dec1 = render1s(loopPatch(true, false, 0.5));   // decoupled 1x
+        const auto dec4 = render1s(loopPatch(true, false, 1.0));   // decoupled 4x
+        const auto norm = render1s(loopPatch(false, false, 0.5));  // NORMAL loop
+        double r1, j1, r4, j4, rn, jn; stat(dec1, r1, j1); stat(dec4, r4, j4); stat(norm, rn, jn);
+        double evo = 0; for (size_t i = 0; i < dec1.size(); ++i) evo += std::fabs(dec1[i] - dec4[i]);
+        evo /= dec1.size();
+        std::printf("  rms 1x/4x/norm=%.4f/%.4f/%.4f  maxjump gran/norm=%.4f/%.4f  evo=%.5f\n",
+                    r1, r4, rn, j1, jn, evo);
+        CHECK(std::isfinite(r1) && std::isfinite(r4), "granular loop output finite");
+        CHECK(r1 > 1e-4 && r4 > 1e-4, "granular loop produces output");
+        CHECK(j1 < jn + 0.15, "granular loop is click-free (jumps ~ the plain loop, Hann COLA)");
+        CHECK(evo > 1e-4, "loop_rate changes the morph evolution (decoupled traversal)");
+    }
+
     if (failures) { std::printf("%d FAILURE(S)\n", failures); return 1; }
     std::printf("ALL CHECKS PASSED\n");
     return 0;
