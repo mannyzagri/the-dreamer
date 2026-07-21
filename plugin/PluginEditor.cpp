@@ -32,7 +32,8 @@ juce::StringArray makeSliderIds() {
             ids.add(juce::String(s) + sx);
     for (const char* s : { "master", "vec_phase", "vec_orbit_rate",
                            "vec_penv_start", "vec_penv_end", "vec_penv_time",
-                           "lfo_rate", "mtx1_amt", "mtx2_amt", "mtx3_amt",
+                           "lfo_rate", "lfo2_rate",   // v16: global LFO 1 + 2
+                           "mtx1_amt", "mtx2_amt", "mtx3_amt",
                            "flt1_cut", "flt1_res", "flt1_env",
                            "flt2_cut", "flt2_res", "flt2_env", "flt2_morph", "flt_bal",
                            // v15 FX: one PARAMS proxy knob per slot (focus-shadow)
@@ -59,7 +60,8 @@ juce::StringArray makeToggleIds() {
     for (const char* s : { "flt_route", "fx_prepost",              // v15: now Bool
                            "vec_orbit_on", "vec_orbit_voice",
                            "vec_penv_on", "vec_penv_loop",
-                           "lfo_sync", "modfx_on", "dly_on", "dly_sync", "rev_on",
+                           "lfo_sync", "lfo2_sync",   // v16 global LFO 1 + 2 sync
+                           "modfx_on", "dly_on", "dly_sync", "rev_on",
                            "lofi_on", "width_on", "width_bassmono", "talk_on",
                            "limiter_on" })
         ids.add(s);
@@ -75,7 +77,7 @@ juce::StringArray makeComboIds() {
                                "voicing", "dreamy_spread", "loop_mode", "hit_play",
                                "loop_rate_beats", "detune_voices" })  // v15: now Choice
             ids.add(juce::String(s) + sx);
-    for (const char* s : { "vec_orbit_shape", "lfo_shape",
+    for (const char* s : { "vec_orbit_shape", "lfo_shape", "lfo2_shape",  // v16 G-LFO 1 + 2
                            "mtx1_src", "mtx2_src", "mtx3_src",
                            "mtx1_dst", "mtx2_dst", "mtx3_dst",
                            "flt1_type", "flt2_type",

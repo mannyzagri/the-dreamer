@@ -67,6 +67,7 @@ TheDreamerProcessor::TheDreamerProcessor()
     pGOctave = p(kGOctave); pLimiterOn = p(kLimiterOn);
     // v15 GUI additions
     pFlt2Env = p(kFlt2Env); pLfoSync = p(kLfoSync);
+    pLfo2Rate = p(kLfo2Rate); pLfo2Shape = p(kLfo2Shape); pLfo2Sync = p(kLfo2Sync);  // v16
     pModfxPFocus = p(kModfxPFocus); pDlyPFocus = p(kDlyPFocus); pRevPFocus = p(kRevPFocus);
     pModfxParam = p(kModfxParam); pDlyParam = p(kDlyParam); pRevParam = p(kRevParam);
     pLofiParam = p(kLofiParam); pLofiPFocus = p(kLofiPFocus);
@@ -455,6 +456,9 @@ void TheDreamerProcessor::buildPatch(dreamer::DreamPatch& patch) const
     patch.glfoShape01 = (int)pLfoShape->load();
     patch.glfoRate01  = pLfoRate->load() * 100.0;          // 0..1 -> Lfo map
     patch.glfoSync    = pLfoSync->load() > 0.5f;           // v15 global LFO sync
+    patch.glfo2Shape01 = (int)pLfo2Shape->load();          // v16 GLOBAL LFO 2
+    patch.glfo2Rate01  = pLfo2Rate->load() * 100.0;
+    patch.glfo2Sync    = pLfo2Sync->load() > 0.5f;
 
     for (int i = 0; i < 3; ++i) {
         patch.slot[i].src  = (int)pMtxSrc[i]->load() + 1;  // engine enums have none=0

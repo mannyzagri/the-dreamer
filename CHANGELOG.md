@@ -3,6 +3,22 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-21 (v16 GUI + Global LFO 2) — **RC 2.5.0**. The v16 production face
+  ("Design markdown file.zip") **adopts GUI_INTEGRATION_CONTRACT** — preset load
+  wired, processor data fetched (getPresetList/getWaveList), relay KINDs matched
+  (orbit_voice→bool, width id fixed), LO-FI raw routing, local fonts — so the
+  disconnected-controller class is resolved upstream. Integrated as-is (no
+  integration seds needed); style.css uses the plugin's flat-filename @font-face
+  block. v16 polish: radar sweep decoupled from RATE, real-FFT header, filter
+  BALANCE layout, whole-panel host scaling. **DSP grown to back v16's new
+  features (user decision):** **Global LFO 2** — new GLOBAL `lfo2_rate`/
+  `lfo2_shape`/`lfo2_sync` (distinct from the per-tone `lfo2_*_[t]`) + a 2nd
+  global LFO in DreamSynth (free-run or tempo-synced); **mod-matrix sources
+  5→7** — `G-LFO 2` (live) + `G-Aux` (reserved/inert until the v17 global-aux-env
+  tier). The v17 tier (`gamp_env`/`gaux_env`/`gflt_env` + `_ovr`) is reserved in
+  app.js (no widgets) → no DSP yet. **PARAM-LIST CHANGE → Cubase FULL RE-SCAN.**
+  Validator dsp 10/10 + staging/gui load+screenshot (2 G-LFO rows) + pluginval 8.
+
 - 2026-07-21 (GUI preset-load fix) — **RC 2.4.1**. Bug (user report): the preset
   bank shows but changing a preset didn't load it. Root cause was GUI-side: the
   v15 app.js left preset LOAD unwired (selection only updated local UI state; the

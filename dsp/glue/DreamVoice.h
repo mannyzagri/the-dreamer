@@ -126,12 +126,16 @@ struct DreamPatch {
     int          glfoShape01 = 0;  // panel order TRI/SIN/SAW/SQR/S+H
     double       glfoRate01  = 50.0;   // 0..100 -> Lfo::rateHzFromParam
     bool         glfoSync    = false;  // v15: tempo-sync (rate01 -> beat division)
+    int          glfo2Shape01 = 0;     // v16: GLOBAL LFO 2
+    double       glfo2Rate01  = 25.0;
+    bool         glfo2Sync    = false;
     MatrixSlot   slot[3];
     double       drift = 0.0;      // global humanize depth 0..1
 };
 
 namespace mtx {
-    enum Src  : int { srcNone = 0, srcGlfo, srcVecPhs, srcAux, srcVelo, srcWheel };
+    enum Src  : int { srcNone = 0, srcGlfo, srcVecPhs, srcAux, srcVelo, srcWheel,
+                      srcGlfo2, srcGAux };   // v16 (=6 G-LFO 2 live, =7 G-Aux reserved)
     enum Dest : int { dstNone = 0, dstPitch, dstCut1, dstCut2, dstMorph,
                       dstShape, dstVecPhs, dstPan, dstNoise, dstFxParam,
                       dstLoopRate };   // D15 (=10): loop-rate offset, all tones
@@ -709,6 +713,7 @@ public:
             sustained_[i] = false;
         }
         glfo_.prepare(sr, 0x1955B52Fu);
+        glfo2_.prepare(sr, 0x2C6A5F3Bu);        // v16 GLOBAL LFO 2
         shRng_.seed(0x5EEDBA5Eu);
         orbitPhase_ = 0.0;
         shHeld_ = shSlewed_ = 0.0f;
@@ -724,6 +729,14 @@ public:
             glfo_.setRateHz((float)(bpm / 60.0 / toneLfoDivisionBeats(idx)));
         } else {
             glfo_.setRateHz(Lfo::rateHzFromParam((float)patch_.glfoRate01));
+        }
+        glfo2_.setShape(panelLfoShapeToLfo(patch_.glfo2Shape01));   // v16 GLOBAL LFO 2
+        if (patch_.glfo2Sync) {
+            const int idx = (int)(patch_.glfo2Rate01 / 100.0 * 11.0 + 0.5);
+            const double bpm = (double)(bpm_ > 1.0f ? bpm_ : 120.0f);
+            glfo2_.setRateHz((float)(bpm / 60.0 / toneLfoDivisionBeats(idx)));
+        } else {
+            glfo2_.setRateHz(Lfo::rateHzFromParam((float)patch_.glfo2Rate01));
         }
         orbitHz_ = orbitRateHz(patch_.vec.orbitRate01);
         for (auto& v : voices_) v.updateLive(patch_);
@@ -779,6 +792,7 @@ public:
 
     void process(float& l, float& r) noexcept {
         glfo_.tick();
+        glfo2_.tick();                                // v16 GLOBAL LFO 2
         if (patch_.vec.orbitOn) {
             orbitPhase_ += orbitHz_ / sr_;
             if (orbitPhase_ >= 1.0) {
@@ -823,6 +837,8 @@ private:
         auto srcValue = [&](int src) -> float {
             switch (src) {
             case mtx::srcGlfo:   return glfo_.value();
+            case mtx::srcGlfo2:  return glfo2_.value();       // v16
+            case mtx::srcGAux:   return 0.0f;                 // v16 reserved (v17 global aux env)
             case mtx::srcVecPhs: return (float)(2.0 * (phi - std::floor(phi)) - 1.0);
             case mtx::srcAux:    return auxMax_;
             case mtx::srcVelo:   return lastVelocity_;
@@ -867,7 +883,7 @@ private:
     DreamVoice voices_[kMaxVoices];
     bool       sustained_[kMaxVoices] = {};
     DreamPatch patch_;
-    Lfo        glfo_;
+    Lfo        glfo_, glfo2_;   // v16: two global LFOs
     GlueRng    shRng_;
     double     sr_ = 44100.0;
     double     orbitPhase_ = 0.0, orbitHz_ = 0.5;
