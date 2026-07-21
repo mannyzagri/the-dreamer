@@ -74,10 +74,11 @@ int main() {
         std::printf("  loop roots: tonal=%d inharmonic(220)=%d\n", nTonal, nInharmonic);
         CHECK(nCycle == 78 && nLoop == 130 && nShot == 10, "type counts");
         CHECK(badLen == 0, "lengths sane");
-        CHECK(badRoot == 0, "loop rootHz == LoopRoots.h (measured, manifest order)");
-        // s1b: 15 inharmonic loops pinned to 220 (12 METAL + MORPH ETHMETAL/
-        // METALAIR/VOXMETAL); the remaining 115 carry a measured, detuned root.
-        CHECK(nInharmonic == 15 && nTonal == 115, "measured-root split (15 inharmonic)");
+        CHECK(badRoot == 0, "loop rootHz == LoopRoots.h (manifest order)");
+        // v3 is synthesized at a fixed 220 Hz nominal (bake_final.py: no pitch
+        // warp), so ALL 130 loops carry root 220.0 -- no per-loop detune. (Pre-2.5.1
+        // the header held stale v2-measured roots; see LoopRoots.h.)
+        CHECK(nInharmonic == 130 && nTonal == 0, "v3: all loops at 220 nominal");
         CHECK(badNibble == 0, "12-bit low-nibble invariant, all types");
     }
 
@@ -137,8 +138,8 @@ int main() {
     {
         const int w = bank3::kNumCycles + 4;              // PAD_05 (tonal loop)
         const auto& e = bank3::kWaveforms[(size_t)w];
-        const double root = (double)e.rootHz;             // s1b: per-loop measured
-        CHECK(root != 220.0, "pitch-test loop carries a measured (non-220) root");
+        const double root = (double)e.rootHz;             // v3: 220.0 nominal
+        CHECK(root == 220.0, "v3 loop root is 220 (generated at nominal)");
         dreamer::PcmOsc3 o;
         o.setSampleRate(44100.0);
         o.setWaveform(w);
