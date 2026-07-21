@@ -3,24 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>The Dreamer</title>
-  <!-- Fonts are bundled locally via @font-face in style.css (Google Fonts is
-       CSP-blocked in the plugin WebView). style.css also carries the whole
-       design-token + component sheet (v15 production face). -->
+  <title>The Dreamer — Editor</title>
+
+  <!-- Fonts are bundled LOCALLY (Google Fonts is CSP-blocked in the plugin WebView).
+       @font-face rules live in style.css and point at ./fonts/*.ttf — ship those TTFs
+       alongside these files. See README_INTEGRATION.md §Fonts. -->
   <link rel="stylesheet" href="style.css">
-  <!-- check_native_interop.js MUST load first (classic script): in the plugin it
-       hands over the real window.__JUCE__; headless it installs a harmless
-       placeholder. A missing module silently kills all page JS (workflow s4). -->
-  <script src="check_native_interop.js"></script>
 </head>
 <body>
-  <!-- app.js builds the locked 1140x660 panel into #root and scales it. It reads
-       window.Juce (the juce_gui_extra relay module) when present, else a mock. -->
+  <!-- app.js mounts the 1140×660 panel into #root -->
   <div id="root"></div>
+
+  <!-- Bootstrap order for the JUCE WebView (contract §5):
+       1) check_native_interop.js  — JUCE's classic pre-script that installs window.__JUCE__
+       2) a module that imports the relay frontend, exposes window.Juce, then loads app.js
+       When __JUCE__ is absent (plain browser QA) app.js falls back to its in-memory mock. -->
+  <script src="js/check_native_interop.js"></script>
   <script type="module">
-    import * as Juce from "./index.js";
-    window.Juce = Juce;            // app.js reads window.Juce for the relays
-    import("./app.js");            // load once, after Juce is in place
+    try {
+      const Juce = await import("./js/index.js");   // juce_gui_extra frontend relays
+      window.Juce = Juce;
+    } catch (e) { /* no JUCE backend (browser QA) — app.js uses its mock */ }
+    import("./app.js");
   </script>
 </body>
 </html>

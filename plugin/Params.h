@@ -25,7 +25,7 @@
 // there); GUI displays 0-127 (bipolar -63..+63) regardless.
 //
 // Choice-count freezes: wave 218 (78 cycle + 130 Loop + 10 Shot, bank3 order);
-// flt type 14; shaper 6; tvf type 4; lfo/orbit shapes 5; mtx src 5, dst 10;
+// flt type 14; shaper 6; tvf type 4; lfo/orbit shapes 5; mtx src 7, dst 10;
 // voicing 4; dreamy_spread 3; loop_mode 2; hit_play 2; modfx 7; dly 3; rev 3.
 
 #pragma once
@@ -91,6 +91,9 @@ inline constexpr auto kFlt2Morph     = "flt2_morph";
 inline constexpr auto kLfoRate       = "lfo_rate";
 inline constexpr auto kLfoShape      = "lfo_shape";
 inline constexpr auto kLfoSync       = "lfo_sync";    // v15 GUI: global LFO tempo sync
+inline constexpr auto kLfo2Rate      = "lfo2_rate";   // v16 GUI: GLOBAL LFO 2 (distinct
+inline constexpr auto kLfo2Shape     = "lfo2_shape";  //  from the per-tone lfo2_*_[t] ids)
+inline constexpr auto kLfo2Sync      = "lfo2_sync";
 inline constexpr auto kModfxType     = "modfx_type";
 inline constexpr auto kModfxRate     = "modfx_rate";
 inline constexpr auto kModfxDepth    = "modfx_depth";
@@ -206,7 +209,8 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     const StringArray orbitShapes { "Saw", "Tri", "Sin", "Sqr", "S+H" };
     const StringArray auxDests    { "Pitch", "Start", "Shape", "Pan", "Noise" };
     const StringArray lfoDests    { "Pitch", "Cutoff", "Shape", "Level" };
-    const StringArray mtxSrcs     { "G-LFO", "Vec Phs", "Aux", "Velo", "Wheel" };
+    const StringArray mtxSrcs     { "G-LFO 1", "Vec Phs", "Aux", "Velo", "Wheel",
+                                    "G-LFO 2", "G-Aux" };   // v16: +G-LFO 2 (live), +G-Aux (reserved)
     const StringArray mtxDests    { "Pitch", "Cut 1", "Cut 2", "Morph",
                                     "Shape", "Vec Phs", "Pan", "Noise",
                                     "Fx Param", "Loop Rate" };   // s9 dst 9 (inert)
@@ -340,6 +344,9 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add(uni(kLfoRate, "G-LFO Rate", 0.5f));
     layout.add(choice(kLfoShape, "G-LFO Shape", lfoShapes, 0));
     layout.add(boolean(kLfoSync, "G-LFO Sync", false));   // v15: global LFO tempo sync
+    layout.add(uni(kLfo2Rate, "G-LFO 2 Rate", 0.25f));    // v16: second global LFO
+    layout.add(choice(kLfo2Shape, "G-LFO 2 Shape", lfoShapes, 0));
+    layout.add(boolean(kLfo2Sync, "G-LFO 2 Sync", false));
 
     for (int i = 1; i <= 3; ++i) {
         const String n(i);

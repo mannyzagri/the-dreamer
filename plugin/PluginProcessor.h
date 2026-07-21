@@ -251,6 +251,7 @@ private:
                        *pGOctave, *pLimiterOn,
                        // v15 GUI: F2 env, global LFO sync, FX focus-shadow model
                        *pFlt2Env, *pLfoSync,
+                       *pLfo2Rate, *pLfo2Shape, *pLfo2Sync,   // v16 GLOBAL LFO 2
                        *pModfxPFocus, *pDlyPFocus, *pRevPFocus,
                        *pModfxParam, *pDlyParam, *pRevParam,
                        *pLofiParam, *pLofiPFocus, *pTalkParam, *pTalkPFocus;
