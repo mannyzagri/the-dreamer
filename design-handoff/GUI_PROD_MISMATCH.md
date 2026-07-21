@@ -8,11 +8,11 @@
 > fix before a faithful build — grouped below. Until then the new GUI is NOT
 > shipped (would regress: P-ENV + mod-matrix would not drive the DSP).
 >
-> ### G1. Relay-KIND mismatches (app.js kind ≠ shipped param class)
-> - `flt_route` (KIND `route:'toggle'`) — DSP is **Choice** {Ser,Par}. Bind as
->   choice, OR ask DSP to make it Bool. (2-state; either works.)
-> - `fx_prepost` (KIND `prePost:'toggle'`) — DSP is **Choice** {Post,Pre}. Same.
-> - `detune_voices` — RESOLVED (DSP is now Choice {1..4}); keep `detVoices:'choice'`.
+> ### G1. Relay-KIND mismatches — ✅ ALL RESOLVED DSP-side
+> - `flt_route` — DSP is now **Bool** (false=Ser, true=Par); app.js `route:'toggle'` MATCHES.
+> - `fx_prepost` — DSP is now **Bool** (false=Post, true=Pre); app.js `prePost:'toggle'` MATCHES.
+> - `detune_voices` — DSP is now **Choice** {1..4}; app.js `detVoices:'choice'` MATCHES.
+> Nothing to change GUI-side for G1.
 >
 > ### G2. Shipped DSP params the GUI leaves EDITOR-ONLY (no handle → never written)
 > These have NO entry in GLOBAL_ID, so the modal/rows only mutate `UI.*` and never

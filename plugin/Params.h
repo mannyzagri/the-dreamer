@@ -325,7 +325,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add(penvt(kVecPenvTime, "P-Env Time", 0.3f));
     layout.add(boolean(kVecPenvLoop, "P-Env Loop", false));
 
-    layout.add(choice(kFltRoute, "Filter Routing", StringArray { "Ser", "Par" }, 0));
+    layout.add(boolean(kFltRoute, "Filter Routing", false));   // v15 GUI: Bool (false=Ser, true=Par)
     layout.add(bip(kFltBal, "Filter Balance", 0.0f));
     layout.add(choice(kFlt1Type, "Filter 1 Type", filterTypes, 0));
     layout.add(uni(kFlt1Cut, "Filter 1 Cutoff", 1.0f));
@@ -407,7 +407,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add(uni(kTalkSens, "Talk Sens", 0.0f));
     layout.add(uni(kTalkParam, "Talk Param", 0.5f));      // v15 focus-shadow knob
     layout.add(choice(kTalkPFocus, "Talk Focus", pFocus, 0));
-    layout.add(choice(kFxPrePost, "Lo-Fi Routing", StringArray { "Post", "Pre" }, 0));
+    layout.add(boolean(kFxPrePost, "Lo-Fi Routing", false));   // v15 GUI: Bool (false=Post, true=Pre)
 
     layout.add(uni(kDrift, "Drift", 0.0f));
     layout.add(choice(kInterp, "Interpolation", StringArray { "Drop Sample", "Linear" }, 1));
