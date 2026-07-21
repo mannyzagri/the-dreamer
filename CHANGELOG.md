@@ -3,6 +3,26 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-21 (v15 production GUI + DSP alignment) — **RC 2.4.0**. Integrates the
+  new framework-free WebView face (design_handoff_dreamer_gui/production:
+  editor.html/app.js/style.css) and grows the DSP to match its binding contract.
+  **PARAM-LIST CHANGE → Cubase FULL RE-SCAN.** DSP additions (per the two design
+  decisions): **flt2_env** (Filter 2 envelope, symmetric w/ F1); **lfo_sync**
+  (global LFO tempo sync); **FX PARAMS focus model** — one `<slot>_param` knob per
+  MOD/DELAY/REVERB/TALK drives the focus-selected extra (engine focus-shadow,
+  one-pole smoothed; dly/rev proxies inert), + `lofi_pfocus`/`talk_pfocus`; LO-FI
+  keeps RAW named params (the GUI focus-routes to lofi_bits/srate/compand/alias).
+  Type changes to match GUI kinds: `detune_voices` Int→Choice{1..4};
+  `flt_route`/`fx_prepost` Choice→Bool. GUI: editor.html uses local bundled fonts
+  (Google Fonts is CSP-blocked) + the check_native_interop→window.Juce→app.js
+  bootstrap; PluginEditor relay lists rewritten to mirror app.js's binding map
+  exactly (incl mtx()/P-ENV); native fns getScopeData/getLimiterGR/panic +
+  user-preset save/rename/delete/load registered; loadPreset→applyPreset (0-based
+  factory; D4 INIT is host program 0). Two app.js integration fixes applied
+  (width_width→width, orbitVoice choice→toggle; flagged for GUI-Claude upstream).
+  Validator staging + gui (load+screenshot) + pluginval 8 PASS; the full v15 panel
+  renders. Ear/eye pass pending.
+
 - 2026-07-21 (PLAY MODE all-types + granular LOOP RATE, D15/D16) — **RC 2.3.0**.
   Follow-up DSP round (UX_DSP_TASKS D15/D16, added after 2.2.0). **PARAM-LIST
   CHANGE (16 new per-tone params + matrix dest 9→10) → Cubase FULL RE-SCAN.**
