@@ -65,6 +65,12 @@ TheDreamerProcessor::TheDreamerProcessor()
     pGEnvA = p(kGEnvA); pGEnvD = p(kGEnvD); pGEnvS = p(kGEnvS); pGEnvR = p(kGEnvR);
     pGCutoff = p(kGCutoff); pGRes = p(kGRes);
     pGOctave = p(kGOctave); pLimiterOn = p(kLimiterOn);
+    // v15 GUI additions
+    pFlt2Env = p(kFlt2Env); pLfoSync = p(kLfoSync);
+    pModfxPFocus = p(kModfxPFocus); pDlyPFocus = p(kDlyPFocus); pRevPFocus = p(kRevPFocus);
+    pModfxParam = p(kModfxParam); pDlyParam = p(kDlyParam); pRevParam = p(kRevParam);
+    pLofiParam = p(kLofiParam); pLofiPFocus = p(kLofiPFocus);
+    pTalkParam = p(kTalkParam); pTalkPFocus = p(kTalkPFocus);
 
     // D6: flat param index table + empty CC map.
     for (auto* rp : getParameters())
@@ -396,8 +402,8 @@ void TheDreamerProcessor::buildPatch(dreamer::DreamPatch& patch) const
         d.vecInt       = s.vint->load();
         d.voicing      = (int)s.voicing->load();        // s11
         d.dreamySpread = (int)s.dreamySpread->load();   // s11
-        d.detuneVoices = (int)s.detuneVoices->load();   // D9
-        d.detuneAmount = s.detuneAmount->load();        // D9
+        d.detuneVoices = (int)s.detuneVoices->load() + 1;   // D9 choice idx 0..3 -> 1..4
+        d.detuneAmount = s.detuneAmount->load();            // D9
         d.loopMode     = (int)s.loopMode->load();       // s12
         d.hitPlay      = (int)s.hitPlay->load();        // s13
         d.hitStretch   = s.hitStretch->load();          // s13 (0..1)
@@ -448,6 +454,7 @@ void TheDreamerProcessor::buildPatch(dreamer::DreamPatch& patch) const
 
     patch.glfoShape01 = (int)pLfoShape->load();
     patch.glfoRate01  = pLfoRate->load() * 100.0;          // 0..1 -> Lfo map
+    patch.glfoSync    = pLfoSync->load() > 0.5f;           // v15 global LFO sync
 
     for (int i = 0; i < 3; ++i) {
         patch.slot[i].src  = (int)pMtxSrc[i]->load() + 1;  // engine enums have none=0
@@ -532,6 +539,7 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     const int   f1t     = (int)pFlt1Type->load();
     const int   f2t     = (int)pFlt2Type->load();
     const float f1Env   = pFlt1Env->load();
+    const float f2Env   = pFlt2Env->load();   // v15: F2 env (symmetric with F1)
     for (int ch = 0; ch < 2; ++ch) { f1[ch].setType(f1t); f2[ch].setType(f2t); }
 
     const bool  modfxOn   = pModfxOn->load() > 0.5f;
@@ -571,22 +579,40 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // de-click inside their own effect. dly/rev extras are reserved (the
     // ported StereoDelay/juce::Reverb can't take extra knobs under rule 1).
     fxSmoothCoef_ = 1.0f - std::exp(-(float)numSamples / (0.02f * (float)getSampleRate()));
-    std::atomic<float>* const* pP[3] = { pModfxP, pDlyP, pRevP };
-    for (int s = 0; s < 3; ++s)
-        for (int i = 0; i < 4; ++i)
-            fxP_[s][i] += fxSmoothCoef_ * (pP[s][i]->load() - fxP_[s][i]);
+    // v15 focus-shadow: the single PARAMS knob (<slot>_param) drives the
+    // focus-selected extra; the other three keep their p_i. One-pole smoothing
+    // absorbs the value swap when the focus changes (no click).
+    std::atomic<float>* const* pP[3]   = { pModfxP, pDlyP, pRevP };
+    std::atomic<float>*        pParam[3] = { pModfxParam, pDlyParam, pRevParam };
+    std::atomic<float>*        pFocus[3] = { pModfxPFocus, pDlyPFocus, pRevPFocus };
+    for (int s = 0; s < 3; ++s) {
+        const int focus = juce::jlimit(0, 3, (int)pFocus[s]->load());
+        for (int i = 0; i < 4; ++i) {
+            const float target = (i == focus) ? pParam[s]->load() : pP[s][i]->load();
+            fxP_[s][i] += fxSmoothCoef_ * (target - fxP_[s][i]);
+        }
+    }
 
     const bool  lofiOn   = pLofiOn->load() > 0.5f;
     const bool  lofiPre  = pFxPrePost->load() > 0.5f;        // Pre = 1
-    const float lofiBits = pLofiBits->load(), lofiSrate = pLofiSrate->load();
-    const float lofiComp = pLofiCompand->load();
-    const bool  lofiAlias = pLofiAlias->load() > 0.5f;
+    // v15 focus-shadow (lofi/talk): the PARAMS knob overrides the focus-selected
+    // named sub-param; the rest read their own params.
+    const int   lofiFocus = juce::jlimit(0, 3, (int)pLofiPFocus->load());
+    const float lofiKnob  = pLofiParam->load();
+    const float lofiBits  = lofiFocus == 0 ? lofiKnob : pLofiBits->load();
+    const float lofiSrate = lofiFocus == 1 ? lofiKnob : pLofiSrate->load();
+    const float lofiComp  = lofiFocus == 2 ? lofiKnob : pLofiCompand->load();
+    const bool  lofiAlias = lofiFocus == 3 ? (lofiKnob > 0.5f) : (pLofiAlias->load() > 0.5f);
     const bool  widthOn   = pWidthOn->load() > 0.5f;
     const float widthAmt  = pWidth->load(), widthHaas = pWidthHaas->load();
     const bool  widthBM   = pWidthBassMono->load() > 0.5f;
     const bool  talkOn    = pTalkOn->load() > 0.5f;
-    const float talkVa = pTalkVa->load(), talkVb = pTalkVb->load();
-    const float talkMorph = pTalkMorph->load(), talkSens = pTalkSens->load();
+    const int   talkFocus = juce::jlimit(0, 3, (int)pTalkPFocus->load());
+    const float talkKnob  = pTalkParam->load();
+    const float talkVa    = talkFocus == 0 ? talkKnob : pTalkVa->load();
+    const float talkVb    = talkFocus == 1 ? talkKnob : pTalkVb->load();
+    const float talkMorph = talkFocus == 2 ? talkKnob : pTalkMorph->load();
+    const float talkSens  = talkFocus == 3 ? talkKnob : pTalkSens->load();
 
     masterSmoothed.setTargetValue(pMaster->load());
 
@@ -627,7 +653,8 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                       * std::pow(2.0, (double)synth.matrixCut1Oct()
                                     + (double)f1Env * 2.0 * (double)synth.auxMax());
             double h2 = cutHz(pFlt2Cut->load())
-                      * std::pow(2.0, (double)synth.matrixCut2Oct());
+                      * std::pow(2.0, (double)synth.matrixCut2Oct()
+                                    + (double)f2Env * 2.0 * (double)synth.auxMax());
             h1 = juce::jlimit(20.0, 18000.0, h1);
             h2 = juce::jlimit(20.0, 18000.0, h2);
             for (int ch = 0; ch < 2; ++ch) {

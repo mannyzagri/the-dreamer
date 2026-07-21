@@ -86,9 +86,11 @@ inline constexpr auto kFlt1Env       = "flt1_env";
 inline constexpr auto kFlt2Type      = "flt2_type";
 inline constexpr auto kFlt2Cut       = "flt2_cut";
 inline constexpr auto kFlt2Res       = "flt2_res";
+inline constexpr auto kFlt2Env       = "flt2_env";    // v15 GUI: F2 env (symmetric w/ F1)
 inline constexpr auto kFlt2Morph     = "flt2_morph";
 inline constexpr auto kLfoRate       = "lfo_rate";
 inline constexpr auto kLfoShape      = "lfo_shape";
+inline constexpr auto kLfoSync       = "lfo_sync";    // v15 GUI: global LFO tempo sync
 inline constexpr auto kModfxType     = "modfx_type";
 inline constexpr auto kModfxRate     = "modfx_rate";
 inline constexpr auto kModfxDepth    = "modfx_depth";
@@ -110,6 +112,16 @@ inline constexpr auto kRevOn         = "rev_on";
 inline constexpr auto kModfxPFocus   = "modfx_pfocus";
 inline constexpr auto kDlyPFocus     = "dly_pfocus";
 inline constexpr auto kRevPFocus     = "rev_pfocus";
+// v15 GUI: one PARAMS knob per FX slot (edits the focus-selected extra), +
+// lofi/talk focus selectors. Engine "focus-shadow": the focused sub-param's
+// value comes from <slot>_param, the rest from their existing p_i/named params.
+inline constexpr auto kModfxParam    = "modfx_param";
+inline constexpr auto kDlyParam      = "dly_param";
+inline constexpr auto kRevParam      = "rev_param";
+inline constexpr auto kLofiParam     = "lofi_param";
+inline constexpr auto kLofiPFocus    = "lofi_pfocus";
+inline constexpr auto kTalkParam     = "talk_param";
+inline constexpr auto kTalkPFocus    = "talk_pfocus";
 inline constexpr auto kLofiOn        = "lofi_on";
 inline constexpr auto kLofiBits      = "lofi_bits";
 inline constexpr auto kLofiSrate     = "lofi_srate";
@@ -236,8 +248,10 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         layout.add(choice(tid("voicing", t), P + "Voicing", voicings, 0));
         layout.add(choice(tid("dreamy_spread", t), P + "Dreamy Spread", dreamySpreads, 0));
         // D9 per-tone engine-side detune: N symmetric taps per voicing tap.
-        layout.add(std::make_unique<AudioParameterInt>(
-            ParameterID { tid("detune_voices", t), 1 }, P + "Detune Voices", 1, 4, 1));
+        // Choice (not Int) so the GUI binds it as a stepper/combo; engine reads
+        // index+1 -> 1..4 voices.
+        layout.add(choice(tid("detune_voices", t), P + "Detune Voices",
+                          StringArray { "1", "2", "3", "4" }, 0));
         layout.add(uni(tid("detune_amount", t), P + "Detune Amount", 0.0f));
         layout.add(choice(tid("loop_mode", t), P + "Loop Mode", loopModes, 0));
         // D15: PLAY MODE (was hit-only) now applies to ALL wave types. Kept the
@@ -320,10 +334,12 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add(choice(kFlt2Type, "Filter 2 Type", filterTypes, 0));
     layout.add(uni(kFlt2Cut, "Filter 2 Cutoff", 1.0f));
     layout.add(uni(kFlt2Res, "Filter 2 Reso", 0.0f));
+    layout.add(uni(kFlt2Env, "Filter 2 Env", 0.0f));      // v15: F2 env (like F1)
     layout.add(uni(kFlt2Morph, "Filter 2 Morph", 0.0f));
 
     layout.add(uni(kLfoRate, "G-LFO Rate", 0.5f));
     layout.add(choice(kLfoShape, "G-LFO Shape", lfoShapes, 0));
+    layout.add(boolean(kLfoSync, "G-LFO Sync", false));   // v15: global LFO tempo sync
 
     for (int i = 1; i <= 3; ++i) {
         const String n(i);
@@ -351,6 +367,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add(boolean(kModfxOn, "Mod FX On", false));
     slotExtras("modfx", "Mod FX");
     layout.add(choice(kModfxPFocus, "Mod FX Focus", pFocus, 0));
+    layout.add(uni(kModfxParam, "Mod FX Param", 0.5f));   // v15 focus-shadow knob
 
     layout.add(choice(kDlyMode, "Delay Mode", StringArray { "Digital", "Tape", "Pong" }, 0));
     layout.add(uni(kDlyTime, "Delay Time", 0.55f));
@@ -360,6 +377,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add(boolean(kDlySync, "Delay Sync", false));
     slotExtras("dly", "Delay");
     layout.add(choice(kDlyPFocus, "Delay Focus", pFocus, 0));
+    layout.add(uni(kDlyParam, "Delay Param", 0.5f));      // v15 focus-shadow (reserved/inert)
 
     layout.add(choice(kRevType, "Reverb Type", StringArray { "Room", "Hall", "Plate" }, 0));
     layout.add(uni(kRevSize, "Reverb Size", 0.5f));
@@ -368,6 +386,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add(boolean(kRevOn, "Reverb On", false));
     slotExtras("rev", "Reverb");
     layout.add(choice(kRevPFocus, "Reverb Focus", pFocus, 0));
+    layout.add(uni(kRevParam, "Reverb Param", 0.5f));     // v15 focus-shadow (reserved/inert)
 
     // ---- standalone stages (named params per DSP_BUILD s9) ----------------
     layout.add(boolean(kLofiOn, "Lo-Fi On", false));
@@ -375,6 +394,8 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add(uni(kLofiSrate, "Lo-Fi Rate", 0.0f));
     layout.add(uni(kLofiCompand, "Lo-Fi Compand", 0.0f));
     layout.add(boolean(kLofiAlias, "Lo-Fi Alias", false));
+    layout.add(uni(kLofiParam, "Lo-Fi Param", 0.5f));     // v15 focus-shadow knob
+    layout.add(choice(kLofiPFocus, "Lo-Fi Focus", pFocus, 0));
     layout.add(boolean(kWidthOn, "Width On", false));
     layout.add(uni(kWidth, "Width", 0.5f));
     layout.add(uni(kWidthHaas, "Width Haas", 0.0f));
@@ -384,6 +405,8 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add(uni(kTalkVb, "Talk Vowel B", 0.5f));
     layout.add(uni(kTalkMorph, "Talk Morph", 0.0f));
     layout.add(uni(kTalkSens, "Talk Sens", 0.0f));
+    layout.add(uni(kTalkParam, "Talk Param", 0.5f));      // v15 focus-shadow knob
+    layout.add(choice(kTalkPFocus, "Talk Focus", pFocus, 0));
     layout.add(choice(kFxPrePost, "Lo-Fi Routing", StringArray { "Post", "Pre" }, 0));
 
     layout.add(uni(kDrift, "Drift", 0.0f));
