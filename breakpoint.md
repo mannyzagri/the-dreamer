@@ -4,12 +4,21 @@
 > loop only (superseded story lives in CHANGELOG.md). Previous 1.x/2.0–2.1
 > breakpoints are closed and erased.
 
-## Where things stand — RC 2.4.1 deployed & green
+## Where things stand — RC 2.5.0 deployed & green
 
-- **RC 2.4.1** built, validated (dsp 10/10, staging/bundle/gui load+screenshot/
-  deploy/host **pluginval 8**), deployed to `C:\the-dreamer\The Dreamer.vst3` AND
-  `\\VBOXSVR\vagrant\The Dreamer.vst3`, committed + pushed (main `1564ae1`) +
-  share `-src` refreshed. Header stamp must read **2.4.1**.
+- **RC 2.5.0** built, validated (dsp 10/10, staging/bundle/gui load+screenshot/
+  deploy/host **pluginval 8**), deployed to both targets, committed + pushed
+  (main `73f00d9`) + share `-src` refreshed. Header stamp must read **2.5.0**.
+  2.5.0 = **v16 GUI** (GUI-Claude ADOPTED GUI_INTEGRATION_CONTRACT — load wired,
+  data fetched, KINDs matched, local fonts; no integration seds this round) +
+  **Global LFO 2** (2nd global LFO + matrix sources 5→7: G-LFO 2 live, G-Aux
+  reserved). **Param-list change vs 2.4.x → FULL RE-SCAN.**
+- ⚠ **v17 global-env tier is coming**: v16 app.js already RESERVES (declared, no
+  widgets) `gamp_env_a/d/s/r`, `gflt_env_a/d/s/r`, `gaux_env_a/d/s/r` + per-tone
+  `amp_ovr`/`flt_ovr`/`aux_ovr` follow-global flags, and the **G-Aux** matrix
+  source. The next GUI handoff will likely BUILD these → they'll need DSP params +
+  engine (global AMP/FILT/AUX envelopes + the G-Aux source made live). Decide
+  add-to-DSP vs defer when it lands.
 - The whole recent arc shipped:
   - **DSP UX round D1–D16** (2.2.0 + 2.3.0): live env-rate, log env-time+units,
     global offsets, semi, g-octave, engine detune, bipolar keytrack, switchable
