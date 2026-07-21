@@ -437,8 +437,8 @@ function buildHeader() {
       h('div', 'row', { style: 'gap:8px;font:800 11px var(--f-lcd);color:var(--lcd-ink);white-space:nowrap' }, touchedLine, meter)));
 
   const steppers = h('div', 'col', { style: 'gap:3px;margin-right:6px' },
-    h('div', 'step', { style: 'width:22px;height:19px', onclick: () => { UI.preset = (UI.preset + PRESETS.length - 1) % PRESETS.length; refreshHeader(); } }, '\u25B2'),
-    h('div', 'step', { style: 'width:22px;height:19px', onclick: () => { UI.preset = (UI.preset + 1) % PRESETS.length; refreshHeader(); } }, '\u25BC'));
+    h('div', 'step', { style: 'width:22px;height:19px', onclick: () => { UI.preset = (UI.preset + PRESETS.length - 1) % PRESETS.length; UI.presetSel = { bank: 'FACTORY', i: UI.preset }; refreshHeader(); Bridge.fn('loadPreset')(UI.preset); } }, '\u25B2'),
+    h('div', 'step', { style: 'width:22px;height:19px', onclick: () => { UI.preset = (UI.preset + 1) % PRESETS.length; UI.presetSel = { bank: 'FACTORY', i: UI.preset }; refreshHeader(); Bridge.fn('loadPreset')(UI.preset); } }, '\u25BC'));
 
   // right cluster: MIDI learn, meters, master, LIM/panic, power
   const midiLed = h('div', 'led');
@@ -839,7 +839,7 @@ function openPenv() {
 function openPresetBrowser() {
   const factory = h('div', 'menu-list', { style: 'max-height:430px' });
   PRESETS.forEach((p, i) => {
-    const row = h('div', 'menu-row' + (UI.presetSel.bank === 'FACTORY' && UI.presetSel.i === i ? ' cur' : ''), { onclick: () => { UI.presetSel = { bank: 'FACTORY', i }; UI.preset = i; refreshHeader(); reopenPreset(); } },
+    const row = h('div', 'menu-row' + (UI.presetSel.bank === 'FACTORY' && UI.presetSel.i === i ? ' cur' : ''), { onclick: () => { UI.presetSel = { bank: 'FACTORY', i }; UI.preset = i; refreshHeader(); Bridge.fn('loadPreset')(i); reopenPreset(); } },
       h('span', null, { style: 'width:34px' }, 'P' + String(i + 1).padStart(3, '0')), h('span', null, { style: 'width:42px' }, p[0]), h('span', null, null, p[1]));
     factory.append(row);
   });
@@ -847,7 +847,7 @@ function openPresetBrowser() {
   if (!USER_PRESETS.length) user.append(h('div', null, { style: 'padding:6px;font:800 9px var(--f-lcd);color:#3a6d52' }, '(NO USER PRESETS \u2014 SAVE ONE)'));
   USER_PRESETS.forEach((p, i) => {
     const seld = UI.presetSel.bank === 'USER' && UI.presetSel.i === i;
-    const row = h('div', 'menu-row', { style: seld ? 'color:#07070a;background:#7dffc0' : 'color:#7dffc0', onclick: () => { UI.presetSel = { bank: 'USER', i }; UI.renameBuf = p.name; reopenPreset(); } },
+    const row = h('div', 'menu-row', { style: seld ? 'color:#07070a;background:#7dffc0' : 'color:#7dffc0', onclick: () => { UI.presetSel = { bank: 'USER', i }; UI.renameBuf = p.name; Bridge.fn('loadUserPreset')(p.name); reopenPreset(); } },
       h('span', null, { style: 'width:28px' }, 'U' + String(i + 1).padStart(2, '0')), h('span', null, null, p.name));
     user.append(row);
   });
@@ -857,7 +857,11 @@ function openPresetBrowser() {
     btn('SAVE', '', () => { Bridge.fn('saveUserPreset')('USER ' + String(USER_PRESETS.length + 1).padStart(2, '0')); UI.presetSel = { bank: 'USER', i: USER_PRESETS.length - 1 }; UI.renameBuf = USER_PRESETS[UI.presetSel.i].name; touch('SAVE PRESET', 1); reopenPreset(); }),
     btn('RENAME', '', () => { if (UI.presetSel.bank === 'USER' && USER_PRESETS[UI.presetSel.i]) { Bridge.fn('renameUserPreset')(USER_PRESETS[UI.presetSel.i].name, UI.renameBuf); reopenPreset(); } }),
     h('div', 'btn', { style: 'flex:1;height:22px;border-color:#7a2130;color:#ff8a97', onclick: () => { if (UI.presetSel.bank === 'USER' && USER_PRESETS[UI.presetSel.i]) { Bridge.fn('deleteUserPreset')(USER_PRESETS[UI.presetSel.i].name); UI.presetSel = { bank: 'FACTORY', i: 0 }; reopenPreset(); } } }, 'DELETE'));
-  const load = h('div', 'btn', { style: 'height:24px;background:#1e2547;color:var(--lcd-ink);font-size:9px;letter-spacing:.12em', onclick: closeOverlay }, 'LOAD SELECTED');
+  const load = h('div', 'btn', { style: 'height:24px;background:#1e2547;color:var(--lcd-ink);font-size:9px;letter-spacing:.12em',
+    onclick: () => { const s = UI.presetSel;
+      if (s.bank === 'USER') { const p = USER_PRESETS[s.i]; if (p) Bridge.fn('loadUserPreset')(p.name); }
+      else { UI.preset = s.i; refreshHeader(); Bridge.fn('loadPreset')(s.i); }
+      closeOverlay(); } }, 'LOAD SELECTED');
   const box = h('div', null, { style: 'width:600px;max-height:540px;background:var(--lcd-bg);border:1px solid var(--frame);border-radius:4px;box-shadow:0 8px 40px #000;padding:12px;display:flex;flex-direction:column;gap:10px', onclick: e => e.stopPropagation() },
     h('div', 'menu-head', null, h('span', null, null, 'PRESET BROWSER'), h('span', null, null, 'ESC=EXIT')),
     h('div', 'row', { style: 'gap:12px;min-height:0' },
@@ -977,6 +981,28 @@ function build() {
   panel.append(h('div', null, { style: "position:absolute;right:34px;top:626px;font:600 7.5px var(--f-silk);color:var(--silk-dim);letter-spacing:.16em;z-index:6" }, 'VER 1.0'));
   document.getElementById('root').append(panel);
   requestAnimationFrame(tick);
+
+  // Authoritative lists from the processor. The design hardcoded WAVES/PRESETS
+  // ("PRODUCTION: replace with getWaveList/getPresetList") -- pull them so names,
+  // ORDER, and count match the DSP (else loadPreset(index) recalls the wrong
+  // preset). Mock returns the local arrays, so this is a no-op in browser QA.
+  Bridge.fn('getPresetList')().then(l => {
+    if (Array.isArray(l) && l.length) {
+      PRESETS.length = 0; l.forEach(p => PRESETS.push([p.category, p.name]));
+      refreshHeader();
+    }
+  });
+  Bridge.fn('getUserPresetList')().then(l => {
+    if (Array.isArray(l)) {
+      USER_PRESETS.length = 0;
+      l.forEach(p => USER_PRESETS.push({ name: p.name, category: p.category || 'USER', bank: 'USER' }));
+    }
+  });
+  Bridge.fn('getWaveList')().then(l => {
+    if (Array.isArray(l) && l.length) {
+      WAVES.length = 0; l.forEach(w => WAVES.push([w.category, w.name, w.bank || '']));
+    }
+  });
 }
 function gripResize(e) {
   e.preventDefault(); const sy = e.clientY, s0 = UI.scale, panel = document.querySelector('.panel');

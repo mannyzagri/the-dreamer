@@ -3,6 +3,19 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-21 (GUI preset-load fix) — **RC 2.4.1**. Bug (user report): the preset
+  bank shows but changing a preset didn't load it. Root cause was GUI-side: the
+  v15 app.js left preset LOAD unwired (selection only updated local UI state; the
+  "LOAD SELECTED" button just closed the overlay) AND hardcoded the WAVES/PRESETS
+  mock arrays (order diverged from presets.json → an index load would recall the
+  wrong preset). Fix (app.js only, no param change → reload, no re-scan): (1) wire
+  Bridge.fn('loadPreset')(i) / loadUserPreset(name) on every path — header ▲/▼
+  steppers, factory rows, user rows, LOAD SELECTED; (2) on boot, pull the
+  processor's authoritative getPresetList/getUserPresetList/getWaveList and
+  replace the hardcoded arrays so names/order/count match the DSP. Flagged for
+  GUI-Claude to own upstream (the design marked these "PRODUCTION: replace with
+  native fns"). gui load+screenshot + pluginval 8 PASS.
+
 - 2026-07-21 (v15 production GUI + DSP alignment) — **RC 2.4.0**. Integrates the
   new framework-free WebView face (design_handoff_dreamer_gui/production:
   editor.html/app.js/style.css) and grows the DSP to match its binding contract.
