@@ -1,100 +1,69 @@
 # BREAKPOINT — The Dreamer (for the next session)
 
-> Read AFTER PROJECT-NOTES.md STATE + CLAUDE.md. The 2026-07-18 open loop
-> (waiting for a corrected GUI handoff) is CLOSED — handoff GUI_4 (v11) is
-> integrated and shipped as **RC 1.0.0**. This file now tracks the current
-> open loop only.
+> Read AFTER PROJECT-NOTES.md STATE + CLAUDE.md. Overwrite-only, current open
+> loop only (superseded story lives in CHANGELOG.md). Previous 1.x/2.0–2.1
+> breakpoints are closed and erased.
 
-## Where things stand (deployed, green)
+## Where things stand — RC 2.4.1 deployed & green
 
-- **RC 1.2.0** built, validated (19/19 all stages incl. pluginval 8),
-  deployed to `C:\the-dreamer\The Dreamer.vst3` AND `\\VBOXSVR\vagrant\The
-  Dreamer.vst3` (share root). Committed + pushed + share `-src` refreshed.
-  1.2.0 = GUI_4 **v12** integrated + comb-filter fractional-delay fix; **no
-  param change vs 1.1.0** (moduleinfo byte-identical) — reload the instance.
-- Face is design-handoff **GUI_4 v12**: v11 base + rubber-band strip,
-  collapsible keyboard (▼/▲ KEYS fold → host window resizes 864↔664 via the
-  `keyboardFold` native fn), pitch-wheel red stripe + inverted drag.
-- Two user bugs from the 1.1.0 pass resolved: **comb stepping** fixed
-  (fractional interpolated delay); **"live MIDI deselects the track"** was the
-  user's **hardware MIDI keyboard**, NOT the plugin — no plugin change.
+- **RC 2.4.1** built, validated (dsp 10/10, staging/bundle/gui load+screenshot/
+  deploy/host **pluginval 8**), deployed to `C:\the-dreamer\The Dreamer.vst3` AND
+  `\\VBOXSVR\vagrant\The Dreamer.vst3`, committed + pushed (main `1564ae1`) +
+  share `-src` refreshed. Header stamp must read **2.4.1**.
+- The whole recent arc shipped:
+  - **DSP UX round D1–D16** (2.2.0 + 2.3.0): live env-rate, log env-time+units,
+    global offsets, semi, g-octave, engine detune, bipolar keytrack, switchable
+    limiter, INIT program 0, panic+FX-flush, output scope tap, MIDI learn, user
+    presets, per-wave loudness table, PLAY MODE all-types + granular LOOP RATE.
+  - **v15 production GUI** (2.4.0): the new framework-free WebView face
+    (design_handoff_dreamer_gui/production) integrated, + DSP grown to match its
+    contract (flt2_env, lfo_sync, FX PARAMS focus model, detune→Choice,
+    flt_route/fx_prepost→Bool).
+  - **Preset-load fix** (2.4.1): the v15 app.js had load unwired + hardcoded
+    lists → wired loadPreset/loadUserPreset + boot-fetch of the processor's
+    authoritative getPresetList/getUserPresetList/getWaveList.
 
-## The four GUI_4 items — RESOLVED in 1.0.0
-1. **Labels behind the corner screws** → header logo/POWER given 26px screw
-   clearances; screws on their own layer; nothing occluded.
-2. **Panel duplicity** → single clean panel rebuilt from the prototype.
-3. **Resize letterbox** → faceplate finish + 4 screws now live INSIDE the
-   single scaled `#frame`; fit() scales the whole 1140×864 frame as one unit
-   (C++ aspect 1140:864, limits 570×432..2280×1728). No letterbox.
-4. **Version label** → `VER <version>` bottom-right (right:34/bottom:16),
-   left of the corner screw, populated from getInfo().version.
+## OPEN LOOP #1 — user's Cubase eye+ear pass on 2.4.1 (the new face)
+No param change since 2.4.0 → **reload the instance / restart Cubase** (WebView2
+cache is the recurring "old GUI" cause — a rescan does NOT clear it; full restart
+does). Coming from ≤2.3.0 needs a FULL RE-SCAN. Verify on the NEW v15 panel:
+- **Presets now load** (the just-fixed bug): step ▲/▼ and pick from the browser →
+  the sound + knobs change; SAVE/RENAME/DELETE user bank works.
+- **MOD MATRIX moves the sound** and **P-ENV EDIT modal** works (both were
+  editor-only in earlier app.js revs; bound in file(2)/2.4.0).
+- F2 **ENVELOPE**, GLOBAL **OFFSET MODE**, **DETUNE**, **LOOP RATE** on ENS waves,
+  FX PARAMS **focus**, **SPECTRUM**, **MIDI-learn** right-click, **SOUND OFF**.
+- Known-by-design quirks to confirm (not bugs): LO-FI PARAMS uses the RAW named
+  knobs; **DELAY/REVERB PARAMS knobs are inert** (ported FX); FX PARAM matrix
+  dest is reserved/inert.
 
-## Filter investigation (RC 1.1.0, 2026-07-18) — READ before touching filters
+## OPEN LOOP #2 — GUI-Claude coordination (IMPORTANT)
+The preset-load fix + two KIND/id fixes (`orbitVoice`→toggle, `width_width`→
+`width`) currently live in the **plugin's** `plugin/gui/app.js`. **GUI-Claude's
+next handoff will OVERWRITE them** unless folded in upstream. Written for them and
+mirrored to the share `\\VBOXSVR\vagrant\The Dreamer\`:
+- **GUI_INTEGRATION_CONTRACT.md** — the rules + the pre-handoff self-check.
+- GUI_PROD_MISMATCH.md, GUI_DSP_DIFF.md — the binding cross-checks.
+When the next GUI handoff lands: **diff its app.js against these fixes** before
+integrating; re-apply/verify §1–§5 of the contract, then build+gui+pluginval,
+deploy. Do NOT re-introduce hardcoded WAVES/PRESETS or unwired load.
 
-User: "except LP/BP/HP/LADDER, no filter modes work, parallel or serial."
-Measured with 3 cl.exe probes driving `dsp/glue/GlobalFilter.h` EXACTLY like
-the processor (setType each block, setCutoffRes at gfCtrl rate, res=0 default,
-real cutHz mapping). Findings, rock-solid and REPRODUCIBLE:
-- LP24/LP12/BP/HP work. **LIQUID/CLASSIC filter hard AND track cutoff/res**
-  (4 kHz throughput 0.72→0.02→0.00 as CUT closes; passband unity 0.71).
-- **LADDER is the genuinely weak one** (barely closes; res runs backwards) —
-  this is the AUTHENTIC rubber-rhino "filter-mod-off" ladder (byte-locked
-  port, rule 1 — its math is not ours to retune).
-- Types **7-13 were bypass placeholders** = the real "most modes do nothing".
+## Pending / deferred (flagged decisions, not bugs)
+- **v3 loop_roots.json** — if the v3 library re-tuned the loop samples, LoopRoots.h
+  still holds the v2-measured roots (tuning may drift); a v3 loop_roots.json would
+  re-measure. Not delivered.
+- **Exact E-MU Z-plane frame coefficients** for DreamPlane (flt type 13) — using a
+  credible generic frame set; precise X-Lead coeffs could come from
+  prodatum/X-Lead data if wanted.
+- **FX-PARAM matrix dest** — still reserved/inert (loop_rate IS now a live dest;
+  FX PARAM needs a GUI focus target).
+- **LADDER filter** stays mild (weak resonator in the byte-locked rhino port,
+  rule 1 — not ours to retune).
 
-Resolved in 1.1.0: implemented 7-12 (`dsp/glue/FilterExtra.h`), DreamPln(13)
-V2 bypass. Did NOT add LIQUID/CLASSIC makeup — measurement says unity passband;
-adding gain would clip. The user's "LIQUID/CLASSIC never filter, stay bright"
-is INVERTED from every measurement (their symptom matches LADDER, not
-liquid/classic) and could not be reproduced. All GUI combo wiring / param
-binding / 14-type mapping / cutoff drive are correct in source. Most likely a
-**WebView2 host cache** serving a stale editor (a Cubase *rescan* does NOT
-clear it — only a full Cubase restart / clearing the WebView user-data temp).
-NEXT: if the user still reports it after a FULL restart on 1.1.0, it is a real
-binary issue — get exact SER/PAR + F1/F2 types + CUT/RES positions and trace
-the actual param values reaching the processor (consider a temp on-screen
-readout of the engine-resolved filter type).
-
-## Pending integrations (design track dropped these)
-- **GUI_4 v12 — INTEGRATED in 1.2.0** (rubber-band strip, collapsible keyboard,
-  pitch-wheel stripe/inverted drag). The fold/host-resize needs the user's
-  Cubase eye-check (can't be fully exercised headless).
-- **Sounds at `\\VBOXSVR\vagrant\The Dreamer\files (5)`** (user pointer) — real
-  factory presets to replace the app.js placeholders. STILL not read/integrated.
-
-## Open loop now — the user's Cubase pass on 1.1.0
-Install on the HOST first (the recurring "old GUI" cause is host-side, NOT a
-deploy miss): copy the whole `\\VBOXSVR\vagrant\The Dreamer.vst3` bundle into
-`C:\Program Files\Common Files\VST3\`, overwrite, then Cubase → full plugin
-remove/re-add the instance (**restart Cubase fully** — the WebView2 cache is
-the recurring "behaves like an old build" cause, and it's the prime suspect
-for the LIQUID/CLASSIC filter report). Tell for 1.1.0: **VER stamp 1.1.0**.
-
-Then ear pass on the FILTERS (the point of 1.1.0): audition NOTCH / COMB+ /
-COMB− / N+LP / FORMANT / ALLPASS on the main filters — they now do something.
-Re-check LIQUID/CLASSIC after the full restart (measurement says they filter;
-see the Filter investigation section above). Also still: play keys + wheels,
-A/B per-tone LFO SHAPE, drag-resize the window.
-
-## Still deferred (flagged design decisions, not bugs)
-- **MIDI LEARN** button — visual no-op (deferred).
-- **dly/rev PARAMS extras (p0..p3)** — inert (ported StereoDelay/juce::Reverb
-  can't take extra knobs under rule 1; need non-ported replacements).
-- **FXPARAM matrix dest** — deferred (no slot-selector/pfocus stepper in GUI).
-- **24 factory presets** — authored placeholders in app.js (real sound design
-  pending from the design track).
-- **Filter types 8-13** (Notch/Comb±/N+LP/Formant/Allpass) bypass [V1.1];
-  DreamPln [V2].
-
-## Toolchain note (unchanged)
+## Toolchain (see memories for detail)
 Skills `dsp-pass` / `gui-pass`; validator `C:\code-bank\validator\validate.ps1
--Project C:\the-dreamer`; `release.ps1` / `ship.ps1`. Personas via
-general-purpose agents that read+adopt `C:\Users\vagrant\.claude\agents\<name>.md`
-(frontend-developer for GUI, architect-reviewer/cpp-pro for DSP).
-
-**Tool bug seen this pass (flag for back-prop):** `release.ps1 -DryRun` leaves
-CMakeLists bumped to the target version; a following real `release.ps1` run
-then hands `validate.ps1` two separate `-Forbid` flags (previous == target),
-which PS 5.1 rejects. Workaround used: reset the version to the old literal
-before the real run. Fix in the tool: dedupe/array the forbid list, or don't
-persist the -DryRun bump.
+-Project C:\the-dreamer -Stages …`; `release.ps1` (bump+build+verify+deploy) /
+`ship.ps1`; MSVC at `C:\BuildTools` (vcvars64.bat there). Branch → merge --no-ff →
+push per commit; explicit `git add` (concurrent sessions). GUI face work is
+GUI-Claude's lane ([[gui-work-via-frontend-developer]]); this session integrated +
+built + validated + deployed.
