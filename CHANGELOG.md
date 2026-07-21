@@ -3,6 +3,20 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-22 (loop-tuning regression fix) — **RC 2.5.1**. Bug (user report):
+  every ENS loop played out of tune. Root cause: the v3 library is SYNTHESIZED at
+  a fixed 220 Hz nominal (`bake_final.py`: `root=220.0`, "no rootHz correction, no
+  pitch-lock warp"), but `LoopRoots.h` still held the **v2-measured** per-loop
+  roots (217–223 Hz, off ±up to ~45 c) — a known-flagged risk that materialized.
+  Playing v3 audio through v2 roots detuned every tonal loop **~+13 cents sharp
+  (up to ±20 c)**. Verified: the 140 loop/hit WAVs are byte-identical to
+  dreamer-library-v3.zip (audio was fine); only the tuning table was stale.
+  Fix: `assets/library-src/loop_roots.json` → all 130 = 220.0, re-baked
+  `LoopRoots.h` (all 220.0). No param change → **reload the instance, no re-scan**.
+  Tests updated to the v3 truth (test_loop_tuning: all-220, loops play in tune, 0 c
+  detune; test_bank3: 130-at-220 split, pitch-test loop at 220). dsp 10/10 +
+  pluginval 8. Resolves the STATE-flagged v3 loop_roots.json pending item.
+
 - 2026-07-21 (v16 GUI + Global LFO 2) — **RC 2.5.0**. The v16 production face
   ("Design markdown file.zip") **adopts GUI_INTEGRATION_CONTRACT** — preset load
   wired, processor data fetched (getPresetList/getWaveList), relay KINDs matched

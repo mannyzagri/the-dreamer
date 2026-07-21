@@ -1,21 +1,22 @@
-// test_loop_tuning.cpp -- DSP_BUILD.md section 1b: per-loop measured rootHz.
+// test_loop_tuning.cpp -- v3 loop tuning (LoopRoots.h).
 //
 // Build (after vcvars64, from C:\the-dreamer):
 //   cl /nologo /std:c++17 /O2 /EHsc /D_USE_MATH_DEFINES /I. tests\test_loop_tuning.cpp
 //     /Fo:tests\bin\ /Fe:tests\bin\test_loop_tuning.exe
 //
-// Proves the loop-detune fix:
+// The v3 library is SYNTHESIZED at a fixed 220 Hz nominal (bake_final.py:
+// root=220.0, "no rootHz correction, no pitch-lock warp"), so every loop's root
+// is 220.0 and the engine stretch noteHz/rootHz plays each loop IN TUNE.
 //   [roots]  every Bank3 Loop entry's rootHz == kLoopRoots[i] (LoopRoots.h),
-//            1:1 in manifest order; 15 inharmonic loops (METAL_* + MORPH
-//            ETHMETAL/METALAIR/VOXMETAL) pinned to 220.0, the other 115 carry
-//            a measured, non-220 root.
-//   [ratio]  PcmOsc3 stretch uses the PER-LOOP root: driving a tonal loop at
-//            its own rootHz gives inc == 1.0 sample/sample (renders the raw
-//            buffer); driving at MIDI A3 (220 Hz) gives inc == 220/rootHz
-//            (!= 1.0 for tonal, == 1.0 for METAL) -- i.e. the engine no longer
-//            assumes 220 for everyone.
-//   [detune] worst-case tonal detune from 220 is tens of cents (the fix is
-//            audible), and every tonal root sits within a sane +-60-cent band.
+//            1:1 in manifest order, and every one == 220.0.
+//   [ratio]  PcmOsc3 stretch: driving a loop at 220 Hz (MIDI A3) gives inc ==
+//            1.0 sample/sample (renders the raw buffer = plays in tune); 2*220
+//            gives inc 2.0. Uniform across all loops (root is 220 for all).
+//   [intune] worst-case tonal detune from 220 is 0 cents (all loops at nominal).
+//
+// Regression fixed in 2.5.1: the header previously held stale v2-MEASURED roots
+// (off +-up to ~45 c); playing the v3 audio through them detuned every tonal
+// loop ~+13 cents sharp. This test now guards the v3 all-220 truth.
 
 #include <immintrin.h>
 #include <cstdio>
@@ -37,98 +38,71 @@ static int failures = 0;
 static bool approx(double a, double b, double tol) { return std::fabs(a - b) <= tol; }
 static double cents(double hz, double ref) { return 1200.0 * std::log2(hz / ref); }
 
-// The inharmonic loops that must keep 220.0 nominal (spec s1b).
-static bool isInharmonicName(const char* n) {
-    return std::strstr(n, "METAL") != nullptr;   // METAL_* and MORPH_*METAL*/METALAIR
-}
-
 int main() {
     _mm_setcsr(_mm_getcsr() | 0x8040);   // FTZ/DAZ
 
     // ---- [roots] --------------------------------------------------------
     std::printf("[roots]\n");
-    int nTonal = 0, nInharmonic = 0, mismatch = 0, wrongPin = 0;
+    int nAt220 = 0, notAt220 = 0, mismatch = 0;
     for (int i = 0; i < bank3::kNumLoops; ++i) {
         const auto& e = bank3::kWaveforms[(size_t)(bank3::kNumCycles + i)];
-        // 1:1 with the generated header, manifest order.
-        if (e.rootHz != bank3::kLoopRoots[i]) ++mismatch;
-        const bool pinned = (e.rootHz == 220.0f);
-        if (pinned) ++nInharmonic; else ++nTonal;
-        // The pinned set must be exactly the inharmonic (METAL) loops.
-        if (pinned != isInharmonicName(e.name)) ++wrongPin;
+        if (e.rootHz != bank3::kLoopRoots[i]) ++mismatch;   // 1:1 with the header
+        if (e.rootHz == 220.0f) ++nAt220; else ++notAt220;
     }
-    std::printf("  loops=%d tonal=%d inharmonic(220)=%d\n",
-                bank3::kNumLoops, nTonal, nInharmonic);
+    std::printf("  loops=%d at220=%d notAt220=%d\n", bank3::kNumLoops, nAt220, notAt220);
     CHECK(mismatch == 0, "every loop rootHz == kLoopRoots[i] (manifest order)");
-    CHECK(nInharmonic == 15 && nTonal == 115, "15 inharmonic / 115 tonal");
-    CHECK(wrongPin == 0, "only METAL/inharmonic loops are pinned to 220");
+    CHECK(nAt220 == bank3::kNumLoops && notAt220 == 0,
+          "v3: all 130 loops at 220 Hz nominal (synthesized, no per-loop detune)");
 
     // ---- [ratio] --------------------------------------------------------
     std::printf("[ratio]\n");
     {
-        // Sample of tonal loops across families (indices into the loop block).
-        const int tonalIdx[] = { 0, 4, 46, 78, 92 };   // PAD_01,PAD_05,VOX_01,FM_01,WIND_01
-        for (int li : tonalIdx) {
+        // Sample of loops across families (indices into the loop block).
+        const int idx[] = { 0, 4, 46, 78, 92, 104 };   // PAD_01,PAD_05,VOX_01,FM_01,WIND_01,METAL_01
+        for (int li : idx) {
             const int w = bank3::kNumCycles + li;
             const auto& e = bank3::kWaveforms[(size_t)w];
             const double root = (double)e.rootHz;
-            CHECK(root != 220.0, "tonal loop root is not 220");
+            CHECK(root == 220.0, "v3 loop root is 220 (generated at nominal)");
 
             dreamer::PcmOsc3 o;
             o.setSampleRate(44100.0);
             o.setWaveform(w);
             o.setInterp(dreamer::PcmOsc3::Interp::Linear);
 
-            // driven at its OWN measured root -> ratio 1.0 (renders raw buffer)
-            o.setFrequency(root);
+            // driven at MIDI A3 (220 Hz) == root -> ratio 1.0, renders raw buffer
+            // (the loop plays at its true pitch: IN TUNE, no correction needed).
+            o.setFrequency(220.0);
             o.reset(0.0);
-            CHECK(approx(o.incSamplesForTest(), 1.0, 1e-4),
-                  "freq == measured root -> inc 1.0 sample/sample");
+            CHECK(approx(o.incSamplesForTest(), 1.0, 1e-9),
+                  "v3 loop at A3 plays in tune (root 220 -> inc 1.0)");
             bool raw = true;
             for (uint32_t i = 0; i < 4000; ++i) {
                 const float expect = (float)e.samples[i] * (1.0f / 32768.0f);
                 if (o.process() != expect) { raw = false; break; }
             }
-            CHECK(raw, "at measured root the loop renders its raw buffer");
+            CHECK(raw, "at A3 the loop renders its raw buffer");
 
-            // driven at MIDI A3 (220 Hz) -> engine stretches by 220/root, which is
-            // NOT 1.0 for a tonal loop (the whole point: 220 is not the true root).
-            o.setFrequency(220.0);
+            // one octave up (2*220) -> inc exactly 2.0 (skips every other sample)
+            o.setFrequency(440.0);
             o.reset(0.0);
-            CHECK(approx(o.incSamplesForTest(), 220.0 / root, 1e-4),
-                  "at A3 the stretch ratio uses the per-loop root (220/root)");
-            CHECK(!approx(o.incSamplesForTest(), 1.0, 1e-4),
-                  "tonal loop at A3 is NOT played as raw 220 (detune corrected)");
+            CHECK(approx(o.incSamplesForTest(), 2.0, 1e-9),
+                  "A4 (2x root) -> inc 2.0");
         }
-
-        // METAL (inharmonic) loop: rootHz == 220 -> A3 gives inc 1.0 exactly.
-        const int mw = bank3::kNumCycles + 104;   // METAL_01
-        const auto& me = bank3::kWaveforms[(size_t)mw];
-        CHECK(me.rootHz == 220.0f, "METAL_01 pinned to 220");
-        dreamer::PcmOsc3 mo;
-        mo.setSampleRate(44100.0);
-        mo.setWaveform(mw);
-        mo.setFrequency(220.0);
-        mo.reset(0.0);
-        CHECK(approx(mo.incSamplesForTest(), 1.0, 1e-9),
-              "METAL loop at A3 -> inc 1.0 (nominal root unchanged)");
     }
 
-    // ---- [detune] -------------------------------------------------------
-    std::printf("[detune]\n");
+    // ---- [intune] -------------------------------------------------------
+    std::printf("[intune]\n");
     {
         double worst = 0.0; const char* worstName = "";
-        int outOfBand = 0;
         for (int i = 0; i < bank3::kNumLoops; ++i) {
             const auto& e = bank3::kWaveforms[(size_t)(bank3::kNumCycles + i)];
-            if (e.rootHz == 220.0f) continue;   // inharmonic, no meaningful pitch
-            const double c = cents((double)e.rootHz, 220.0);
+            const double c = cents((double)e.rootHz, 220.0);   // 0 for all v3 loops
             if (std::fabs(c) > std::fabs(worst)) { worst = c; worstName = e.name; }
-            if (std::fabs(c) > 60.0) ++outOfBand;
         }
-        std::printf("  worst tonal detune: %+.1f cents (%s)\n", worst, worstName);
-        CHECK(std::fabs(worst) > 20.0, "worst tonal detune is tens of cents (fix matters)");
-        CHECK(outOfBand == 0, "all tonal roots within a sane +-60 cent band");
+        std::printf("  worst root-vs-220 detune: %+.1f cents (%s)\n", worst, worstName);
+        CHECK(std::fabs(worst) < 1e-6,
+              "v3: no per-loop detune -- every loop plays in tune at its note");
     }
 
     if (failures) { std::printf("%d FAILURE(S)\n", failures); return 1; }
