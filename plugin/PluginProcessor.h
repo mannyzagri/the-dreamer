@@ -248,7 +248,12 @@ private:
                        *pDrift, *pInterp, *pEngine,
                        // UX round: D5 global offsets, D8 g-octave, D12 limiter
                        *pGEnvA, *pGEnvD, *pGEnvS, *pGEnvR, *pGCutoff, *pGRes,
-                       *pGOctave, *pLimiterOn;
+                       *pGOctave, *pLimiterOn,
+                       // v15 GUI: F2 env, global LFO sync, FX focus-shadow model
+                       *pFlt2Env, *pLfoSync,
+                       *pModfxPFocus, *pDlyPFocus, *pRevPFocus,
+                       *pModfxParam, *pDlyParam, *pRevParam,
+                       *pLofiParam, *pLofiPFocus, *pTalkParam, *pTalkPFocus;
 
     void cacheTonePtrs(TonePtrs& dst, int toneIdx);
 

@@ -1,14 +1,4 @@
-/* The Dreamer -- WebView editor styling (regenerated from design-handoff/v13
-   "The Dreamer GUI" master, verbatim geometry). This file carries ONLY the
-   offline fonts, the page background, the scaled #frame wrapper and shared
-   scrollbar/reset rules; every control's pixel geometry is emitted inline by
-   app.js exactly as the master template specifies (so the layout is locked to
-   the master, never recomputed). Fonts are served from BinaryData by bare
-   filename -- NEVER reference Google Fonts / any network URL. */
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-/* ---- offline fonts (BinaryData: bare .ttf filenames) ------------------- */
+/* Local bundled fonts (offline WebView; Google Fonts is CSP-blocked). */
 @font-face {
   font-family: 'Barlow Semi Condensed';
   font-style: normal; font-weight: 400; font-display: block;
@@ -35,32 +25,170 @@
   src: url("Michroma-Regular.ttf") format('truetype');
 }
 
-html, body {
-  margin: 0; padding: 0;
-  width: 100%; height: 100%;
-  background: #15172e;                 /* page-bg (area around the panel) */
-  overflow: hidden;
-  font-family: 'Barlow Semi Condensed', sans-serif;
+/* ============================================================================
+   The Dreamer — production stylesheet (design tokens + component classes)
+   Pairs with editor.html + app.js. All exact values come from the reference
+   master (../The Dreamer GUI.png / .html). Layout is LOCKED: do not reflow.
+   ========================================================================== */
+
+:root {
+  --panel-bg:      #232850;
+  --panel-header:  #1b1f40;
+  --frame:         #464e94;   /* group borders, button borders */
+  --silk:          #9aa1d8;   /* parameter labels */
+  --silk-hi:       #c9cdf2;   /* group titles, legends */
+  --silk-dim:      #7d84c0;   /* footnotes */
+  --led-on:        #ff2b3e;
+  --led-off:       #4a1020;
+  --led-glow:      0 0 8px rgba(255,43,62,.85);
+  --knob-outer:    #14162c;
+  --knob-body:     #2a2d48;
+  --knob-flute:    #20233c;
+  --ptr-white:     #e8eaff;   /* default pointers / slider cap line */
+  --ptr-red:       #ff5b6e;   /* filter-section pointers, TVF accents */
+  --ptr-yellow:    #ffd23f;   /* "special" pointers + all LCD ink */
+  --lcd-bg:        #07070a;
+  --lcd-ink:       #ffd23f;
+  --track:         #0c0e20;
+  --btn:           #181b34;
+  --btn-active:    #10122a;
+  --step-active:   #2c3160;
+  --page:          #15172e;
+  --tone-a:        #D4547D;
+  --tone-b:        #1C9E75;
+  --tone-c:        #388ADE;
+  --tone-d:        #BA7517;
+  --f-silk: 'Barlow Semi Condensed', sans-serif;
+  --f-lcd:  'Doto', monospace;
+  --f-logo: 'Michroma', sans-serif;
 }
 
-/* The single scaled frame. Its width is the fixed logical width (1140);
-   height (660 collapsed / 848 expanded) and transform (uniform scale +
-   centering) are set from the WINDOW size by app.js fit() -- the window is
-   the sole source of truth, scale is DERIVED. transform-origin: top left. */
-#frame {
-  position: absolute;
-  left: 0; top: 0;
-  width: 1140px;
-  background: #232850;                 /* panel-bg (faceplate) */
-  border-radius: 6px;
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--page); }
+body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+a { color: var(--silk-hi); }
+a:hover { color: var(--ptr-yellow); }
+
+/* ---- panel shell ---------------------------------------------------------- */
+.panel {
+  position: relative; width: 1140px; height: 660px;
+  background: var(--panel-bg); border-radius: 6px; overflow: hidden;
+  font-family: var(--f-silk);
   box-shadow: 0 12px 40px rgba(0,0,0,.6), inset 0 1px 0 rgba(201,205,242,.12);
-  overflow: hidden;
-  transform-origin: top left;
-  will-change: transform;
+  transform-origin: top center;
+}
+.panel.kbd-open { height: 848px; }
+
+/* faceplate overlays are painted by app.js into .faceplate (z 0) */
+.faceplate { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+.panel > *:not(.faceplate):not(.screws):not(.rubber):not(.keybed):not(.overlay) { position: relative; z-index: 1; }
+.screws { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+
+/* ---- group frame ---------------------------------------------------------- */
+.group { position: relative; border: 1px solid var(--frame); border-radius: 4px; }
+.group-title {
+  position: absolute; top: -7px; left: 8px; padding: 0 5px; background: var(--panel-bg);
+  font: 700 10px var(--f-silk); letter-spacing: .18em; color: var(--silk-hi);
+}
+.divider-v { width: 1px; align-self: stretch; background: var(--frame); opacity: .4; }
+.divider-h { width: 100%; height: 1px; background: var(--frame); opacity: .55; }
+
+/* ---- labels --------------------------------------------------------------- */
+.lbl      { font: 600 8px var(--f-silk); letter-spacing: .08em; color: var(--silk); }
+.lbl-sm   { font: 600 7px var(--f-silk); letter-spacing: .06em; color: var(--silk); }
+.lbl-hi   { font: 700 8px var(--f-silk); letter-spacing: .14em; color: var(--silk-hi); }
+
+/* ---- knob ----------------------------------------------------------------- */
+.knob {
+  width: var(--s,34px); height: var(--s,34px); border-radius: 50%;
+  background: var(--knob-outer); display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,.5); cursor: ns-resize; position: relative; touch-action: none;
+}
+.knob-cap {
+  width: 76%; height: 76%; border-radius: 50%; position: relative;
+  background: repeating-conic-gradient(var(--knob-body) 0deg 12deg, var(--knob-flute) 12deg 24deg);
+}
+.knob-face { position: absolute; inset: 5px; border-radius: 50%; background: var(--knob-body); }
+.knob-rot  { position: absolute; inset: 0; transform: rotate(var(--rot,-135deg)); }
+.knob-ptr  {
+  position: absolute; left: 50%; top: 2px; width: 2px; margin-left: -1px; border-radius: 1px;
+  height: 34%; background: var(--pc, var(--ptr-white));
+}
+.knob-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.knob-cell.dim { opacity: .35; pointer-events: none; }
+
+/* ---- vertical slider ------------------------------------------------------ */
+.slider {
+  position: relative; width: 9px; height: var(--h,62px); background: var(--track);
+  border-radius: 2px; cursor: ns-resize; box-shadow: inset 0 1px 3px rgba(0,0,0,.8); touch-action: none;
+}
+.slider-cap {
+  position: absolute; left: -5px; width: 19px; height: 9px; border-radius: 2px;
+  background: var(--knob-body); border-top: 2px solid var(--ptr-white);
+  box-shadow: 0 2px 3px rgba(0,0,0,.6); bottom: var(--bot,0);
+}
+.slider-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+
+/* ---- LCD readout ---------------------------------------------------------- */
+.lcd {
+  background: var(--lcd-bg); border-radius: 2px; box-shadow: inset 0 1px 4px #000;
+  color: var(--lcd-ink); font: 800 11px var(--f-lcd);
+  display: flex; align-items: center; justify-content: center; padding: 0 6px; white-space: nowrap;
+}
+.lcd.click { cursor: pointer; }
+
+/* ---- push button / toggle ------------------------------------------------- */
+.btn {
+  background: var(--btn); border: 1px solid var(--frame); border-radius: 3px; cursor: pointer;
+  box-shadow: 0 2px 3px rgba(0,0,0,.5); color: var(--silk-hi);
+  font: 700 8px var(--f-silk); letter-spacing: .08em;
+  display: flex; align-items: center; justify-content: center;
+}
+.btn:active, .btn.on { background: var(--btn-active); }
+
+/* ---- stepper -------------------------------------------------------------- */
+.step {
+  width: 20px; height: 18px; background: var(--btn); border: 1px solid var(--frame); border-radius: 2px;
+  color: var(--silk-hi); font: 700 10px var(--f-silk); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; user-select: none;
+}
+.step:active { background: var(--step-active); }
+
+/* ---- LED ------------------------------------------------------------------ */
+.led { width: 6px; height: 6px; border-radius: 50%; background: var(--led-off); }
+.led.on { background: var(--led-on); box-shadow: var(--led-glow); }
+
+/* ---- rows / helpers ------------------------------------------------------- */
+.row { display: flex; align-items: center; }
+.col { display: flex; flex-direction: column; }
+.grow { flex: 1; }
+
+/* ---- overlays (menus / modals) -------------------------------------------- */
+.overlay {
+  position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+  background: rgba(7,7,10,.82);
+}
+.overlay.z11 { z-index: 11; }
+.menu {
+  width: 430px; max-height: 520px; background: var(--lcd-bg); border: 1px solid var(--frame);
+  border-radius: 4px; box-shadow: 0 8px 40px #000; padding: 12px; display: flex; flex-direction: column; gap: 8px;
+}
+.menu-head { display: flex; justify-content: space-between; font: 800 12px var(--f-lcd); color: var(--lcd-ink); }
+.menu-list { overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; min-height: 0;
+  scrollbar-width: thin; scrollbar-color: #3a3410 var(--lcd-bg); }
+.menu-list::-webkit-scrollbar { width: 6px; }
+.menu-list::-webkit-scrollbar-track { background: var(--lcd-bg); }
+.menu-list::-webkit-scrollbar-thumb { background: #3a3410; border-radius: 3px; }
+.menu-row { display: flex; gap: 10px; padding: 3px 6px; cursor: pointer; font: 800 12px var(--f-lcd); color: var(--lcd-ink); }
+.menu-row.cur { color: #07070a; background: var(--lcd-ink); }
+.modal { background: var(--panel-header); border: 1px solid var(--frame); border-radius: 4px;
+  box-shadow: 0 8px 40px #000; padding: 14px 18px; display: flex; flex-direction: column; gap: 12px; }
+.field {
+  width: 100%; background: var(--lcd-bg); border: 1px solid var(--frame); border-radius: 2px;
+  color: var(--lcd-ink); font: 800 10px var(--f-lcd); padding: 5px 6px; outline: none;
 }
 
-/* slim dark LCD scrollbar (menu overlay list) */
-.lcd-scroll { scrollbar-width: thin; scrollbar-color: #3a3410 #07070a; }
-.lcd-scroll::-webkit-scrollbar { width: 6px; height: 0; }
-.lcd-scroll::-webkit-scrollbar-track { background: #07070a; }
-.lcd-scroll::-webkit-scrollbar-thumb { background: #3a3410; border-radius: 3px; }
+/* corner resize grip (dev/browser only; host window border replaces it) */
+.grip { position: absolute; right: 0; bottom: 0; width: 15px; height: 15px; z-index: 30; cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 0 45%, var(--frame) 45% 52%, transparent 52% 63%,
+    var(--frame) 63% 70%, transparent 70% 81%, var(--frame) 81% 88%, transparent 88%); }

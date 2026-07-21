@@ -125,6 +125,7 @@ struct DreamPatch {
     VectorParams vec;
     int          glfoShape01 = 0;  // panel order TRI/SIN/SAW/SQR/S+H
     double       glfoRate01  = 50.0;   // 0..100 -> Lfo::rateHzFromParam
+    bool         glfoSync    = false;  // v15: tempo-sync (rate01 -> beat division)
     MatrixSlot   slot[3];
     double       drift = 0.0;      // global humanize depth 0..1
 };
@@ -717,7 +718,13 @@ public:
 
     void updateLive() noexcept {
         glfo_.setShape(panelLfoShapeToLfo(patch_.glfoShape01));
-        glfo_.setRateHz(Lfo::rateHzFromParam((float)patch_.glfoRate01));
+        if (patch_.glfoSync) {                         // v15: tempo-synced rate
+            const int idx = (int)(patch_.glfoRate01 / 100.0 * 11.0 + 0.5);
+            const double bpm = (double)(bpm_ > 1.0f ? bpm_ : 120.0f);
+            glfo_.setRateHz((float)(bpm / 60.0 / toneLfoDivisionBeats(idx)));
+        } else {
+            glfo_.setRateHz(Lfo::rateHzFromParam((float)patch_.glfoRate01));
+        }
         orbitHz_ = orbitRateHz(patch_.vec.orbitRate01);
         for (auto& v : voices_) v.updateLive(patch_);
     }

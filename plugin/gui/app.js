@@ -1,1161 +1,988 @@
-// The Dreamer -- WebView editor logic, REGENERATED from design-handoff/v13
-// "The Dreamer GUI" master (interactive prototype). Every control's geometry,
-// color, typography and behavior is reproduced verbatim from that master; the
-// only things carried from the prior editor are the JUCE bridge plumbing (the
-// import below, window.__JUCE__.initialisationData, the get*State relay
-// factories, the getInfo/keyboardFold/noteOn.. native functions and the
-// window.uiMeters feed) and the bank3-ordered wave list (a DSP-contract datum,
-// not layout). Layout is LOCKED to the master: fixed absolute/flex geometry,
-// no responsive recompute; the sole transform is the uniform window-derived
-// scale in fit().
-//
-// Parameter wiring is 1:1 with the APVTS relays declared in
-// plugin/PluginEditor.cpp (makeSliderIds / makeToggleIds / makeComboIds). The
-// id lists below are constructed with the SAME per-tone-suffix + global loop
-// structure, so the set requested here equals the set the C++ registers.
-import * as Juce from "./index.js";
+/* ============================================================================
+ * The Dreamer — production front-end (framework-free, JUCE WebView ready)
+ * ----------------------------------------------------------------------------
+ *  editor.html loads:  style.css  →  app.js (this file, type="module")
+ *
+ *  ARCHITECTURE
+ *   1. BRIDGE  — talks to the JUCE juce_gui_extra WebView relays. Falls back to
+ *                an in-memory MOCK so this file also runs in a plain browser
+ *                (open editor.html) for design QA. See README_INTEGRATION.md.
+ *   2. PARAMS  — the full APVTS parameter map (ids, ranges, choices, defaults).
+ *   3. WIDGETS — Knob / Slider / Toggle / Stepper / LcdMenu / Led factories that
+ *                bind a DOM node to a Param handle (read on change, write on drag).
+ *   4. PANEL   — builders that assemble the locked 1140×660 layout. Geometry is
+ *                FROZEN — mirror ../The Dreamer GUI.png; never reflow on redraw.
+ *
+ *  The layout is intentionally hand-placed with the master's pixel constants.
+ * ========================================================================== */
 
-const $ = (id) => document.getElementById(id);
-const NS = "http://www.w3.org/2000/svg";
-const clamp01 = (v) => Math.max(0, Math.min(1, v));
-const initData = window.__JUCE__.initialisationData;
-const HAS_BACKEND = (initData.__juce__sliders || []).length > 0;
-const MOCKMODE = !HAS_BACKEND;
+/* ---------------------------------------------------------------- DOM helpers */
+const NS = 'http://www.w3.org/2000/svg';
+function h(tag, cls, attrs, ...kids) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (attrs) for (const k in attrs) {
+    if (k === 'style') e.style.cssText = attrs[k];
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2).toLowerCase(), attrs[k]);
+    else if (attrs[k] != null) e.setAttribute(k, attrs[k]);
+  }
+  for (const c of kids.flat()) if (c != null) e.append(c.nodeType ? c : document.createTextNode(c));
+  return e;
+}
+function s(tag, attrs, ...kids) {
+  const e = document.createElementNS(NS, tag);
+  if (attrs) for (const k in attrs) if (attrs[k] != null) e.setAttribute(k, attrs[k]);
+  for (const c of kids.flat()) if (c != null) e.append(c);
+  return e;
+}
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-// tiny DOM helpers (cssText = the master's inline style string, verbatim)
-function mk(tag, css, txt) { const d = document.createElement(tag); if (css) d.style.cssText = css; if (txt != null) d.textContent = txt; return d; }
-function mkNS(tag) { return document.createElementNS(NS, tag); }
-function setAttrs(e, o) { for (const k in o) e.setAttribute(k, o[k]); }
+/* ============================================================ 1. BRIDGE ==== */
+/* Prefers the official juce-framework-frontend relays (window.__JUCE__ present
+ * in the WebView). getState(id) returns a uniform handle regardless of backend.
+ * Continuous params are normalised 0..1; choice = index; toggle = bool.        */
+const Bridge = (() => {
+  const inJuce = typeof window !== 'undefined' && !!window.__JUCE__;
+  let juce = null;                      // populated from window.Juce if present
+  if (inJuce && window.Juce) juce = window.Juce;
 
-//============================================================================
-// Choice lists -- order = APVTS choice index (LOCKED, plugin/Params.h). Shown
-// upper-case on the silkscreen/LCD like the master. These are used for display
-// + wrap math; selection always goes through the combo relay by index.
-const FTYPES   = ['LP 24','LP 12','BP','HP','LIQUID','CLASSIC','LADDER','NOTCH','COMB +','COMB -','N+LP','FORMANT','ALLPASS','DREAMPLN'];
-const SHAPES   = ['OFF','SOFT FOLD','HARD FOLD','SINE FOLD','ASYM','DRIVE'];
-const TVFTYPES = ['LP24','LP12','BP','HP'];
-const AUXDESTS = ['PITCH','START','SHAPE','PAN','NOISE'];
-const LFODESTS = ['PITCH','CUTOFF','SHAPE','LEVEL'];
-const LFOSHAPES= ['TRI','SIN','SAW','SQR','S+H'];            // lfoN_shape, lfo_shape (Params lfoShapes)
-const ORBITSHAPES = ['SAW','TRI','SIN','SQR','S+H'];          // vec_orbit_shape (Params orbitShapes)
-const MSRC     = ['G-LFO','VEC PHS','AUX','VELO','WHEEL'];
-const MDST     = ['PITCH','CUT 1','CUT 2','MORPH','SHAPE','VEC PHS','PAN','NOISE','FX PARAM'];
-const VOICINGS = ['SINGLE','OCT','POWER','DREAMY'];
-const SPREADS  = ['ADD9','MIN7','SUS2'];
-const LOOPMODES= ['FWD','PINGPONG'];
-const PLAYMODES= ['NORMAL','STRETCH'];
-const MODFX    = ['CHORUS','FLANGER','PHASER','ENSEMBLE','DIMENSION','ROTARY','BARBERPOLE'];
-const DLYMODES = ['DIGITAL','TAPE','PONG'];
-const REVTYPES = ['ROOM','HALL','PLATE'];
-const PREPOST  = ['POST','PRE'];                             // fx_prepost (Params: Post, Pre)
-// per-slot secondary-parameter (PARAMS FOCUS) display names -- the pfocus combo
-// itself has 4 choices (P1..P4); these are the human labels shown for each.
-const MODFXFOCUS = ['DELAY','WIDTH','FEEDBK','TONE'];
-const DLYFOCUS   = ['WOW','FLUTTER','TONE','DUCK'];
-const REVFOCUS   = ['PREDLY','WIDTH','LO CUT','HI CUT'];
-const LOFIFOCUS  = ['BITS','SRATE','COMPAND','ALIAS'];       // UI-local focus -> lofi_bits/srate/compand + lofi_alias(toggle)
-const TALKFOCUS  = ['VOWEL-A','VOWEL-B','MORPH','SENS'];     // UI-local focus -> talk_va/vb/morph/sens
-const SYNCDIVS   = ['4/1','2/1','1/1','1/2','1/2T','1/4','1/4T','1/8','1/8T','1/16','1/16T','1/32'];
-const TONELET    = ['A','B','C','D'];
-// preset browser. The factory bank is PROCESSOR-OWNED (parsed from the embedded
-// presets.json); on boot loadPresetList() replaces this array with the names/
-// categories fetched via the getPresetList native fn, and selecting a preset
-// calls the loadPreset native fn so the processor performs the APVTS recall.
-// The array below is only the offline/mock fallback (no JUCE backend).
-let PRESETS = [
-  ['PAD','ETHEREAL DAWN'],['PAD','SLOW MEMORY'],['PAD','GHOST HARBOR'],['PAD','VIOLET SLEEP'],
-  ['PAD','TIDE GARDEN'],['PAD','HALF LIGHT'],['SPLIT','GLASS RIVER'],['SPLIT','NIGHT DRIVE 84'],
-  ['BELL','TINE CATHEDRAL'],['BELL','MUSICBOX MOON'],['BELL','COLD CHIMES'],
-  ['STR','ORBITAL STRINGS'],['STR','SOLINA FIELDS'],['VOX','CHOIR OF WIRES'],['VOX','BREATH MACHINE'],
-  ['BASS','RUBBER ORBIT'],['BASS','SUB DREAMS'],['LEAD','SYNC COMET'],['LEAD','12-BIT STAR'],
-  ['KEY','EPIANO HAZE'],['KEY','ORGAN NEBULA'],['SFX','RE-ENTRY'],['SFX','STATIC BLOOM'],['INIT','INIT PATCH']
-];
+  const mock = new Map();               // id -> {v, subs:Set}
+  function mockState(id, def) {
+    if (!mock.has(id)) mock.set(id, { v: def, subs: new Set() });
+    const m = mock.get(id);
+    return {
+      get: () => m.v,
+      set: v => { m.v = v; m.subs.forEach(f => f(v)); },
+      sub: f => { m.subs.add(f); return () => m.subs.delete(f); },
+    };
+  }
 
-// Wave ROM (218 = bank3 order: 78 cycle "", 130 loop "ENS", 10 hit "SHOT").
-// The 78 cycle names are the real bank3 names; the loop/hit entries carry the
-// tag that drives the LOOP/PLAY selector swap. In-plugin the wave display could
-// also come from the relay's choices, but the tag is not in that string, so the
-// index-aligned table below is authoritative for the swap + menu grouping.
-const WAVE_CYCLE = [
-  ['Basic','Saw'],['Basic','Square'],['Basic','Triangle'],['Basic','Sine'],
-  ['Pad','SoftSaw 1'],['Pad','SoftSaw 2'],['Pad','SoftSaw 3'],['Pad','AsymSaw 1'],['Pad','AsymSaw 2'],
-  ['Pad','Hollow 1'],['Pad','Hollow 2'],['Pad','Hollow 3'],['Pad','Hollow 4'],['Pad','Tannerin'],
-  ['Pad','Breath 1'],['Pad','Breath 2'],['Pad','Breath 3'],['Pad','Glass Organ 1'],['Pad','Glass Organ 2'],
-  ['Pad','Glass Organ 3'],['Pad','SinHarm 1'],['Pad','SinHarm 2'],
-  ['String','StringBox 1'],['String','StringBox 2'],['String','StringBox 3'],['String','Violin 1'],['String','Violin 2'],
-  ['String','Cello 1'],['String','Cello 2'],['String','Cello 3'],
-  ['Vox','Voice 1'],['Vox','Voice 2'],['Vox','Voice 3'],['Vox','Voice 4'],['Vox','Voice 5'],
-  ['Vox','Voice Bright 1'],['Vox','Voice Bright 2'],
-  ['Bell','FM Bell 1'],['Bell','FM Bell 2'],['Bell','FM Bell 3'],['Bell','FM Bell 4'],['Bell','FM Bell 5'],
-  ['Bell','FM Bell 6'],['Bell','Tine Bright'],['Bell','EP Tine 1'],['Bell','EP Tine 2'],['Bell','DigiBell 1'],
-  ['Bell','DigiBell 2'],['Bell','DigiBell 3'],['Bell','DigiBell 4'],['Bell','DigiBell 5'],['Bell','Chime 1'],
-  ['Bell','Chime 2'],['Bell','Chime 3'],['Bell','Hollow Bell 1'],['Bell','Hollow Bell 2'],['Bell','Hollow Bell 3'],
-  ['Metal','Spectrum 1'],['Metal','Spectrum 2'],['Metal','Spectrum 3'],['Metal','Spectrum 4'],['Metal','Spectrum 5'],
-  ['Metal','Spectrum 6'],['Metal','Spectrum 7'],['Metal','RawMetal 1'],['Metal','RawMetal 2'],['Metal','RawMetal 3'],
-  ['Metal','RawMetal 4'],['Metal','Clang 1'],['Metal','Clang 2'],['Metal','Clang 3'],['Metal','BitHash 1'],
-  ['Metal','BitHash 2'],['Metal','BitHash 3'],['Metal','BitHash 4'],['Metal','GrainMetal 1'],['Metal','GrainMetal 2'],
-  ['Metal','GrainMetal 3']
-];
-const WAVES = [];
-WAVE_CYCLE.forEach(([c, n]) => WAVES.push({ cat: c, name: n, tag: '' }));
-for (let i = 0; i < 130; i++) WAVES.push({ cat: 'Loop', name: 'Loop ' + String(i + 1).padStart(3, '0'), tag: 'ENS' });
-for (let i = 0; i < 10;  i++) WAVES.push({ cat: 'Hit',  name: 'Hit '  + String(i + 1).padStart(2, '0'), tag: 'SHOT' });
+  // Wrap a JUCE relay state (slider/toggle/comboBox) into our handle.
+  function wrapSlider(id, def) {
+    const st = juce.getSliderState(id);
+    return {
+      get: () => st.getNormalisedValue(),
+      set: v => st.setNormalisedValue(v),
+      sub: f => { st.valueChangedEvent.addListener(() => f(st.getNormalisedValue())); return () => {}; },
+    };
+  }
+  function wrapToggle(id, def) {
+    const st = juce.getToggleState(id);
+    return { get: () => st.getValue(), set: v => st.setValue(!!v),
+      sub: f => { st.valueChangedEvent.addListener(() => f(st.getValue())); return () => {}; } };
+  }
+  function wrapChoice(id, def) {
+    const st = juce.getComboBoxState(id);
+    return { get: () => st.getChoiceIndex(), set: v => st.setChoiceIndex(v | 0),
+      sub: f => { st.valueChangedEvent.addListener(() => f(st.getChoiceIndex())); return () => {}; } };
+  }
 
-//============================================================================
-// Relay id lists -- MIRROR of plugin/PluginEditor.cpp makeSliderIds /
-// makeToggleIds / makeComboIds (same 4 per-tone suffixes _a.._d + globals).
-const SFX = ['_a', '_b', '_c', '_d'];
-const SLIDER_PERTONE = ['level','oct','fine','start','velo','pan','shape_depth','noise','noise_color',
-  'dir','vint','aux_amt','lfo1_rate','lfo1_depth','lfo2_rate','lfo2_depth',
-  'tvf_cut','tvf_res','tvf_env','tvf_kf','tvf_a','tvf_d','tvf_s','tvf_r',
-  'tva_a','tva_d','tva_s','tva_r','aux_a','aux_d','aux_s','aux_r','hit_stretch','hit_pitchtrim'];
-const SLIDER_GLOBAL = ['master','vec_phase','vec_orbit_rate','vec_penv_start','vec_penv_end','vec_penv_time',
-  'lfo_rate','mtx1_amt','mtx2_amt','mtx3_amt','flt1_cut','flt1_res','flt1_env','flt2_cut','flt2_res','flt2_morph','flt_bal',
-  'modfx_rate','modfx_depth','modfx_mix','modfx_p0','modfx_p1','modfx_p2','modfx_p3',
-  'dly_time','dly_fb','dly_mix','dly_p0','dly_p1','dly_p2','dly_p3',
-  'rev_size','rev_damp','rev_mix','rev_p0','rev_p1','rev_p2','rev_p3',
-  'lofi_bits','lofi_srate','lofi_compand','width','width_haas','talk_va','talk_vb','talk_morph','talk_sens','drift'];
-const TOGGLE_PERTONE = ['on','start_random','lfo1_sync','lfo2_sync'];
-const TOGGLE_GLOBAL  = ['vec_orbit_on','vec_orbit_voice','vec_penv_on','vec_penv_loop',
-  'modfx_on','dly_on','dly_sync','rev_on','lofi_on','lofi_alias','width_on','width_bassmono','talk_on'];
-const COMBO_PERTONE  = ['wave','shape','tvf_type','aux_dest','lfo1_dest','lfo2_dest','lfo1_shape','lfo2_shape',
-  'voicing','dreamy_spread','loop_mode','hit_play'];
-const COMBO_GLOBAL   = ['vec_orbit_shape','lfo_shape','mtx1_src','mtx2_src','mtx3_src','mtx1_dst','mtx2_dst','mtx3_dst',
-  'flt_route','flt1_type','flt2_type','modfx_type','dly_mode','rev_type',
-  'modfx_pfocus','dly_pfocus','rev_pfocus','fx_prepost','interp','engine'];
-function buildIds(pertone, global) { const a = []; for (const sx of SFX) for (const b of pertone) a.push(b + sx); for (const g of global) a.push(g); return a; }
-const SLIDER_IDS = buildIds(SLIDER_PERTONE, SLIDER_GLOBAL);   // 184
-const TOGGLE_IDS = buildIds(TOGGLE_PERTONE, TOGGLE_GLOBAL);   // 29
-const COMBO_IDS  = buildIds(COMBO_PERTONE, COMBO_GLOBAL);     // 68
-
-//============================================================================
-// Standalone-mock seed (only used when there is no JUCE backend, i.e. plain
-// browser / headless verification). Values mirror the master's default patch
-// so the offline render resembles the handoff PNG. Unseeded sliders default to
-// .5 (center) -- correct for bipolar, a neutral mid for the rest.
-const MOCK = { sliders: {}, toggles: {}, combos: {} };
-(function seed() {
-  const S = MOCK.sliders, T = MOCK.toggles, C = MOCK.combos;
-  // tone A full edit state
-  Object.assign(S, {
-    level_a:.8, oct_a:.5, fine_a:.52, start_a:.1, velo_a:.4, pan_a:.5, shape_depth_a:0, noise_a:0, noise_color_a:.5,
-    dir_a:0, vint_a:.6, aux_amt_a:.5, lfo1_rate_a:.4, lfo1_depth_a:.15, lfo2_rate_a:.25, lfo2_depth_a:0,
-    tvf_cut_a:.5, tvf_res_a:.25, tvf_env_a:.5, tvf_kf_a:.3, tvf_a_a:.05, tvf_d_a:.6, tvf_s_a:.5, tvf_r_a:.55,
-    tva_a_a:.2, tva_d_a:.7, tva_s_a:.8, tva_r_a:.65, aux_a_a:0, aux_d_a:.4, aux_s_a:0, aux_r_a:.3, hit_stretch_a:.5, hit_pitchtrim_a:.5,
-    level_b:.62, level_c:.5, level_d:.4, dir_b:.25, dir_c:.5, dir_d:.75, vint_b:.6, vint_c:.6, vint_d:.6,
-    master:.78, vec_phase:.12, vec_orbit_rate:.3, vec_penv_start:0, vec_penv_end:.5, vec_penv_time:.4, lfo_rate:.4,
-    mtx1_amt:.9, mtx2_amt:.18, mtx3_amt:.5,
-    flt1_cut:.52, flt1_res:.35, flt1_env:.5, flt2_cut:.7, flt2_res:.2, flt2_morph:.4, flt_bal:.5,
-    modfx_rate:.3, modfx_depth:.5, modfx_mix:.45, dly_time:.5, dly_fb:.35, dly_mix:.3, rev_size:.6, rev_damp:.4, rev_mix:.35,
-    width:.55, width_haas:.3,
-  });
-  Object.assign(T, { on_a:true, on_b:true, on_c:true, on_d:true, modfx_on:true, dly_on:true, rev_on:true, width_on:true, vec_orbit_on:true });
-  Object.assign(C, {
-    wave_a:11, wave_b:19, wave_c:27, wave_d:37, lfo1_dest_a:0, lfo2_dest_a:1, lfo1_shape_a:0, lfo2_shape_a:2,
-    flt1_type:6, flt2_type:13, vec_orbit_shape:2, lfo_shape:0, modfx_type:0, dly_mode:0, rev_type:1,
-    mtx1_src:0, mtx1_dst:3, mtx2_src:1, mtx2_dst:4, mtx3_src:2, mtx3_dst:0,
-  });
+  return {
+    live: inJuce && !!juce,
+    state(kind, id, def) {
+      if (this.live) {
+        if (kind === 'toggle') return wrapToggle(id, def);
+        if (kind === 'choice') return wrapChoice(id, def);
+        return wrapSlider(id, def);
+      }
+      return mockState(id, def);
+    },
+    // Native processor functions (D3 scope, panic, presets, midi learn, user bank).
+    // In the WebView these come from Juce.getNativeFunction(name); mocked otherwise.
+    fn(name) {
+      if (this.live && juce.getNativeFunction) return juce.getNativeFunction(name);
+      return async (...a) => MOCK_FN[name] ? MOCK_FN[name](...a) : undefined;
+    },
+  };
 })();
 
-//============================================================================
-// Bridge plumbing: real-or-mock relay state factories (house pattern). If an id
-// is registered with the backend, use the JUCE state; else a local stand-in
-// exposing the same interface, seeded from MOCK so the page renders offline.
-function mockEvents() { const l = []; return { addListener: (f) => l.push(f), fire: () => l.forEach((f) => f()) }; }
-const sCache = new Map(), tCache = new Map(), cCache = new Map();
-function sliderState(id) {
-  if (sCache.has(id)) return sCache.get(id);
-  let st;
-  if (HAS_BACKEND && initData.__juce__sliders.includes(id)) st = Juce.getSliderState(id);
-  else { const ev = mockEvents(); let v = (id in MOCK.sliders) ? MOCK.sliders[id] : .5;
-    st = { getNormalisedValue: () => v, setNormalisedValue(n) { v = clamp01(n); ev.fire(); }, getScaledValue: () => v,
-      sliderDragStarted() {}, sliderDragEnded() {}, valueChangedEvent: ev, propertiesChangedEvent: mockEvents() }; }
-  sCache.set(id, st); return st;
+/* mock implementations of the D-series native functions (browser QA only) */
+const MOCK_FN = {
+  getScopeData: () => Array.from({ length: 2048 }, (_, i) => Math.sin(i / 9) * 0.4 * Math.random()),
+  getLimiterGR: () => (Math.random() > 0.85 ? Math.random() * 3 : 0),
+  panic: () => {},
+  getPresetList: () => PRESETS.map((p, i) => ({ index: i, category: p[0], name: p[1], bank: 'FACTORY' })),
+  getUserPresetList: () => USER_PRESETS.slice(),
+  saveUserPreset: n => { USER_PRESETS.push({ name: n, category: 'USER', bank: 'USER' }); },
+  renameUserPreset: (o, n) => { const p = USER_PRESETS.find(x => x.name === o); if (p) p.name = n; },
+  deleteUserPreset: n => { const i = USER_PRESETS.findIndex(x => x.name === n); if (i >= 0) USER_PRESETS.splice(i, 1); },
+  loadUserPreset: () => {},
+  getWaveList: () => WAVES.map((w, i) => ({ index: i, category: w[0], name: w[1], bank: w[2] || '' })),
+};
+
+/* ============================================================ 2. PARAMS ==== */
+const TONES = ['A', 'B', 'C', 'D'];
+const TONE_COLORS = ['#D4547D', '#1C9E75', '#388ADE', '#BA7517'];
+const TONE_CORE = [['#FFD4FC','#D4547D','#4A1D2C'],['#9CFFF5','#1C9E75','#0A3729'],
+                   ['#B8FFFF','#388ADE','#14304E'],['#FFF596','#BA7517','#412908']];
+const TONE_ANGLE = [90, 0, 220, 300];
+
+const FTYPES  = ['LP 24','LP 12','BP','HP','LIQUID','CLASSIC','LADDER','NOTCH','COMB +','COMB -','N+LP','FORMANT','ALLPASS','DREAMPLN'];
+const TVFTYPES = ['LP24','LP12','BP','HP'];
+const SHAPES   = ['OFF','SOFT FOLD','HARD FOLD','SINE FOLD','ASYM','DRIVE'];
+const AUXDESTS = ['PITCH','START','SHAPE','PAN','NOISE'];
+const LFODESTS = ['PITCH','CUTOFF','SHAPE','LEVEL'];
+const WAVE_SHAPES = ['TRI','SIN','SAW','SQR','S+H'];
+const VECSHAPES = ['SAW','TRI','SIN','SQR','S+H'];
+const VOICINGS = ['SINGLE','OCT','POWER','DREAMY'];
+const SPREADS  = ['ADD9','MIN7','SUS2'];
+const LOOPMODES = ['FWD','PINGPONG'];
+const PLAYMODES = ['NORMAL','STRETCH'];
+const MODFX = ['CHORUS','FLANGER','PHASER','ENSEMBLE'];
+const DLYMODES = ['DIGITAL','TAPE','PONG'];
+const REVTYPES = ['ROOM','HALL','PLATE'];
+const MSRC = ['G-LFO','VEC PHS','AUX','VELO','WHEEL'];
+const MDST = ['PITCH','CUT 1','CUT 2','MORPH','SHAPE','VEC PHS','PAN','NOISE','FX PARAM','LOOP RATE'];
+const MODFXFOCUS = ['DELAY','WIDTH','FEEDBK','TONE'];
+const DLYFOCUS = ['WOW','FLUTTER','TONE','DUCK'];
+const REVFOCUS = ['PREDLY','WIDTH','LO CUT','HI CUT'];
+const LOFIFOCUS = ['BITS','SRATE','COMPAND','ALIAS'];
+const TALKFOCUS = ['VOWEL-A','VOWEL-B','MORPH','SENS'];
+const SYNCDIVS = ['4/1','2/1','1/1','1/2','1/2T','1/4','1/4T','1/8','1/8T','1/16','1/16T','1/32'];
+
+/* Wave ROM: 218 = 78 cycle + 130 loop (ENS) + 10 hit (SHOT).
+ * PRODUCTION: replace this with getWaveList() from the processor — do NOT hardcode. */
+const WAVES = (() => {
+  const cyc = {
+    PAD:['SOFTSAW 1','SOFTSAW 2','HOLLOW 1','HOLLOW 3','TANNERIN','BREATH 1','GLASS ORG 1','SINHARM 1','SOFTSAW 3','HOLLOW 2','BREATH 2','GLASS ORG 2','SINHARM 2','SPECTRA','HAZE','NEBULA'],
+    STR:['STRINGBOX 1','VIOLIN 1','CELLO 2','STRINGBOX 2','VIOLIN 2','CELLO 1','STRINGBOX 3','ARCO'],
+    VOX:['VOICE 1','VOICE 4','VOICE BRT 1','VOICE 2','VOICE 3','VOICE BRT 2','GHOST VX','AAH','OOH','MMH'],
+    BELL:['FM BELL 1','FM BELL 4','EP TINE 1','DIGIBELL 1','CHIME 2','FM BELL 2','FM BELL 3','EP TINE 2','DIGIBELL 2','CHIME 1','GLASS 1','GLASS 2','MUSICBOX','CELESTA'],
+    MTL:['SPECTRUM 4','RAWMETAL 2','BITHASH 2','CLANG 1','SPECTRUM 1','SPECTRUM 2','RAWMETAL 1','BITHASH 1','SPECTRUM 3','RAWMETAL 3','BITHASH 3','SPECTRUM 5'],
+    BAS:['SAW','SQUARE','TRIANGLE','SINE','PULSE 25','PULSE 50','RUBBER 1','RUBBER 2','ACID PULS','SUB SINE','DEEP HSE','PICK BS','FRETLESS','ORBIT BS','PHATT BS','303 SQR','MOOG BS','FM BS'],
+  };
+  const out = [];
+  for (const cat in cyc) for (const nm of cyc[cat]) out.push([cat, nm]);
+  ['SOLINA','OB STR','JUNO ENS','SUPERSAW','CHOIR ENS','BRASS ENS','TAPE STR','OCT STR','PWM ENS','VOX ENS','PAD ENS','SYN ENS','ANALOG ENS']
+    .forEach(b => { for (let i = 1; i <= 10; i++) out.push(['ENS', b + ' ' + i, 'ENS']); });
+  ['PIZZ','ANVIL','ICEHIT','ORBIT HIT','CLANG','TOM HIT','ZAP','GLASS HIT','METAL HIT','KICK']
+    .forEach(nm => out.push(['HIT', nm, 'SHOT']));
+  return out;
+})();
+
+const PRESETS = [
+  ['PAD','ETHEREAL DAWN'],['PAD','SLOW MEMORY'],['PAD','GHOST HARBOR'],['PAD','VIOLET SLEEP'],
+  ['PAD','TIDE GARDEN'],['PAD','HALF LIGHT'],['PAD','AURORA VEIL'],['PAD','DEEP FIELD'],
+  ['SPLIT','GLASS RIVER'],['SPLIT','NIGHT DRIVE 84'],['SPLIT','BASS & BELLS'],['SPLIT','SPLIT HORIZON'],
+  ['BELL','TINE CATHEDRAL'],['BELL','MUSICBOX MOON'],['BELL','COLD CHIMES'],['BELL','CRYSTAL RAIN'],
+  ['BELL','DIGITAL CAROL'],['STR','ORBITAL STRINGS'],['STR','SOLINA FIELDS'],['STR','TAPE ENSEMBLE'],
+  ['STR','CINEMA ARCO'],['VOX','CHOIR OF WIRES'],['VOX','BREATH MACHINE'],['VOX','GHOST CHOIR'],
+  ['VOX','ANGEL AAH'],['BASS','RUBBER ORBIT'],['BASS','SUB DREAMS'],['BASS','ACID COMET'],
+  ['BASS','PHATT SUB'],['BASS','303 REVIVAL'],['LEAD','SYNC COMET'],['LEAD','12-BIT STAR'],
+  ['LEAD','SOLO WIRE'],['LEAD','NEON LINE'],['KEY','EPIANO HAZE'],['KEY','ORGAN NEBULA'],
+  ['KEY','DIGI RHODES'],['KEY','GLASS KEYS'],['SFX','RE-ENTRY'],['SFX','STATIC BLOOM'],
+  ['SFX','ORBIT DECAY'],['SFX','DREAM STATE'],['SFX','SIGNAL LOST'],['ARP','PULSE GRID'],
+  ['ARP','STARFIELD SEQ'],['ARP','NIGHT MOTION'],['INIT','INIT PATCH'],
+];
+const USER_PRESETS = [{ name: 'MY ORBIT PAD', category: 'USER', bank: 'USER' },
+                      { name: 'LIVE LEAD 1',  category: 'USER', bank: 'USER' }];
+
+/* Per-tone param defaults (normalised). Ids are `<key>_<a|b|c|d>` in the APVTS. */
+const TONE_DEFAULTS = {
+  oct: .5, semi: .5, fine: .5, start: 0, level: .8, velo: .4, pan: .5, shape: 0, shapeDepth: 0,
+  tvfType: 0, dir: .5, vint: .6, noise: 0, noiseCol: .5, startRnd: false, voicing: 0, spread: 0,
+  detVoices: 0, detAmt: 0, loopMode: 0, hitPlay: 0, hitStretch: .5, hitTrim: .5,
+  loopRate: .5, loopSync: false, loopBeats: 5, loopVari: false,
+  l1r: .4, l1d: .15, l1sync: false, l1dest: 0, l1shape: 0,
+  l2r: .25, l2d: 0, l2sync: false, l2dest: 1, l2shape: 2, auxAmt: .5, auxDest: 0,
+  cut: .5, res: .25, env: .5, kf: .5,
+  fa: .05, fd: .6, fs: .5, fr: .55, aa: .2, ad: .7, as: .8, ar: .65, xa: 0, xd: .4, xs: 0, xr: .3,
+};
+/* map UI key -> APVTS id stem (kept explicit so ids match DSP_BUILD/Params.h) */
+const TONE_ID = {
+  oct:'oct', semi:'semi', fine:'fine', start:'start', level:'level', velo:'velo', pan:'pan',
+  shape:'shape', shapeDepth:'shape_depth', tvfType:'tvf_type', dir:'dir', vint:'vint',
+  noise:'noise', noiseCol:'noise_color', startRnd:'start_random', voicing:'voicing', spread:'dreamy_spread',
+  detVoices:'detune_voices', detAmt:'detune_amount', loopMode:'loop_mode', hitPlay:'hit_play',
+  hitStretch:'hit_stretch', hitTrim:'hit_pitchtrim', loopRate:'loop_rate', loopSync:'loop_rate_sync',
+  loopBeats:'loop_rate_beats', loopVari:'loop_varispeed',
+  l1r:'lfo1_rate', l1d:'lfo1_depth', l1sync:'lfo1_sync', l1dest:'lfo1_dest', l1shape:'lfo1_shape',
+  l2r:'lfo2_rate', l2d:'lfo2_depth', l2sync:'lfo2_sync', l2dest:'lfo2_dest', l2shape:'lfo2_shape',
+  auxAmt:'aux_amt', auxDest:'aux_dest', cut:'tvf_cut', res:'tvf_res', env:'tvf_env', kf:'tvf_kf',
+  fa:'tvf_a', fd:'tvf_d', fs:'tvf_s', fr:'tvf_r', aa:'tva_a', ad:'tva_d', as:'tva_s', ar:'tva_r',
+  xa:'aux_a', xd:'aux_d', xs:'aux_s', xr:'aux_r', on:'on', wave:'wave',
+};
+const GLOBAL_DEFAULTS = {
+  master: .78, f1Cut: .52, f1Res: .35, f1Env: .5, f2Cut: .7, f2Res: .2, f2Env: .5, f2Morph: .4,
+  route: 0, fbal: .5, f1Type: 6, f2Type: 13, orbRate: .3, vphase: .12, vecShape: 2, orbit: true, venv: false,
+  glfoRate: .4, glfoWave: 0, glfoSync: false,
+  mfxType: 0, mfxRate: .3, mfxDepth: .5, mfxMix: .45, mfxParam: .5, mfxOn: true, mfxFocus: 0,
+  dlyMode: 0, dTime: .5, dFb: .35, dMix: .3, dParam: .4, dlyOn: true, dlySync: false, dlyFocus: 0,
+  revType: 1, rSize: .6, rDamp: .4, rMix: .35, rParam: .5, revOn: true, revFocus: 0,
+  lofiOn: false, lofiParam: .5, lofiFocus: 0, widthOn: true, widthAmt: .55, haas: .3, bassMono: false,
+  talkOn: false, talkParam: .5, talkFocus: 0, prePost: 0, limiter_on: true,
+  gEnvA: .5, gEnvD: .5, gEnvS: .5, gEnvR: .5, gCutoff: .5, gRes: .5, gOctave: .5, globOffset: false,
+  penvStart: 0, penvEnd: .5, penvTime: .4, penvLoop: false,
+  lofiBits: .5, lofiSrate: .5, lofiCompand: .5, lofiAlias: .5, orbitVoice: 0,
+};
+const GLOBAL_ID = {
+  master:'master', f1Cut:'flt1_cut', f1Res:'flt1_res', f1Env:'flt1_env', f2Cut:'flt2_cut',
+  f2Res:'flt2_res', f2Env:'flt2_env', f2Morph:'flt2_morph', route:'flt_route', fbal:'flt_bal',
+  f1Type:'flt1_type', f2Type:'flt2_type', orbRate:'vec_orbit_rate', vphase:'vec_phase',
+  vecShape:'vec_orbit_shape', orbit:'vec_orbit_on', venv:'vec_penv_on', glfoRate:'lfo_rate',
+  glfoWave:'lfo_shape', glfoSync:'lfo_sync', mfxType:'modfx_type', mfxRate:'modfx_rate',
+  mfxDepth:'modfx_depth', mfxMix:'modfx_mix', mfxParam:'modfx_param', mfxOn:'modfx_on', mfxFocus:'modfx_pfocus',
+  dlyMode:'dly_mode', dTime:'dly_time', dFb:'dly_fb', dMix:'dly_mix', dParam:'dly_param', dlyOn:'dly_on',
+  dlySync:'dly_sync', dlyFocus:'dly_pfocus', revType:'rev_type', rSize:'rev_size', rDamp:'rev_damp',
+  rMix:'rev_mix', rParam:'rev_param', revOn:'rev_on', revFocus:'rev_pfocus', lofiOn:'lofi_on',
+  lofiParam:'lofi_param', lofiFocus:'lofi_pfocus', widthOn:'width_on', widthAmt:'width',
+  haas:'width_haas', bassMono:'width_bassmono', talkOn:'talk_on', talkParam:'talk_param',
+  talkFocus:'talk_pfocus', prePost:'fx_prepost', limiter_on:'limiter_on',
+  gEnvA:'g_env_a', gEnvD:'g_env_d', gEnvS:'g_env_s', gEnvR:'g_env_r', gCutoff:'g_cutoff', gRes:'g_res',
+  gOctave:'g_octave', globOffset:'ui_global_offset',
+  penvStart:'vec_penv_start', penvEnd:'vec_penv_end', penvTime:'vec_penv_time', penvLoop:'vec_penv_loop',
+  lofiBits:'lofi_bits', lofiSrate:'lofi_srate', lofiCompand:'lofi_compand', lofiAlias:'lofi_alias', orbitVoice:'vec_orbit_voice',
+};
+const KIND = {  // relay kind per param key (default = slider/continuous)
+  route:'toggle', orbit:'toggle', venv:'toggle', glfoSync:'toggle', mfxOn:'toggle', dlyOn:'toggle',
+  dlySync:'toggle', revOn:'toggle', lofiOn:'toggle', widthOn:'toggle', bassMono:'toggle', talkOn:'toggle',
+  prePost:'toggle', limiter_on:'toggle', globOffset:'toggle', penvLoop:'toggle',
+  f1Type:'choice', f2Type:'choice', vecShape:'choice', glfoWave:'choice', mfxType:'choice',
+  dlyMode:'choice', revType:'choice', mfxFocus:'choice', dlyFocus:'choice', revFocus:'choice',
+  lofiFocus:'choice', talkFocus:'choice', orbitVoice:'toggle',
+};
+const TONE_KIND = {
+  startRnd:'toggle', l1sync:'toggle', l2sync:'toggle', loopSync:'toggle', loopVari:'toggle', on:'toggle',
+  shape:'choice', tvfType:'choice', voicing:'choice', spread:'choice', l1dest:'choice', l2dest:'choice',
+  l1shape:'choice', l2shape:'choice', auxDest:'choice', loopMode:'choice', hitPlay:'choice',
+  loopBeats:'choice', wave:'choice', detVoices:'choice',
+};
+
+/* Param handle cache. glob(key) / tone(key, toneIdx). */
+const _cache = new Map();
+function glob(key) {
+  const id = GLOBAL_ID[key];
+  if (!_cache.has(id)) _cache.set(id, Bridge.state(KIND[key] || 'slider', id, GLOBAL_DEFAULTS[key]));
+  return _cache.get(id);
 }
-function toggleState(id) {
-  if (tCache.has(id)) return tCache.get(id);
-  let st;
-  if (HAS_BACKEND && initData.__juce__toggles.includes(id)) st = Juce.getToggleState(id);
-  else { const ev = mockEvents(); let v = !!MOCK.toggles[id];
-    st = { getValue: () => v, setValue(n) { v = !!n; ev.fire(); }, valueChangedEvent: ev, propertiesChangedEvent: mockEvents() }; }
-  tCache.set(id, st); return st;
+const WAVE_DEFAULTS = [3, 19, 27, 37];   // A/B/C/D initial wave index
+function toneDefault(key, ti) {
+  if (key === 'wave') return WAVE_DEFAULTS[ti];
+  if (key === 'on') return true;
+  return TONE_DEFAULTS[key];
 }
-function comboState(id) {
-  if (cCache.has(id)) return cCache.get(id);
-  let st;
-  if (HAS_BACKEND && initData.__juce__comboBoxes.includes(id)) st = Juce.getComboBoxState(id);
-  else { const ev = mockEvents(); let v = MOCK.combos[id] || 0;
-    st = { getChoiceIndex: () => v, setChoiceIndex(i) { v = i; ev.fire(); }, valueChangedEvent: ev, propertiesChangedEvent: mockEvents() }; }
-  cCache.set(id, st); return st;
+function tone(key, ti) {
+  const id = TONE_ID[key] + '_' + TONES[ti].toLowerCase();
+  if (!_cache.has(id)) _cache.set(id, Bridge.state(TONE_KIND[key] || 'slider', id, toneDefault(key, ti)));
+  return _cache.get(id);
 }
-// safe combo index against OUR locked list length (real state can report junk
-// before properties arrive)
-const cIdx = (id, len) => { const i = comboState(id).getChoiceIndex(); return Math.max(0, Math.min(len - 1, isFinite(i) ? Math.round(i) : 0)); };
+/* MOD MATRIX slots are real APVTS params: mtx{1..3}_src / _dst / _amt. */
+const MTX_SRC_DEF = [0, 1, 2], MTX_DST_DEF = [3, 4, 0], MTX_AMT_DEF = [.8, .35, .5];
+function mtx(n, field) {
+  const id = 'mtx' + (n + 1) + '_' + field;
+  if (!_cache.has(id)) {
+    const kind = field === 'amt' ? 'slider' : 'choice';
+    const def = field === 'src' ? MTX_SRC_DEF[n] : field === 'dst' ? MTX_DST_DEF[n] : MTX_AMT_DEF[n];
+    _cache.set(id, Bridge.state(kind, id, def));
+  }
+  return _cache.get(id);
+}
 
-// Request every relay id up-front -> guarantees the requested set equals the
-// C++ makeSliderIds/makeToggleIds/makeComboIds set (1:1 relay parity), incl.
-// the flagged/deferred ids that carry no panel control (drift, vec_orbit_voice,
-// interp, engine).
-SLIDER_IDS.forEach(sliderState);
-TOGGLE_IDS.forEach(toggleState);
-COMBO_IDS.forEach(comboState);
+/* UI-only state (not APVTS): selected tone, open overlay, matrix rows */
+const UI = { sel: 0, overlay: null, touched: { label: 'MORPH', disp: null, v: .52, bip: false },
+  matrix: [{ s: 0, d: 3, a: .8 }, { s: 1, d: 4, a: .35 }, { s: 2, d: 0, a: .5 }],
+  penv: { start: 0, end: .5, time: .4, loop: false }, presetSel: { bank: 'FACTORY', i: 0 },
+  renameBuf: '', preset: 0, midiLearn: false, kbdOpen: false, scale: 1 };
+const listeners = new Set();               // components re-read UI-derived text
+const notify = () => listeners.forEach(f => f());
+function touch(label, v, bip, disp) { UI.touched = { label, v, bip, disp }; notify(); }
 
-//============================================================================
-// UI-only state + shared refresh machinery
-let sel = 0;                 // selected tone (TONE EDIT target) -- UI state, not a param
-let preset = 0;              // preset browser index -- UI-only
-let midiLearn = false;       // MIDI LEARN cosmetic toggle (feature deferred)
-let kbdOpen = false;         // keyboard fold (boot collapsed = 660)
-let menu = null;             // {title, rows, cur, pick}
-let utilOpen = false, penvOpen = false;
-let lofiFocus = 0, talkFocus = 0;   // UTIL LO-FI / TALK focus (UI-local)
-let previewPhase = sliderState('vec_phase').getNormalisedValue();
-const flow = [0, .25, .5, .75];     // constellation dot progress per tone
-let touched = { label: 'MORPH', v: .52, bip: false };
-let pitchVal = 0, modVal = 0;       // wheels
+/* ============================================================ 3. WIDGETS === */
+function fmtTime(v) { const ms = Math.round(Math.pow(10, v * 4.3)); return ms >= 1000 ? (+(ms / 1000).toFixed(ms < 10000 ? 2 : 1)) + ' s' : ms + ' ms'; }
+const fmtPct = v => Math.round(v * 100) + '%';
+const fmtBip = v => (v >= .5 ? '+' : '') + Math.round((v - .5) * 126);
 
-const refreshers = [];
-let _raf = 0;
-function scheduleRefresh() { if (_raf) return; _raf = requestAnimationFrame(() => { _raf = 0; refresh(); }); }
-function refresh() { for (let i = 0; i < refreshers.length; i++) refreshers[i](); }
-function setTouched(label, v, bip) { touched = { label, v, bip: !!bip }; }
-const ledCss = (on) => `background:${on ? '#ff2b3e' : '#4a1020'};box-shadow:${on ? '0 0 8px rgba(255,43,62,.85)' : 'none'}`;
+/* Knob bound to a continuous Param handle. opts: {size,color,def,bip,label,fmt} */
+function Knob(handle, label, opts = {}) {
+  const size = opts.size || 34;
+  const rot = document.createElement('div'); rot.className = 'knob-rot';
+  const ptr = h('div', 'knob-ptr', { style: `--pc:${opts.color || 'var(--ptr-white)'}` });
+  rot.append(ptr);
+  const cap = h('div', 'knob-cap', null, h('div', 'knob-face'), rot);
+  const knob = h('div', 'knob', { style: `--s:${size}px` }, cap);
+  const paint = v => { rot.style.setProperty('--rot', Math.round(-135 + v * 270) + 'deg'); };
+  paint(handle.get()); handle.sub(paint);
+  dragBehaviour(knob, handle, { label, def: opts.def, bip: opts.bip, fmt: opts.fmt });
+  const cell = h('div', 'knob-cell', { style: `width:${size + 12}px` }, knob,
+    label != null ? h('div', 'lbl', null, label) : null);
+  cell._knob = knob; cell._setLabel = t => { if (cell.lastChild) cell.lastChild.textContent = t; };
+  return cell;
+}
 
-//============================================================================
-// Generic components (exact master geometry). Each registers an updater.
+function Slider(handle, label, opts = {}) {
+  const H = opts.h || 62;
+  const cap = h('div', 'slider-cap');
+  const track = h('div', 'slider', { style: `--h:${H}px` }, cap);
+  const paint = v => cap.style.setProperty('--bot', Math.round(v * (H - 9)) + 'px');
+  paint(handle.get()); handle.sub(paint);
+  dragBehaviour(track, handle, { label, def: opts.def, fmt: opts.fmt });
+  return h('div', 'slider-cell', null, track, label != null ? h('div', 'lbl-sm', null, label) : null);
+}
 
-// vertical drag law: full range over 140px, pointer capture, bipolar centre
-// detent. adapter = fn -> object with getNormalisedValue/setNormalisedValue/
-// sliderDragStarted/sliderDragEnded (a relay slider state or a small shim).
-function attachDrag(elm, adapter, labelFn, bip) {
-  elm.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return;
+/* vertical-drag / alt-reset / double-click-reset / bipolar-detent, + MIDI learn */
+function dragBehaviour(node, handle, o) {
+  node.addEventListener('pointerdown', e => {
+    if (UI.midiLearn) { e.preventDefault(); touch('LEARN ' + o.label, 1); return; }
     e.preventDefault();
-    if (midiLearn) return;                      // MIDI LEARN mode: control edits suppressed (feature deferred)
-    const st = adapter();
-    try { elm.setPointerCapture(e.pointerId); } catch (_) {}
-    const sy = e.clientY, sv = clamp01(st.getNormalisedValue());
-    if (st.sliderDragStarted) st.sliderDragStarted();
-    const mv = (ev) => {
-      let v = clamp01(sv + (sy - ev.clientY) / 140);
-      if (bip && Math.abs(v - .5) < .035) v = .5;
-      st.setNormalisedValue(v); setTouched(labelFn(), v, bip); scheduleRefresh();
+    if (e.altKey && o.def != null) { handle.set(o.def); touch(o.label, o.def, o.bip, o.fmt && o.fmt(o.def)); return; }
+    const sy = e.clientY, sv = handle.get(); let moved = false;
+    const mv = ev => {
+      if (Math.abs(ev.clientY - sy) > 2) moved = true;
+      let v = clamp(sv + (sy - ev.clientY) / 140, 0, 1);
+      if (o.bip && Math.abs(v - .5) < .035) v = .5;
+      handle.set(v); touch(o.label, v, o.bip, o.fmt && o.fmt(v));
     };
-    const up = () => { elm.removeEventListener('pointermove', mv); elm.removeEventListener('pointerup', up); elm.removeEventListener('pointercancel', up); if (st.sliderDragEnded) st.sliderDragEnded(); };
-    elm.addEventListener('pointermove', mv);
-    elm.addEventListener('pointerup', up);
-    elm.addEventListener('pointercancel', up);
+    const up = () => {
+      removeEventListener('pointermove', mv); removeEventListener('pointerup', up);
+      if (!moved && o.def != null) {
+        const now = Date.now();
+        if (node._lc && now - node._lc < 350) { handle.set(o.def); touch(o.label, o.def, o.bip, o.fmt && o.fmt(o.def)); node._lc = 0; }
+        else node._lc = now;
+      }
+    };
+    addEventListener('pointermove', mv); addEventListener('pointerup', up);
   });
 }
 
-// o: { adapter, label, ptr, size, w, inset, ptrTop, labelSize, bip, dynLabel, dynPtr, row }
-function knob(o) {
-  const size = o.size, inner = Math.round(size * .76), ptrH = Math.round(inner * .34);
-  const w = (o.w != null) ? o.w : (size + 12);
-  const inset = (o.inset != null) ? o.inset : (size >= 30 ? 5 : 4);
-  const ptrTop = (o.ptrTop != null) ? o.ptrTop : 2;
-  const labelSize = (o.labelSize != null) ? o.labelSize : 8;
-  const col = mk('div', `display:flex;flex-direction:${o.row ? 'row' : 'column'};align-items:center;gap:3px;width:${w}px;flex:none`);
-  const skirt = mk('div', `border-radius:50%;background:#14162c;display:flex;align-items:center;justify-content:center;cursor:ns-resize;box-shadow:0 2px 4px rgba(0,0,0,.5);width:${size}px;height:${size}px;flex:none`);
-  const fluted = mk('div', `border-radius:50%;background:repeating-conic-gradient(#2a2d48 0deg 12deg, #20233c 12deg 24deg);position:relative;width:${inner}px;height:${inner}px`);
-  fluted.appendChild(mk('div', `position:absolute;inset:${inset}px;border-radius:50%;background:#2a2d48`));
-  const ptrWrap = mk('div', `position:absolute;inset:0`);
-  const ptr = mk('div', `position:absolute;left:50%;top:${ptrTop}px;width:2px;margin-left:-1px;border-radius:1px;background:${o.ptr || '#e8eaff'};height:${ptrH}px`);
-  ptrWrap.appendChild(ptr); fluted.appendChild(ptrWrap); skirt.appendChild(fluted);
-  const label = mk('div', `font:600 ${labelSize}px 'Barlow Semi Condensed';letter-spacing:.08em;color:#9aa1d8;white-space:nowrap`, o.label);
-  if (!o.bare) { col.appendChild(skirt); col.appendChild(label); }
-  attachDrag(skirt, o.adapter, () => (o.dynLabel ? o.dynLabel() : o.label), o.bip);
-  refreshers.push(() => {
-    const learn = midiLearn;
-    const n = clamp01(o.adapter().getNormalisedValue());
-    ptrWrap.style.transform = `rotate(${Math.round(-135 + n * 270)}deg)`;
-    if (!o.bare && o.dynLabel) label.textContent = o.dynLabel();
-    ptr.style.background = learn ? '#464e94' : (o.dynPtr ? o.dynPtr() : (o.ptr || '#e8eaff'));
+function Led(handle) {
+  const led = h('div', 'led');
+  const paint = v => led.classList.toggle('on', !!v);
+  paint(handle.get()); handle.sub(paint);
+  return led;
+}
+/* Toggle: LED + button. handle is a 'toggle' (bool) or choice-of-2 (loopMode/hitPlay). */
+function Toggle(handle, text, opts = {}) {
+  const btn = h('div', 'btn', { style: opts.style || 'width:32px;height:15px',
+    onclick: () => { const v = handle.get(); const nv = typeof v === 'boolean' ? !v : (1 - v); handle.set(nv); touch(opts.label || text, nv ? 1 : 0); } });
+  const paint = v => { btn.textContent = opts.choices ? opts.choices[+v] : text; btn.classList.toggle('on', !!v); };
+  paint(handle.get()); handle.sub(paint);
+  return btn;
+}
+/* Stepper for a choice param, with optional LCD readout between arrows. */
+function Stepper(handle, arr, opts = {}) {
+  const read = h('div', opts.lcd ? 'lcd click' : 'btn', { style: opts.readStyle || 'width:40px;height:18px',
+    onclick: opts.onLcd });
+  const dec = h('div', 'step', { style: opts.arrowStyle, onclick: () => step(-1) }, '\u2039');
+  const inc = h('div', 'step', { style: opts.arrowStyle, onclick: () => step(1) }, '\u203a');
+  function step(d) { let v = handle.get() + d; if (opts.clamp) v = clamp(v, opts.clamp[0], opts.clamp[1]); else v = (v + arr.length) % arr.length; handle.set(v); touch(opts.label || 'STEP', v / arr.length); }
+  const paint = v => read.textContent = opts.map ? opts.map(v) : arr[v];
+  paint(handle.get()); handle.sub(paint);
+  return h('div', 'row', { style: 'gap:3px' }, dec, read, inc);
+}
+/* LCD that opens a menu overlay (wave/type select). */
+function LcdMenu(handle, arr, title, style, tagged) {
+  const lcd = h('div', 'lcd click', { style, onclick: () => openMenu(title, arr, handle, tagged) });
+  const paint = v => lcd.textContent = Array.isArray(arr[v]) ? (arr[v][0] + ' > ' + arr[v][1]) : arr[v];
+  paint(handle.get()); handle.sub(paint);
+  return lcd;
+}
+
+/* generic scrolling menu overlay */
+function openMenu(title, arr, handle, tagged) {
+  const cur = handle.get();
+  const rows = arr.map((it, i) => {
+    const cat = Array.isArray(it) ? it[0] : '';
+    const nm = (Array.isArray(it) ? it[1] : it) + (tagged && Array.isArray(it) && it[2] ? ' [' + it[2] + ']' : '');
+    return h('div', 'menu-row' + (i === cur ? ' cur' : ''), { onclick: () => { handle.set(i); closeOverlay(); } },
+      h('span', null, { style: 'width:20px' }, String(i + 1).padStart(2, '0')),
+      h('span', null, { style: 'width:44px' }, cat),
+      h('span', null, null, (i === cur ? '\u25B8 ' : '') + nm));
   });
-  return { col: o.bare ? skirt : col, skirt, ptr, label };
+  const box = h('div', 'menu', { onclick: e => e.stopPropagation() },
+    h('div', 'menu-head', null, h('span', null, null, title), h('span', null, null, 'ESC=EXIT')),
+    h('div', 'menu-list', null, ...rows));
+  showOverlay(box);
 }
-// slider-state adapter for a fixed relay id
-const slAdapter = (id) => () => sliderState(id);
-// slider-state adapter for the currently-selected tone's per-tone id
-const selAdapter = (base) => () => sliderState(base + SFX[sel]);
+let overlayEl = null;
+function showOverlay(child, cls) {
+  closeOverlay();
+  overlayEl = h('div', 'overlay' + (cls ? ' ' + cls : ''), { onclick: closeOverlay }, child);
+  document.querySelector('.panel').append(overlayEl);
+}
+function closeOverlay() { if (overlayEl) { overlayEl.remove(); overlayEl = null; } }
+addEventListener('keydown', e => { if (e.key === 'Escape') closeOverlay(); });
 
-// vertical slider (level fader / env). h = track height. cap 19x9, travel h-9.
-function vslider(o) { // { adapter, h, label, full }
-  const h = o.h;
-  const box = mk('div', `display:flex;flex-direction:column;align-items:center;gap:3px;width:20px;flex:none`);
-  const track = mk('div', `position:relative;width:9px;height:${h}px;background:#0c0e20;border-radius:2px;cursor:ns-resize;box-shadow:inset 0 1px 3px rgba(0,0,0,.8)`);
-  const cap = mk('div', `position:absolute;left:-5px;width:19px;height:9px;border-radius:2px;background:#2a2d48;border-top:2px solid #e8eaff;box-shadow:0 2px 3px rgba(0,0,0,.6)`);
-  track.appendChild(cap); box.appendChild(track);
-  if (o.label != null) box.appendChild(mk('div', `font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8`, o.label));
-  attachDrag(track, o.adapter, () => (o.full || o.label));
-  refreshers.push(() => { cap.style.bottom = Math.round(clamp01(o.adapter().getNormalisedValue()) * (h - 9)) + 'px'; });
-  return { box, track };
-}
+/* small label helpers */
+const L  = (t, c) => h('div', 'lbl', c ? { style: `color:${c}` } : null, t);
+const LH = t => h('div', 'lbl-hi', null, t);
 
-// small silkscreen stepper (< / >) with press feedback
-function stepper(glyph, onClick, w, h, fs) {
-  w = w || 20; h = h || 18; fs = fs || 10;
-  const b = mk('div', `width:${w}px;height:${h}px;background:#181b34;border:1px solid #464e94;border-radius:2px;color:#c9cdf2;font:700 ${fs}px 'Barlow Semi Condensed';display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;user-select:none`, glyph);
-  b.addEventListener('pointerdown', () => { b.style.background = '#2c3160'; });
-  const rst = () => { b.style.background = '#181b34'; };
-  b.addEventListener('pointerup', rst); b.addEventListener('pointerleave', rst);
-  b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); scheduleRefresh(); });
-  return b;
-}
-// clickable LCD readout (select-type). extra: {center, padL, dyn}
-function lcd(css, dynText, onClick) {
-  const d = mk('div', `background:#07070a;border-radius:2px;box-shadow:inset 0 1px 4px #000;color:#ffd23f;font-family:'Doto';display:flex;align-items:center;white-space:nowrap;overflow:hidden;${css}${onClick ? ';cursor:pointer' : ''}`);
-  if (onClick) d.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
-  refreshers.push(() => { d.textContent = dynText(); });
-  return d;
-}
-// text button (cycler / toggle face). css should set width/height/font.
-function tbtn(css, dynText, onClick) {
-  const d = mk('div', `background:#181b34;border:1px solid #464e94;border-radius:2px;color:#c9cdf2;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.4);user-select:none;${css}`);
-  d.addEventListener('pointerdown', () => { d.style.background = '#2c3160'; });
-  const rst = () => { d.style.background = '#181b34'; };
-  d.addEventListener('pointerup', rst); d.addEventListener('pointerleave', rst);
-  d.addEventListener('click', (e) => { e.stopPropagation(); onClick(); scheduleRefresh(); });
-  if (dynText) refreshers.push(() => { d.textContent = dynText(); });
-  return d;
-}
-// small round LED bound to a boolean getter
-function led(size, getOn) {
-  const d = mk('div', `width:${size}px;height:${size}px;border-radius:50%;flex:none`);
-  refreshers.push(() => { d.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;flex:none;${ledCss(getOn())}`; });
-  return d;
-}
-// square push button (LED-less face) that flips a toggle relay
-function pushToggle(css, id) {
-  const d = mk('div', `background:#181b34;border:1px solid #464e94;border-radius:3px;cursor:pointer;box-shadow:0 2px 3px rgba(0,0,0,.5);${css}`);
-  d.addEventListener('click', (e) => { e.stopPropagation(); const t = toggleState(id); t.setValue(!t.getValue()); scheduleRefresh(); });
-  return d;
-}
-function labelTxt(css, text) { return mk('div', css, text); }
+export { h, s };   /* (allow unit importing if desired) */
 
-// combo helpers
-const comboLen = { wave: WAVES.length, shape: SHAPES.length, tvf_type: TVFTYPES.length, aux_dest: AUXDESTS.length,
-  lfo1_dest: LFODESTS.length, lfo2_dest: LFODESTS.length, lfo1_shape: LFOSHAPES.length, lfo2_shape: LFOSHAPES.length,
-  voicing: VOICINGS.length, dreamy_spread: SPREADS.length, loop_mode: LOOPMODES.length, hit_play: PLAYMODES.length,
-  vec_orbit_shape: ORBITSHAPES.length, lfo_shape: LFOSHAPES.length, mtx1_src: MSRC.length, mtx2_src: MSRC.length, mtx3_src: MSRC.length,
-  mtx1_dst: MDST.length, mtx2_dst: MDST.length, mtx3_dst: MDST.length, flt_route: 2, flt1_type: FTYPES.length, flt2_type: FTYPES.length,
-  modfx_type: MODFX.length, dly_mode: DLYMODES.length, rev_type: REVTYPES.length,
-  modfx_pfocus: 4, dly_pfocus: 4, rev_pfocus: 4, fx_prepost: PREPOST.length, interp: 2, engine: 2 };
-function cbCycle(id, dir) { const len = comboLen[id]; const i = cIdx(id, len); comboState(id).setChoiceIndex(((i + dir) % len + len) % len); scheduleRefresh(); }
-// selected-tone combo helpers
-function selCbIdx(base, len) { return cIdx(base + SFX[sel], len); }
-function selCbSet(base, i) { comboState(base + SFX[sel]).setChoiceIndex(i); scheduleRefresh(); }
-function selCbCycle(base, len, dir) { const i = selCbIdx(base, len); comboState(base + SFX[sel]).setChoiceIndex(((i + dir) % len + len) % len); scheduleRefresh(); }
+/* ============================================================ 4. PANEL ===== */
+/* built in build() at the bottom, after the DOM is ready. */
 
-//============================================================================
-const frame = $('frame');
-
-// ---- faceplate finish (seeded brushed metal) + corner screws --------------
-function buildFaceplate() {
-  const plate = mk('div', 'position:absolute;left:0;top:0;width:1140px;height:660px;pointer-events:none;overflow:hidden');
-  // seeded streaks (seed 19971, LCG a=16807)
-  let seed = 19971; const mr = () => (seed = seed * 16807 % 2147483647) / 2147483647;
-  const svg = mkNS('svg'); setAttrs(svg, { viewBox: '0 0 1140 660' }); svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
-  for (let y = 1; y < 660; y += 4 + Math.floor(mr() * 5)) {
-    const light = mr() > .45, o = +(0.008 + mr() * .024).toFixed(3), w = +(0.5 + mr() * .7).toFixed(2);
-    const r = mkNS('rect'); setAttrs(r, { x: 0, y, width: 1140, height: w, fill: light ? '#fff' : '#000', opacity: o }); svg.appendChild(r);
-  }
-  for (let i = 0; i < 18; i++) {
-    const y = Math.floor(mr() * 660), x0 = Math.floor(mr() * 800), len = 120 + Math.floor(mr() * 560);
-    const r = mkNS('rect'); setAttrs(r, { x: x0, y, width: len, height: 0.8, rx: 0.4, fill: '#fff', opacity: +(0.03 + mr() * .05).toFixed(3) }); svg.appendChild(r);
-  }
-  plate.appendChild(svg);
-  plate.appendChild(mk('div', 'position:absolute;inset:0;background:linear-gradient(180deg, rgba(255,255,255,.10) 0%, rgba(255,255,255,.03) 25%, rgba(0,0,0,.05) 80%, rgba(0,0,0,.12) 100%)'));
-  plate.appendChild(mk('div', 'position:absolute;inset:0;background:linear-gradient(122deg, rgba(255,255,255,0) 40%, rgba(255,255,255,.05) 48%, rgba(216,222,255,.07) 56%, rgba(255,255,255,.02) 64%, rgba(255,255,255,0) 72%)'));
-  plate.appendChild(mk('div', 'position:absolute;inset:0;background:radial-gradient(ellipse 75% 75% at 50% 50%, rgba(0,0,0,0) 55%, rgba(0,0,0,.16) 100%)'));
-  frame.appendChild(plate);
-  // 4 corner screws, centres 22px from the faceplate corners (top y22, bottom y638)
-  const screws = mk('div', 'position:absolute;inset:0;pointer-events:none;z-index:6');
-  const scr = (left, top, rot) => {
-    const s = mk('div', `position:absolute;left:${left}px;top:${top}px;width:16px;height:16px;border-radius:50%;background:radial-gradient(circle at 38% 38%, #6b708f, #292b42 70%, #0d0d1a);box-shadow:0 1px 2px rgba(0,0,0,.6)`);
-    s.appendChild(mk('div', `position:absolute;left:3.5px;top:7.2px;width:9px;height:1.6px;border-radius:1px;background:#05050c;transform:rotate(${rot}deg)`));
-    screws.appendChild(s);
-  };
-  scr(14, 14, 37); scr(1110, 14, 112); scr(14, 630, 74); scr(1110, 630, 155);
-  frame.appendChild(screws);
+function ledToggle(handle, label, boxW = 26, boxH = 14) {
+  return h('div', 'row', { style: 'gap:5px' }, Led(handle),
+    h('div', 'btn', { style: `width:${boxW}px;height:${boxH}px`,
+      onclick: () => { const v = !handle.get(); handle.set(v); touch(label, v ? 1 : 0); } }));
 }
 
-// ---- header ---------------------------------------------------------------
 function buildHeader() {
-  const h = mk('div', 'position:relative;height:60px;background:#1b1f40;border-bottom:1px solid #464e94;display:flex;align-items:center;padding:0 16px;gap:16px');
-  // logo
-  const logo = mk('div', 'display:flex;flex-direction:column;gap:2px;align-items:center;margin-left:26px');
-  logo.appendChild(mk('div', "font:400 19px 'Michroma';color:#c9cdf2;letter-spacing:.14em;white-space:nowrap", 'THE DREAMER'));
-  logo.appendChild(mk('div', "font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.34em", '12-BIT ROM VECTOR SYNTHESIZER'));
-  h.appendChild(logo);
-  // centre cluster: preset steppers + main LCD
-  const center = mk('div', 'flex:1;display:flex;justify-content:center');
-  const psteps = mk('div', 'display:flex;flex-direction:column;gap:3px;margin-right:6px');
-  psteps.appendChild(stepper('▲', () => selectPreset(preset - 1), 22, 19, 9));
-  psteps.appendChild(stepper('▼', () => selectPreset(preset + 1), 22, 19, 9));
-  center.appendChild(psteps);
-  const lcdBox = mk('div', 'width:520px;height:44px;background:#07070a;border-radius:3px;box-shadow:inset 0 2px 8px rgba(0,0,0,.9), 0 1px 0 rgba(201,205,242,.15);padding:5px 10px;display:flex;align-items:center;gap:12px');
-  const glyph = mk('div', 'display:flex;align-items:flex-end;gap:1px;height:30px');
-  const bars = [];
-  for (let i = 0; i < 12; i++) { const b = mk('div', 'width:3px;background:#ffd23f;opacity:.9;height:6px'); bars.push(b); glyph.appendChild(b); }
-  lcdBox.appendChild(glyph);
-  const lines = mk('div', 'flex:1;display:flex;flex-direction:column;gap:3px;overflow:hidden');
-  const row1 = mk('div', "display:flex;justify-content:space-between;font:800 12px 'Doto';color:#ffd23f;letter-spacing:.04em;white-space:nowrap");
-  const presetLbl = mk('div', 'cursor:pointer'); presetLbl.addEventListener('click', () => openPresetMenu());
-  const toneLbl = mk('div', '');
-  row1.appendChild(presetLbl); row1.appendChild(toneLbl);
-  const row2 = mk('div', "display:flex;align-items:center;gap:8px;font:800 11px 'Doto';color:#ffd23f;white-space:nowrap");
-  const touchedEl = mk('div', 'min-width:130px');
-  const meterCells = mk('div', 'display:flex;gap:2px');
-  const cells = [];
-  for (let i = 0; i < 14; i++) { const c = mk('div', 'width:6px;height:9px;background:#1c1a10'); cells.push(c); meterCells.appendChild(c); }
-  row2.appendChild(touchedEl); row2.appendChild(meterCells);
-  lines.appendChild(row1); lines.appendChild(row2);
-  lcdBox.appendChild(lines);
-  center.appendChild(lcdBox);
-  h.appendChild(center);
-  // MIDI LEARN (feature deferred -- cosmetic LED toggle only)
-  const midiCol = mk('div', 'display:flex;flex-direction:column;align-items:center;gap:3px');
-  const midiLed = mk('div', 'width:6px;height:6px;border-radius:50%');
-  const midiBtn = tbtn("width:34px;height:16px;font:700 7px 'Barlow Semi Condensed';letter-spacing:.08em;border-radius:3px", null, () => { midiLearn = !midiLearn; setTouched(midiLearn ? 'MIDI LEARN ON' : 'MIDI LEARN OFF', midiLearn ? 1 : 0); });
-  midiBtn.textContent = 'MIDI';
-  midiCol.appendChild(midiLed); midiCol.appendChild(midiBtn);
-  midiCol.appendChild(mk('div', "font:600 7px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.12em", 'LEARN'));
-  h.appendChild(midiCol);
-  // L/R output meters
-  const meters = mk('div', 'display:flex;gap:3px;align-items:flex-end;height:40px');
-  const meterFill = {};
-  ['L', 'R'].forEach((ch) => {
-    const colc = mk('div', 'display:flex;flex-direction:column;align-items:center;gap:2px');
-    const bar = mk('div', 'width:7px;height:34px;background:#07070a;border-radius:1px;box-shadow:inset 0 1px 3px #000;position:relative;overflow:hidden');
-    const fill = mk('div', 'position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg, #ff2b3e 0%, #ffd23f 20%, #ffd23f 100%);height:0%');
-    meterFill[ch] = fill; bar.appendChild(fill); colc.appendChild(bar);
-    colc.appendChild(mk('div', "font:600 6.5px 'Barlow Semi Condensed';color:#9aa1d8", ch));
-    meters.appendChild(colc);
-  });
-  h.appendChild(meters);
-  // MASTER knob
-  h.appendChild(knob({ adapter: slAdapter('master'), label: 'MASTER', size: 40 }).col);
-  // POWER
-  const pw = mk('div', 'display:flex;flex-direction:column;align-items:center;gap:4px;margin-right:26px');
-  pw.appendChild(mk('div', 'width:8px;height:8px;border-radius:50%;background:#ff2b3e;box-shadow:0 0 8px rgba(255,43,62,.8)'));
-  pw.appendChild(mk('div', "font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.2em", 'POWER'));
-  h.appendChild(pw);
-  frame.appendChild(h);
-  // dynamic bits
-  refreshers.push(() => {
-    presetLbl.textContent = 'P' + String(preset + 1).padStart(3, '0') + ' ' + PRESETS[preset][1];
-    toneLbl.textContent = 'TONE ' + TONELET[sel];
-    const tv = touched.v;
-    const val = touched.bip ? ((Math.round((tv - .5) * 126) >= 0 ? '+' : '') + Math.round((tv - .5) * 126)) : String(Math.round(tv * 127)).padStart(3, ' ');
-    touchedEl.textContent = touched.label + ' ' + val;
-    const fillN = Math.round(tv * 14);
-    for (let i = 0; i < 14; i++) cells[i].style.background = i < fillN ? '#ffd23f' : '#1c1a10';
-    midiLed.style.cssText = 'width:6px;height:6px;border-radius:50%;' + ledCss(midiLearn);
-    midiBtn.style.background = midiLearn ? '#10122a' : '#181b34';
-    // wave glyph bars (selected tone's wave, preview phase)
-    const wi = selCbIdx('wave', WAVES.length), ph = previewPhase * 2 * Math.PI;
-    for (let i = 0; i < 12; i++) {
-      const hgt = Math.max(3, Math.round(4 + 24 * Math.abs(Math.sin((i / 11) * Math.PI * (1 + wi % 3 * .5) + ph * 2)) * (.75 + .25 * Math.sin(ph * 3 + i * .9))));
-      bars[i].style.height = hgt + 'px';
-    }
-    meterFill.L.style.height = Math.round(Math.min(1, _mL) * 100) + '%';
-    meterFill.R.style.height = Math.round(Math.min(1, _mR) * 100) + '%';
-  });
-}
+  const logo = h('div', 'col', { style: 'gap:2px;align-items:center;margin-left:26px' },
+    h('div', null, { style: "font:400 19px var(--f-logo);color:var(--silk-hi);letter-spacing:.14em;white-space:nowrap" }, 'THE DREAMER'),
+    h('div', null, { style: "font:600 7.5px var(--f-silk);color:var(--silk);letter-spacing:.34em" }, '12-BIT ROM VECTOR SYNTHESIZER'));
 
-// ---- row 1: TONES | TONE EDIT | FILTERS -----------------------------------
-function groupPanel(css, title, titleExtra) {
-  const g = mk('div', `border:1px solid #464e94;border-radius:4px;position:relative;${css}`);
-  const t = mk('div', "position:absolute;top:-7px;left:8px;background:#232850;padding:0 5px;font:700 10px 'Barlow Semi Condensed';color:#c9cdf2;letter-spacing:.18em");
-  t.appendChild(document.createTextNode(title));
-  if (titleExtra) { t.appendChild(document.createTextNode('  ')); t.appendChild(titleExtra); }
-  g.appendChild(t);
-  return g;
-}
+  // preset LCD with live spectrum
+  const spec = h('div', 'row', { style: 'align-items:flex-end;gap:1px;height:30px' });
+  const specBars = Array.from({ length: 22 }, () => { const b = h('div', null, { style: 'width:2px;background:var(--lcd-ink);opacity:.9;height:3px' }); spec.append(b); return b; });
+  const presetName = h('span', null, { style: 'cursor:pointer', onclick: openPresetBrowser });
+  const toneName = h('span');
+  const touchedLine = h('span', null, { style: 'min-width:130px' });
+  const meter = h('span', null, { style: 'display:flex;gap:2px' });
+  const meterCells = Array.from({ length: 14 }, () => { const c = h('span', null, { style: 'width:6px;height:9px;background:#1c1a10' }); meter.append(c); return c; });
+  const lcd = h('div', null, { style: 'width:520px;height:44px;background:var(--lcd-bg);border-radius:3px;box-shadow:inset 0 2px 8px rgba(0,0,0,.9),0 1px 0 rgba(201,205,242,.15);padding:5px 10px;display:flex;align-items:center;gap:12px' },
+    spec,
+    h('div', 'grow col', { style: 'gap:3px;overflow:hidden' },
+      h('div', 'row', { style: 'justify-content:space-between;font:800 12px var(--f-lcd);color:var(--lcd-ink);letter-spacing:.04em;white-space:nowrap' }, presetName, toneName),
+      h('div', 'row', { style: 'gap:8px;font:800 11px var(--f-lcd);color:var(--lcd-ink);white-space:nowrap' }, touchedLine, meter)));
 
-function buildRow1() {
-  const row = mk('div', 'display:grid;grid-template-columns:172px 1fr 200px;gap:10px;padding:14px 12px 0;height:352px;box-sizing:border-box');
+  const steppers = h('div', 'col', { style: 'gap:3px;margin-right:6px' },
+    h('div', 'step', { style: 'width:22px;height:19px', onclick: () => { UI.preset = (UI.preset + PRESETS.length - 1) % PRESETS.length; refreshHeader(); } }, '\u25B2'),
+    h('div', 'step', { style: 'width:22px;height:19px', onclick: () => { UI.preset = (UI.preset + 1) % PRESETS.length; refreshHeader(); } }, '\u25BC'));
 
-  // ---- TONES mixer ----
-  const gT = groupPanel('padding:16px 6px 8px', 'TONES');
-  const cols = mk('div', 'display:flex;gap:4px;width:100%;justify-content:space-around');
-  for (let i = 0; i < 4; i++) {
-    const ti = i;
-    const c = mk('div', 'display:flex;flex-direction:column;align-items:center;gap:5px');
-    c.appendChild(mk('div', "font:700 9px 'Barlow Semi Condensed';color:#c9cdf2;letter-spacing:.08em", TONELET[i]));
-    c.appendChild(led(6, () => sel === ti));
-    const selBtn = mk('div', 'width:20px;height:14px;background:#181b34;border:1px solid #464e94;border-radius:3px;cursor:pointer;box-shadow:0 2px 3px rgba(0,0,0,.5)');
-    selBtn.addEventListener('click', () => { sel = ti; scheduleRefresh(); });
-    c.appendChild(selBtn);
-    // level fader 9x130
-    const track = mk('div', 'position:relative;width:9px;height:130px;background:#0c0e20;border-radius:2px;cursor:ns-resize;box-shadow:inset 0 1px 3px rgba(0,0,0,.8)');
-    const cap = mk('div', 'position:absolute;left:-5px;width:19px;height:9px;border-radius:2px;background:#2a2d48;border-top:2px solid #e8eaff;box-shadow:0 2px 3px rgba(0,0,0,.6)');
-    track.appendChild(cap);
-    attachDrag(track, slAdapter('level' + SFX[i]), () => 'LEVEL ' + TONELET[ti]);
-    refreshers.push(() => { cap.style.bottom = Math.round(clamp01(sliderState('level' + SFX[ti]).getNormalisedValue()) * 121) + 'px'; });
-    c.appendChild(track);
-    // PAN mini-knob (bipolar, 24px)
-    c.appendChild(knob({ adapter: slAdapter('pan' + SFX[i]), label: 'PAN', size: 24, w: 24, inset: 4, ptrTop: 1, labelSize: 7, bip: true }).col);
-    c.appendChild(led(6, () => toggleState('on' + SFX[ti]).getValue()));
-    c.appendChild(pushToggle('width:20px;height:14px', 'on' + SFX[i]));
-    c.appendChild(mk('div', "font:600 7px 'Barlow Semi Condensed';color:#9aa1d8", 'ON'));
-    // column dim when off
-    refreshers.push(() => { c.style.opacity = toggleState('on' + SFX[ti]).getValue() ? '1' : '.55'; });
-    cols.appendChild(c);
-  }
-  gT.appendChild(cols);
-  row.appendChild(gT);
+  // right cluster: MIDI learn, meters, master, LIM/panic, power
+  const midiLed = h('div', 'led');
+  const midiBtn = h('div', 'btn', { style: 'width:34px;height:16px', onclick: () => { UI.midiLearn = !UI.midiLearn; midiLed.classList.toggle('on', UI.midiLearn); document.querySelector('.panel').classList.toggle('learn', UI.midiLearn); touch(UI.midiLearn ? 'MIDI LEARN ON' : 'MIDI LEARN OFF', UI.midiLearn ? 1 : 0); } }, 'MIDI');
+  const midi = h('div', 'col', { style: 'align-items:center;gap:3px' }, midiLed, midiBtn, h('div', 'lbl-sm', null, 'LEARN'));
 
-  // ---- TONE EDIT ----
-  const editName = mk('span', 'color:#ff5b6e');
-  const gE = groupPanel('padding:16px 12px 8px;display:flex;flex-direction:column;gap:9px', 'TONE EDIT', editName);
-  refreshers.push(() => { editName.textContent = TONELET[sel]; });
+  const mL = h('div', null, { style: 'position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,#ff2b3e 0%,#ffd23f 20%,#ffd23f 100%);height:0%' });
+  const mR = h('div', null, { style: 'position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,#ff2b3e 0%,#ffd23f 20%,#ffd23f 100%);height:0%' });
+  const meterBar = fill => h('div', null, { style: 'width:7px;height:34px;background:var(--lcd-bg);border-radius:1px;box-shadow:inset 0 1px 3px #000;position:relative;overflow:hidden' }, fill);
+  const meters = h('div', 'row', { style: 'gap:3px;align-items:flex-end;height:40px' },
+    h('div', 'col', { style: 'align-items:center;gap:2px' }, meterBar(mL), h('div', 'lbl-sm', null, 'L')),
+    h('div', 'col', { style: 'align-items:center;gap:2px' }, meterBar(mR), h('div', 'lbl-sm', null, 'R')));
 
-  // Row: WAVE + SHAPE + LOOP/PLAY selector
-  const r1 = mk('div', 'display:flex;align-items:center;gap:6px');
-  r1.appendChild(labelTxt("font:600 8.5px 'Barlow Semi Condensed';letter-spacing:.1em;color:#9aa1d8", 'WAVE'));
-  r1.appendChild(lcd("width:170px;height:20px;padding:0 6px;font:800 11px 'Doto'", () => { const w = WAVES[selCbIdx('wave', WAVES.length)]; return (w.cat + ' > ' + w.name).toUpperCase(); }, () => openWaveMenu()));
-  r1.appendChild(stepper('<', () => selCbCycle('wave', WAVES.length, -1)));
-  r1.appendChild(stepper('>', () => selCbCycle('wave', WAVES.length, +1)));
-  r1.appendChild(mk('div', 'width:48px'));
-  r1.appendChild(labelTxt("font:600 8.5px 'Barlow Semi Condensed';letter-spacing:.1em;color:#9aa1d8", 'SHAPE'));
-  r1.appendChild(lcd("width:96px;height:20px;justify-content:center;font:800 11px 'Doto'", () => SHAPES[selCbIdx('shape', SHAPES.length)], () => openSelMenu('SHAPER — TONE ' + TONELET[sel], SHAPES, () => selCbIdx('shape', SHAPES.length), (i) => selCbSet('shape', i))));
-  r1.appendChild(stepper('<', () => selCbCycle('shape', SHAPES.length, -1)));
-  r1.appendChild(stepper('>', () => selCbCycle('shape', SHAPES.length, +1)));
-  r1.appendChild(mk('div', 'width:24px'));
-  // LOOP/PLAY selector: one fixed slot, swapped by wave bank tag
-  const loopSel = mk('div', 'display:flex;align-items:center;gap:5px');
-  const loopLed = mk('div', 'width:6px;height:6px;border-radius:50%;flex:none');
-  const loopLbl = mk('div', "font:600 8.5px 'Barlow Semi Condensed';letter-spacing:.1em;color:#9aa1d8", 'LOOP');
-  const loopBtn = mk('div', "width:66px;height:20px;background:#181b34;border:1px solid #464e94;border-radius:2px;color:#c9cdf2;font:700 8px 'Barlow Semi Condensed';display:flex;align-items:center;justify-content:center;flex:none", 'FWD');
-  loopSel.appendChild(loopLed); loopSel.appendChild(loopLbl); loopSel.appendChild(loopBtn);
-  loopBtn.addEventListener('click', () => {
-    const tag = WAVES[selCbIdx('wave', WAVES.length)].tag;
-    if (tag === 'ENS') { const st = comboState('loop_mode' + SFX[sel]); st.setChoiceIndex(1 - cIdx('loop_mode' + SFX[sel], 2)); scheduleRefresh(); }
-    else if (tag === 'SHOT') { const st = comboState('hit_play' + SFX[sel]); st.setChoiceIndex(1 - cIdx('hit_play' + SFX[sel], 2)); scheduleRefresh(); }
-  });
-  r1.appendChild(loopSel);
-  gE.appendChild(r1);
-  refreshers.push(() => {
-    const tag = WAVES[selCbIdx('wave', WAVES.length)].tag;
-    if (tag === 'ENS') {
-      const on = cIdx('loop_mode' + SFX[sel], 2) === 1;
-      loopSel.style.opacity = '1'; loopSel.style.pointerEvents = 'auto'; loopBtn.style.cursor = 'pointer';
-      loopLed.style.cssText = 'width:6px;height:6px;border-radius:50%;flex:none;' + ledCss(on);
-      loopLbl.textContent = 'LOOP'; loopBtn.textContent = LOOPMODES[cIdx('loop_mode' + SFX[sel], 2)];
-    } else if (tag === 'SHOT') {
-      const on = cIdx('hit_play' + SFX[sel], 2) === 1;
-      loopSel.style.opacity = '1'; loopSel.style.pointerEvents = 'auto'; loopBtn.style.cursor = 'pointer';
-      loopLed.style.cssText = 'width:6px;height:6px;border-radius:50%;flex:none;' + ledCss(on);
-      loopLbl.textContent = 'PLAY'; loopBtn.textContent = PLAYMODES[cIdx('hit_play' + SFX[sel], 2)];
-    } else { // cycle -> greyed LOOP FWD placeholder
-      loopSel.style.opacity = '.4'; loopSel.style.pointerEvents = 'none'; loopBtn.style.cursor = 'default';
-      loopLed.style.cssText = 'width:6px;height:6px;border-radius:50%;flex:none;background:#4a1020';
-      loopLbl.textContent = 'LOOP'; loopBtn.textContent = 'FWD';
-    }
-  });
+  const master = Knob(glob('master'), 'MASTER', { size: 40, def: GLOBAL_DEFAULTS.master });
 
-  // Row: knob bank (288px L box + hit compartment + R knobs)
-  const r2 = mk('div', 'display:flex;align-items:flex-start;gap:4px;margin-left:22px');
-  const lbox = mk('div', 'display:flex;align-items:flex-start;gap:4px;width:288px;box-sizing:border-box');
-  [['oct', 'OCTAVE'], ['fine', 'FINE'], ['start', 'START'], ['level', 'LEVEL'], ['velo', 'VELOCITY']].forEach(([k, l]) =>
-    lbox.appendChild(knob({ adapter: selAdapter(k), label: l, size: 34, w: 46 }).col));
-  // RND button col
-  const rnd = mk('div', 'display:flex;flex-direction:column;align-items:center;gap:3px;width:26px;padding-top:4px');
-  rnd.appendChild(led(6, () => toggleState('start_random' + SFX[sel]).getValue()));
-  const rndBtn = mk('div', 'width:22px;height:14px;background:#181b34;border:1px solid #464e94;border-radius:3px;cursor:pointer;box-shadow:0 2px 3px rgba(0,0,0,.5)');
-  rndBtn.addEventListener('click', () => { const t = toggleState('start_random' + SFX[sel]); t.setValue(!t.getValue()); scheduleRefresh(); });
-  rnd.appendChild(rndBtn);
-  rnd.appendChild(mk('div', "font:600 7px 'Barlow Semi Condensed';color:#9aa1d8", 'RND'));
-  lbox.appendChild(rnd);
-  r2.appendChild(lbox);
-  // hit compartment (STRETCH / P.TRIM) -- greyed in place unless HIT+STRETCH
-  const hitBox = mk('div', 'display:flex;align-items:flex-start;gap:4px;margin-left:28px');
-  hitBox.appendChild(knob({ adapter: selAdapter('hit_stretch'), label: 'STRETCH', size: 34, w: 46 }).col);
-  hitBox.appendChild(knob({ adapter: selAdapter('hit_pitchtrim'), label: 'P.TRIM', size: 34, w: 46 }).col);
-  r2.appendChild(hitBox);
-  refreshers.push(() => {
-    const tag = WAVES[selCbIdx('wave', WAVES.length)].tag;
-    const active = tag === 'SHOT' && cIdx('hit_play' + SFX[sel], 2) === 1;
-    hitBox.style.opacity = active ? '1' : '.35'; hitBox.style.pointerEvents = active ? 'auto' : 'none';
-  });
-  // right knobs
-  [['shape_depth', 'SHAPE DEPTH', '#ffd23f'], ['noise', 'NOISE', null], ['noise_color', 'NOISE COLOR', null]].forEach(([k, l, p]) =>
-    r2.appendChild(knob({ adapter: selAdapter(k), label: l, ptr: p, size: 34, w: 46 }).col));
-  gE.appendChild(r2);
+  const limLed = h('div', 'led');
+  const panic = h('div', null, { style: 'width:44px;height:26px;background:var(--btn);border:1px solid #7a2130;border-radius:3px;cursor:pointer;color:#ff8a97;font:700 7px var(--f-silk);display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05',
+    onpointerdown: () => { Bridge.fn('panic')(); touch('SOUND OFF', 1); } }, h('span', null, null, 'SOUND'), h('span', null, null, 'OFF'));
+  const lim = h('div', 'col', { style: 'align-items:center;gap:3px' }, limLed, h('div', 'lbl-sm', null, 'LIM'), panic);
 
-  // Row: TVF + env banks
-  const r3 = mk('div', 'display:flex;align-items:flex-start;margin-left:22px');
-  const tvfBox = mk('div', 'display:flex;align-items:center;gap:10px;width:288px;height:88px;box-sizing:border-box');
-  tvfBox.appendChild(mk('div', "font:700 9px 'Barlow Semi Condensed';color:#ff5b6e;letter-spacing:.14em;writing-mode:vertical-rl;transform:rotate(180deg);display:flex;align-items:center", 'TVF'));
-  const tvfType = mk('div', 'display:flex;flex-direction:column;align-items:center;gap:3px;justify-content:center');
-  tvfType.appendChild(lcd("width:36px;height:18px;justify-content:center;font:800 10px 'Doto'", () => TVFTYPES[selCbIdx('tvf_type', TVFTYPES.length)], () => openSelMenu('TVF TYPE — TONE ' + TONELET[sel], TVFTYPES, () => selCbIdx('tvf_type', TVFTYPES.length), (i) => selCbSet('tvf_type', i))));
-  tvfType.appendChild(mk('div', "font:600 7.5px 'Barlow Semi Condensed';letter-spacing:.08em;color:#9aa1d8", 'TYPE'));
-  tvfBox.appendChild(tvfType);
-  const tvfKnobs = mk('div', 'display:flex;gap:4px');
-  [['tvf_cut', 'CUTOFF'], ['tvf_res', 'RESONANCE'], ['tvf_env', 'ENVELOPE'], ['tvf_kf', 'KEY FLW']].forEach(([k, l]) =>
-    tvfKnobs.appendChild(knob({ adapter: selAdapter(k), label: l, ptr: '#ff5b6e', size: 34 }).col));
-  tvfBox.appendChild(tvfKnobs);
-  r3.appendChild(tvfBox);
-  const divider = () => mk('div', 'width:1px;align-self:stretch;background:#464e94;opacity:.4');
-  const envBank = (base, title, mlLeft) => {
-    const b = mk('div', `display:flex;flex-direction:column;align-items:center;gap:3px;margin-left:${mlLeft}px`);
-    const rowk = mk('div', 'display:flex;gap:8px');
-    [['a', 'A'], ['d', 'D'], ['s', 'S'], ['r', 'R']].forEach(([k, l]) =>
-      rowk.appendChild(vslider({ adapter: selAdapter(base + '_' + k), h: 62, label: l, full: title + ' ' + l }).box));
-    b.appendChild(rowk);
-    b.appendChild(mk('div', "font:700 8px 'Barlow Semi Condensed';color:#c9cdf2;letter-spacing:.14em", title));
-    return b;
+  const power = h('div', 'col', { style: 'align-items:center;gap:4px;margin-right:26px' },
+    h('div', null, { style: 'width:8px;height:8px;border-radius:50%;background:#ff2b3e;box-shadow:0 0 8px rgba(255,43,62,.8)' }),
+    h('div', 'lbl-sm', null, 'POWER'));
+
+  refreshHeader = () => {
+    presetName.textContent = 'P' + String(UI.preset + 1).padStart(3, '0') + ' ' + PRESETS[UI.preset][1];
+    toneName.textContent = 'TONE ' + TONES[UI.sel];
+    const t = UI.touched;
+    touchedLine.textContent = t.label + ' ' + (t.disp != null ? t.disp : (t.bip ? fmtBip(t.v) : String(Math.round(t.v * 127)).padStart(3, ' ')));
+    const f = Math.round(t.v * 14); meterCells.forEach((c, i) => c.style.background = i < f ? '#ffd23f' : '#1c1a10');
   };
-  const d1 = divider(); d1.style.marginLeft = '24px'; r3.appendChild(d1);
-  r3.appendChild(envBank('tvf', 'FILTER', 9));
-  r3.appendChild((() => { const d = divider(); d.style.marginLeft = '9px'; return d; })());
-  r3.appendChild(envBank('tva', 'AMPLITUDE', 9));
-  r3.appendChild((() => { const d = divider(); d.style.marginLeft = '9px'; return d; })());
-  r3.appendChild(envBank('aux', 'AUX', 9));
-  gE.appendChild(r3);
+  refreshHeader(); listeners.add(refreshHeader);
+  HEADER_ANIM = { specBars, mL, mR, limLed };
 
-  // LFO1 / LFO2 rows
-  [1, 2].forEach((n) => {
-    const lb = 'lfo' + n;
-    const r = mk('div', 'display:flex;align-items:center;gap:8px');
-    r.appendChild(mk('div', "width:32px;font:700 8px 'Barlow Semi Condensed';letter-spacing:.14em;color:#c9cdf2", 'LFO' + n));
-    // RATE knob: yellow + division label when synced
-    r.appendChild(knob({ adapter: selAdapter(lb + '_rate'), size: 26, labelSize: 7.5,
-      dynLabel: () => toggleState(lb + '_sync' + SFX[sel]).getValue() ? SYNCDIVS[Math.min(SYNCDIVS.length - 1, Math.floor(clamp01(sliderState(lb + '_rate' + SFX[sel]).getNormalisedValue()) * SYNCDIVS.length))] : 'RATE',
-      dynPtr: () => toggleState(lb + '_sync' + SFX[sel]).getValue() ? '#ffd23f' : '#e8eaff' }).col);
-    r.appendChild(knob({ adapter: selAdapter(lb + '_depth'), label: 'DEPTH', size: 26, labelSize: 7.5 }).col);
-    r.appendChild(lcd("width:34px;height:16px;justify-content:center;font:800 9px 'Doto'", () => LFOSHAPES[selCbIdx(lb + '_shape', LFOSHAPES.length)], () => openSelMenu('LFO' + n + ' SHAPE — TONE ' + TONELET[sel], LFOSHAPES, () => selCbIdx(lb + '_shape', LFOSHAPES.length), (i) => selCbSet(lb + '_shape', i))));
-    const syncWrap = mk('div', 'display:flex;align-items:center;gap:4px');
-    syncWrap.appendChild(led(6, () => toggleState(lb + '_sync' + SFX[sel]).getValue()));
-    const syncBtn = tbtn("width:32px;height:15px;font:700 7px 'Barlow Semi Condensed';letter-spacing:.1em;border-radius:3px", null, () => { const t = toggleState(lb + '_sync' + SFX[sel]); t.setValue(!t.getValue()); });
-    syncBtn.textContent = 'SYNC'; syncWrap.appendChild(syncBtn); r.appendChild(syncWrap);
-    r.appendChild(mk('div', "font:600 8.5px 'Barlow Semi Condensed';color:#9aa1d8", 'DEST'));
-    r.appendChild(tbtn("width:56px;height:16px;font:700 8px 'Barlow Semi Condensed'", () => LFODESTS[selCbIdx(lb + '_dest', LFODESTS.length)], () => openSelMenu('LFO' + n + ' DEST — TONE ' + TONELET[sel], LFODESTS, () => selCbIdx(lb + '_dest', LFODESTS.length), (i) => selCbSet(lb + '_dest', i))));
-    gE.appendChild(r);
+  return h('div', null, { style: 'position:relative;height:60px;background:var(--panel-header);border-bottom:1px solid var(--frame);display:flex;align-items:center;padding:0 16px;gap:16px' },
+    logo, h('div', 'grow row', { style: 'justify-content:center' }, steppers, lcd), midi, meters, master, lim, power);
+}
+let refreshHeader = () => {}, HEADER_ANIM = null;
+
+/* ---- TONES mixer ---------------------------------------------------------- */
+function buildTones() {
+  const cols = TONES.map((name, i) => {
+    const col = h('div', 'col', { style: 'align-items:center;gap:5px' });
+    const selLed = h('div', 'led');
+    const onLed = h('div', 'led');
+    const setSelDim = () => col.style.opacity = tone('on', i).get() ? 1 : .55;
+    tone('on', i).sub(v => { onLed.classList.toggle('on', !!v); setSelDim(); });
+    const paintSel = () => selLed.classList.toggle('on', UI.sel === i);
+    listeners.add(paintSel);
+    onLed.classList.toggle('on', !!tone('on', i).get()); setSelDim(); paintSel();
+    col.append(
+      h('div', null, { style: `font:700 11px var(--f-silk);color:${TONE_COLORS[i]};letter-spacing:.08em` }, name),
+      selLed,
+      h('div', 'btn', { style: 'width:20px;height:14px', onclick: () => { UI.sel = i; rebuildToneEdit(); notify(); } }),
+      Slider(tone('level', i), null, { h: 130, def: .8 }),
+      (() => { const k = Knob(tone('pan', i), 'PAN', { size: 24, bip: true, def: .5 }); return k; })(),
+      onLed,
+      h('div', 'btn', { style: 'width:20px;height:14px', onclick: () => { const v = !tone('on', i).get(); tone('on', i).set(v); touch('TONE ' + name, v ? 1 : 0); } }),
+      h('div', 'lbl-sm', null, 'ON'));
+    // insert PAN label
+    col.insertBefore(h('div', 'lbl-sm', null, 'PAN'), onLed);
+    return col;
   });
+  return grp('TONES', 'padding:16px 6px 8px',
+    h('div', 'row', { style: 'gap:4px;width:100%;justify-content:space-around' }, ...cols));
+}
 
-  // AUX ENV row: AMOUNT (bipolar) + DEST + VOICING + spread
-  const aux = mk('div', 'display:flex;align-items:center;gap:8px');
-  aux.appendChild(mk('div', "width:32px;font:700 8px 'Barlow Semi Condensed';letter-spacing:.14em;color:#c9cdf2", 'AUX ENV'));
-  aux.appendChild(knob({ adapter: selAdapter('aux_amt'), label: 'AMOUNT', ptr: '#ffd23f', size: 26, labelSize: 7.5, bip: true, dynLabel: () => 'AUX AMT' }).col);
-  aux.appendChild(mk('div', "font:600 8.5px 'Barlow Semi Condensed';color:#9aa1d8", 'DEST'));
-  aux.appendChild(tbtn("width:56px;height:16px;font:700 8px 'Barlow Semi Condensed'", () => AUXDESTS[selCbIdx('aux_dest', AUXDESTS.length)], () => openSelMenu('AUX ENV DEST — TONE ' + TONELET[sel], AUXDESTS, () => selCbIdx('aux_dest', AUXDESTS.length), (i) => selCbSet('aux_dest', i))));
-  aux.appendChild(mk('div', 'width:1px;align-self:stretch;background:#464e94;opacity:.4;margin:0 6px'));
-  aux.appendChild(mk('div', "font:700 8px 'Barlow Semi Condensed';letter-spacing:.1em;color:#c9cdf2", 'VOICE'));
-  aux.appendChild(lcd("width:54px;height:16px;justify-content:center;font:800 9px 'Doto'", () => VOICINGS[selCbIdx('voicing', VOICINGS.length)], () => openSelMenu('VOICING — TONE ' + TONELET[sel], VOICINGS, () => selCbIdx('voicing', VOICINGS.length), (i) => selCbSet('voicing', i))));
-  const spread = lcd("width:44px;height:16px;justify-content:center;font:800 9px 'Doto'", () => SPREADS[selCbIdx('dreamy_spread', SPREADS.length)], () => openSelMenu('DREAMY SPREAD — TONE ' + TONELET[sel], SPREADS, () => selCbIdx('dreamy_spread', SPREADS.length), (i) => selCbSet('dreamy_spread', i)));
-  aux.appendChild(spread);
-  aux.appendChild(mk('div', 'flex:1'));
-  refreshers.push(() => { spread.style.display = (selCbIdx('voicing', VOICINGS.length) === 3) ? 'flex' : 'none'; });
-  gE.appendChild(aux);
-  row.appendChild(gE);
+/* ---- generic group frame -------------------------------------------------- */
+function grp(title, pad, ...kids) {
+  return h('div', 'group', { style: (pad || 'padding:16px 12px 8px') }, h('div', 'group-title', null, title), ...kids);
+}
 
-  // ---- FILTERS ----
-  const gF = groupPanel('padding:16px 10px 8px;display:flex;flex-direction:column;gap:7px;align-items:center', 'FILTERS');
-  const fstrip = (num, id) => {
-    const s = mk('div', 'display:flex;align-items:center;gap:5px;width:100%');
-    s.appendChild(mk('div', "font:700 9px 'Barlow Semi Condensed';color:#c9cdf2;width:10px", num));
-    s.appendChild(stepper('<', () => cbCycle(id, -1)));
-    s.appendChild(lcd("flex:1;height:20px;justify-content:center;font:800 10px 'Doto'", () => FTYPES[cIdx(id, FTYPES.length)], () => openSelMenu('FILTER ' + num + ' TYPE', FTYPES, () => cIdx(id, FTYPES.length), (i) => { comboState(id).setChoiceIndex(i); scheduleRefresh(); })));
-    s.appendChild(stepper('>', () => cbCycle(id, +1)));
-    return s;
+/* the tone-edit block is rebuilt when the selected tone changes */
+let toneEditHost = null;
+function rebuildToneEdit() {
+  const fresh = buildToneEdit();
+  if (toneEditHost && toneEditHost.parentNode) toneEditHost.replaceWith(fresh);
+  toneEditHost = fresh;
+}
+function buildToneEdit() {
+  const i = UI.sel, col = TONE_COLORS[i];
+  const P = k => tone(k, i);
+  const w = () => WAVES[P('wave').get()];
+  const isENS = () => w()[2] === 'ENS', isSHOT = () => w()[2] === 'SHOT';
+
+  // ---- WAVE / SHAPE / PLAY / LOOP row
+  const waveLcd = LcdMenu(P('wave'), WAVES, 'WAVE SELECT \u2014 TONE ' + TONES[i], 'width:170px;height:20px', true);
+  const waveDec = h('div', 'step', { onclick: () => cyc(P('wave'), WAVES.length, -1) }, '\u2039');
+  const waveInc = h('div', 'step', { onclick: () => cyc(P('wave'), WAVES.length, 1) }, '\u203a');
+  const shapeLcd = LcdMenu(P('shape'), SHAPES, 'SHAPER \u2014 TONE ' + TONES[i], 'width:96px;height:20px');
+  const shapeDec = h('div', 'step', { onclick: () => cyc(P('shape'), SHAPES.length, -1) }, '\u2039');
+  const shapeInc = h('div', 'step', { onclick: () => cyc(P('shape'), SHAPES.length, 1) }, '\u203a');
+
+  const playLed = Led(P('hitPlay'));
+  const playBtn = h('div', 'btn', { style: 'width:66px;height:20px', onclick: () => { const v = 1 - P('hitPlay').get(); P('hitPlay').set(v); touch('PLAY MODE', v); rebuildToneEdit(); } });
+  const paintPlay = () => playBtn.textContent = PLAYMODES[P('hitPlay').get()]; paintPlay(); P('hitPlay').sub(paintPlay);
+  const playGrp = h('div', 'row', { style: 'gap:5px' }, playLed, L('PLAY'), playBtn);
+
+  const loopGrp = h('div', 'row', { style: 'gap:5px' });
+  if (isENS()) {
+    const lmLed = Led(P('loopMode'));
+    const lmBtn = h('div', 'btn', { style: 'width:66px;height:20px', onclick: () => { const v = 1 - P('loopMode').get(); P('loopMode').set(v); touch('LOOP MODE', v); } });
+    const paint = () => lmBtn.textContent = LOOPMODES[P('loopMode').get()]; paint(); P('loopMode').sub(paint);
+    loopGrp.append(lmLed, L('LOOP'), lmBtn);
+  }
+  const waveRow = h('div', 'row', { style: 'gap:6px' },
+    L('WAVE', col), waveLcd, waveDec, waveInc, h('div', null, { style: 'width:48px' }),
+    L('SHAPE', col), shapeLcd, shapeDec, shapeInc, h('div', null, { style: 'width:24px' }), playGrp, loopGrp);
+
+  // ---- knob row: OCTAVE SEMI FINE START VELOCITY [RND] | stretch/loop compartment | SHAPE DEPTH NOISE NOISE COLOR
+  const semiFmt = v => { const n = Math.round((v - .5) * 24); return (n >= 0 ? '+' : '') + n + ' st'; };
+  const leftKnobs = h('div', 'row', { style: 'gap:4px;width:288px' },
+    Knob(P('oct'), 'OCTAVE', { def: .5 }), Knob(P('semi'), 'SEMI', { bip: true, def: .5, fmt: semiFmt }),
+    Knob(P('fine'), 'FINE', { bip: true, def: .5 }), Knob(P('start'), 'START', { def: 0 }),
+    Knob(P('velo'), 'VELOCITY', { def: .4 }),
+    (() => { const rnd = P('startRnd'); const led = Led(rnd);
+      const b = h('div', 'btn', { style: 'width:22px;height:14px', onclick: () => { const v = !rnd.get(); rnd.set(v); touch('START RANDOM', v ? 1 : 0); } });
+      return h('div', 'col', { style: 'align-items:center;gap:3px;width:26px;padding-top:4px' }, led, b, h('div', 'lbl-sm', null, 'RND')); })());
+
+  // middle compartment
+  let comp;
+  if (isSHOT() && P('hitPlay').get() === 1)
+    comp = h('div', 'row', { style: 'gap:4px;margin-left:28px' }, Knob(P('hitStretch'), 'STRETCH'), Knob(P('hitTrim'), 'P.TRIM'));
+  else if (isENS() && P('hitPlay').get() === 1) {
+    const synced = P('loopSync').get();
+    const rate = Knob(P('loopRate'), synced ? SYNCDIVS[P('loopBeats').get()] : 'LOOP RATE', { color: 'var(--ptr-yellow)', def: .5, fmt: v => Math.pow(4, (v - .5) * 2).toFixed(2) + '\u00d7' });
+    const syncLed = Led(P('loopSync'));
+    const syncBtn = h('div', 'btn', { style: 'width:30px;height:14px', onclick: () => { const v = !P('loopSync').get(); P('loopSync').set(v); touch('LOOP SYNC', v ? 1 : 0); rebuildToneEdit(); } }, 'SYNC');
+    const beats = Stepper(P('loopBeats'), SYNCDIVS, { lcd: true, readStyle: 'width:34px;height:14px', arrowStyle: 'width:13px;height:14px', label: 'LOOP BEATS' });
+    const variLed = Led(P('loopVari'));
+    const variBtn = h('div', 'btn', { style: 'width:76px;height:14px', onclick: () => { const v = !P('loopVari').get(); P('loopVari').set(v); touch('VARISPEED', v ? 1 : 0); } }, 'VARISPEED');
+    comp = h('div', 'row', { style: 'gap:8px;margin-left:28px' }, rate,
+      h('div', 'col', { style: 'gap:4px' },
+        h('div', 'row', { style: 'gap:3px' }, syncLed, syncBtn, beats),
+        h('div', 'row', { style: 'gap:3px' }, variLed, variBtn)));
+  } else {
+    comp = h('div', 'row', { style: 'gap:4px;margin-left:28px;opacity:.35;pointer-events:none' }, Knob(P('hitStretch'), 'STRETCH'), Knob(P('hitTrim'), 'P.TRIM'));
+  }
+
+  const rightKnobs = h('div', 'row', { style: 'gap:4px' },
+    Knob(P('shapeDepth'), 'SHAPE DEPTH', { color: 'var(--ptr-yellow)' }), Knob(P('noise'), 'NOISE'), Knob(P('noiseCol'), 'NOISE COLOR'));
+  const knobRow = h('div', 'row', { style: 'align-items:flex-start;margin-left:22px;gap:4px' }, leftKnobs, comp, rightKnobs);
+
+  // ---- TVF + ADSR banks row
+  const off = glob('globOffset').get();
+  const tvfTypeStep = h('div', 'col', { style: 'align-items:center;gap:3px;justify-content:center' },
+    LH('TVF'),
+    Stepper(P('tvfType'), TVFTYPES, { lcd: true, readStyle: 'width:40px;height:18px', arrowStyle: 'width:14px;height:18px', label: 'TVF TYPE', onLcd: () => openMenu('TVF TYPE \u2014 TONE ' + TONES[i], TVFTYPES, P('tvfType')) }),
+    h('div', 'lbl-sm', null, 'TYPE'));
+  const tvfKnobs = h('div', 'row', { style: 'gap:4px' },
+    off ? Knob(glob('gCutoff'), 'CUT \u00b1', { color: 'var(--ptr-yellow)', bip: true, def: .5, fmt: fmtBip }) : Knob(P('cut'), 'CUTOFF', { color: 'var(--ptr-red)', def: .5 }),
+    off ? Knob(glob('gRes'), 'RES \u00b1', { color: 'var(--ptr-yellow)', bip: true, def: .5, fmt: fmtBip }) : Knob(P('res'), 'RESONANCE', { color: 'var(--ptr-red)', def: .25 }),
+    Knob(P('env'), 'ENVELOPE', { color: 'var(--ptr-red)', def: .5 }),
+    Knob(P('kf'), 'KEY FLW', { color: 'var(--ptr-red)', bip: true, def: .5, fmt: fmtBip }));
+  const bank = (keys, title, live) => h('div', 'col', { style: 'align-items:center;gap:3px;margin-left:9px' },
+    h('div', 'row', { style: 'gap:8px' }, ...keys.map(([k, l, src]) => Slider(src === 'g' ? glob(k) : P(k), l, { def: (src === 'g' ? .5 : TONE_DEFAULTS[k]), fmt: l === 'S' ? fmtPct : (src === 'g' ? fmtBip : fmtTime) }))),
+    h('div', 'lbl-hi', null, title));
+  const tvaBank = off
+    ? bank([['gEnvA','A','g'],['gEnvD','D','g'],['gEnvS','S','g'],['gEnvR','R','g']], 'AMP \u00b1 GLOBAL')
+    : bank([['aa','A'],['ad','D'],['as','S'],['ar','R']], 'AMPLITUDE');
+  const tvfRow = h('div', 'row', { style: 'align-items:flex-start;margin-left:22px' },
+    h('div', 'row', { style: 'gap:10px;width:288px;height:88px;align-items:center' }, tvfTypeStep, tvfKnobs),
+    h('div', 'divider-v', { style: 'margin-left:24px' }),
+    bank([['fa','A'],['fd','D'],['fs','S'],['fr','R']], 'FILTER'),
+    h('div', 'divider-v', { style: 'margin-left:9px' }), tvaBank,
+    h('div', 'divider-v', { style: 'margin-left:9px' }), bank([['xa','A'],['xd','D'],['xs','S'],['xr','R']], 'AUX'));
+
+  // ---- LFO rows
+  const lfoRow = (n, rk, dk, sk, dk2, shk) => {
+    const synced = P(sk).get();
+    const rate = Knob(P(rk), synced ? SYNCDIVS[Math.min(11, Math.floor(P(rk).get() * 12))] : 'RATE', { size: 26, color: synced ? 'var(--ptr-yellow)' : null });
+    const syncLed = Led(P(sk));
+    const syncBtn = h('div', 'btn', { style: 'width:32px;height:15px', onclick: () => { const v = !P(sk).get(); P(sk).set(v); touch(n + ' SYNC', v ? 1 : 0); rebuildToneEdit(); } }, 'SYNC');
+    const shapeStep = Stepper(P(shk), WAVE_SHAPES, { lcd: true, readStyle: 'width:34px;height:16px', arrowStyle: 'width:14px;height:16px', label: n + ' SHAPE', onLcd: () => openMenu(n + ' SHAPE \u2014 TONE ' + TONES[i], WAVE_SHAPES, P(shk)) });
+    const dest = h('div', 'btn', { style: 'width:56px;height:16px', onclick: () => openMenu(n + ' DEST \u2014 TONE ' + TONES[i], LFODESTS, P(dk2)) });
+    const paintDest = () => dest.textContent = LFODESTS[P(dk2).get()]; paintDest(); P(dk2).sub(paintDest);
+    return h('div', 'row', { style: 'gap:8px' }, h('div', 'lbl-hi', { style: 'width:32px' }, n),
+      rate, Knob(P(dk), 'DEPTH', { size: 26 }), shapeStep,
+      h('div', 'row', { style: 'gap:4px' }, syncLed, syncBtn), L('DEST'), dest);
   };
-  const fknobs = (defs) => { const w = mk('div', 'display:flex;justify-content:space-around;width:100%'); defs.forEach(([id, l, p]) => w.appendChild(knob({ adapter: slAdapter(id), label: l, ptr: p, size: 36 }).col)); return w; };
-  gF.appendChild(fstrip('1', 'flt1_type'));
-  gF.appendChild(fknobs([['flt1_cut', 'CUTOFF', '#ff5b6e'], ['flt1_res', 'RESONANCE', '#ff5b6e'], ['flt1_env', 'ENVELOPE', '#ff5b6e']]));
-  gF.appendChild(mk('div', 'width:100%;height:1px;background:#464e94;opacity:.55'));
-  gF.appendChild(fstrip('2', 'flt2_type'));
-  gF.appendChild(fknobs([['flt2_cut', 'CUTOFF', '#ff5b6e'], ['flt2_res', 'RESONANCE', '#ff5b6e'], ['flt2_morph', 'MORPH', '#ffd23f']]));
-  // route row + BAL
-  const route = mk('div', 'margin-top:auto;display:flex;align-items:center;gap:8px;padding-bottom:2px');
-  const serWrap = mk('div', 'display:flex;align-items:center;gap:4px'); serWrap.appendChild(led(6, () => cIdx('flt_route', 2) === 0)); serWrap.appendChild(mk('div', "font:600 8px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.08em", 'SER'));
-  route.appendChild(serWrap);
-  const routeBtn = mk('div', 'width:34px;height:18px;background:#181b34;border:1px solid #464e94;border-radius:3px;cursor:pointer;box-shadow:0 2px 3px rgba(0,0,0,.5)');
-  routeBtn.addEventListener('click', () => { comboState('flt_route').setChoiceIndex(1 - cIdx('flt_route', 2)); scheduleRefresh(); });
-  refreshers.push(() => { routeBtn.style.background = cIdx('flt_route', 2) === 1 ? '#10122a' : '#181b34'; });
-  route.appendChild(routeBtn);
-  const parWrap = mk('div', 'display:flex;align-items:center;gap:4px'); parWrap.appendChild(led(6, () => cIdx('flt_route', 2) === 1)); parWrap.appendChild(mk('div', "font:600 8px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.08em", 'PAR'));
-  route.appendChild(parWrap);
-  route.appendChild(knob({ adapter: slAdapter('flt_bal'), label: 'BALANCE', ptr: '#ffd23f', size: 26, labelSize: 7.5, bip: true, dynLabel: () => 'FLT BAL' }).col);
-  gF.appendChild(route);
-  row.appendChild(gF);
 
-  frame.appendChild(row);
+  // ---- AUX ENV + VOICING row
+  const auxAmt = Knob(P('auxAmt'), 'AMOUNT', { size: 26, color: 'var(--ptr-yellow)', bip: true, def: .5, fmt: fmtBip });
+  const auxDest = h('div', 'btn', { style: 'width:56px;height:16px', onclick: () => openMenu('AUX ENV DEST \u2014 TONE ' + TONES[i], AUXDESTS, P('auxDest')) });
+  const paintAux = () => auxDest.textContent = AUXDESTS[P('auxDest').get()]; paintAux(); P('auxDest').sub(paintAux);
+  const voicing = h('div', 'lcd click', { style: 'width:54px;height:16px', onclick: () => openMenu('VOICING \u2014 TONE ' + TONES[i], VOICINGS, P('voicing')) });
+  const spread = h('div', 'lcd click', { style: 'width:44px;height:16px', onclick: () => openMenu('DREAMY SPREAD \u2014 TONE ' + TONES[i], SPREADS, P('spread')) });
+  const paintVoi = () => { voicing.textContent = VOICINGS[P('voicing').get()]; spread.style.display = P('voicing').get() === 3 ? 'flex' : 'none'; };
+  paintVoi(); P('voicing').sub(paintVoi);
+  const paintSpread = () => spread.textContent = SPREADS[P('spread').get()]; paintSpread(); P('spread').sub(paintSpread);
+  const auxRow = h('div', 'row', { style: 'gap:8px' }, h('div', 'lbl-hi', { style: 'width:32px' }, 'AUX ENV'),
+    auxAmt, L('DEST'), auxDest, h('div', 'divider-v', { style: 'margin:0 6px' }), LH('VOICE'), voicing, spread, h('div', 'grow'));
+
+  // ---- GLOBAL sub-block (absolute, bottom-right; nothing else moves)
+  const detVoices = Stepper(P('detVoices'), ['1','2','3','4'], { lcd: true, readStyle: 'width:20px;height:16px', arrowStyle: 'width:13px;height:16px', clamp: [0, 3], label: 'DETUNE VOICES' });
+  const detKnob = Knob(P('detAmt'), 'DETUNE', { size: 30, color: 'var(--ptr-yellow)', def: 0, fmt: v => '\u00b1' + Math.round(v * 25) + ' c' });
+  const dimDet = () => detKnob.classList.toggle('dim', P('detVoices').get() === 0);
+  dimDet(); P('detVoices').sub(dimDet);
+  const gOctStep = h('div', 'col', { style: 'align-items:center;gap:3px' },
+    (() => { const read = h('div', 'lcd', { style: 'width:24px;height:16px' });
+      const paint = () => { const n = Math.round((glob('gOctave').get() - .5) * 4); read.textContent = (n > 0 ? '+' : '') + n; };
+      paint(); glob('gOctave').sub(paint);
+      const dec = h('div', 'step', { style: 'width:13px;height:16px', onclick: () => { glob('gOctave').set(clamp(glob('gOctave').get() - .25, 0, 1)); touch('GLOBAL OCTAVE', glob('gOctave').get()); } }, '\u2039');
+      const inc = h('div', 'step', { style: 'width:13px;height:16px', onclick: () => { glob('gOctave').set(clamp(glob('gOctave').get() + .25, 0, 1)); touch('GLOBAL OCTAVE', glob('gOctave').get()); } }, '\u203a');
+      return h('div', 'row', { style: 'gap:2px' }, dec, read, inc); })(),
+    h('div', 'lbl-sm', null, 'OCTAVE'));
+  const offLed = Led(glob('globOffset'));
+  const offBtn = h('div', 'btn', { style: 'width:86px;height:16px', onclick: () => { const v = !glob('globOffset').get(); glob('globOffset').set(v); touch(v ? 'GLOBAL OFFSET ON' : 'GLOBAL OFFSET OFF', v ? 1 : 0); rebuildToneEdit(); } }, 'OFFSET MODE');
+  const globalBlock = h('div', 'group', { style: 'position:absolute;right:12px;bottom:10px;width:307px;padding:13px 10px 8px;display:flex;flex-direction:column;gap:9px;background:rgba(16,18,40,.45)' },
+    h('div', 'group-title', { style: 'background:#2a2f56;font-size:9px' }, 'GLOBAL'),
+    h('div', 'row', { style: 'gap:9px' },
+      h('div', 'col', { style: 'align-items:center;gap:3px' }, detVoices, h('div', 'lbl-sm', null, 'VOICES')),
+      detKnob, h('div', 'divider-v'), gOctStep),
+    h('div', 'row', { style: 'gap:7px' }, offLed, offBtn,
+      h('div', null, { style: 'font:600 6.5px var(--f-silk);color:var(--silk-dim);line-height:1.15' }, 'AMP ADSR + CUT/RES \u2192 GLOBAL \u00b1')));
+
+  const block = grp('TONE EDIT', 'padding:16px 12px 8px;display:flex;flex-direction:column;gap:9px',
+    waveRow, knobRow, tvfRow,
+    lfoRow('LFO1', 'l1r', 'l1d', 'l1sync', 'l1dest', 'l1shape'),
+    lfoRow('LFO2', 'l2r', 'l2d', 'l2sync', 'l2dest', 'l2shape'),
+    auxRow, globalBlock);
+  // colour the TONE EDIT title letter
+  block.querySelector('.group-title').append(' ', h('span', null, { style: `color:${col}` }, TONES[i]));
+  return block;
+}
+function cyc(handle, len, d) { handle.set((handle.get() + d + len) % len); }
+
+/* ---- FILTERS -------------------------------------------------------------- */
+function buildFilters() {
+  const strip = (n, typeKey, cutKey, resKey, thirdKey, thirdLabel, thirdColor, thirdBip) => {
+    const typeLcd = h('div', 'lcd click grow', { style: 'height:20px', onclick: () => openMenu('FILTER ' + n + ' TYPE', FTYPES, glob(typeKey)) });
+    const paint = () => typeLcd.textContent = FTYPES[glob(typeKey).get()]; paint(); glob(typeKey).sub(paint);
+    const typeRow = h('div', 'row', { style: 'gap:5px;width:100%' }, h('div', null, { style: 'font:700 9px var(--f-silk);color:var(--silk-hi);width:10px' }, String(n)),
+      h('div', 'step', { onclick: () => cyc(glob(typeKey), FTYPES.length, -1) }, '\u2039'), typeLcd, h('div', 'step', { onclick: () => cyc(glob(typeKey), FTYPES.length, 1) }, '\u203a'));
+    const knobs = h('div', 'row', { style: 'justify-content:space-between;width:100%' },
+      Knob(glob(cutKey), 'CUTOFF', { size: 36, color: 'var(--ptr-red)', def: GLOBAL_DEFAULTS[cutKey] }),
+      Knob(glob(resKey), 'RESONANCE', { size: 36, color: 'var(--ptr-red)', def: GLOBAL_DEFAULTS[resKey] }),
+      Knob(glob(thirdKey), thirdLabel, { size: 36, color: thirdColor, bip: thirdBip, def: GLOBAL_DEFAULTS[thirdKey], fmt: thirdBip ? fmtBip : null }));
+    return { typeRow, knobs };
+  };
+  const f1 = strip(1, 'f1Type', 'f1Cut', 'f1Res', 'f1Env', 'ENVELOPE', 'var(--ptr-red)', false);
+  const f2 = strip(2, 'f2Type', 'f2Cut', 'f2Res', 'f2Morph', 'MORPH', 'var(--ptr-yellow)', true);
+
+  const serLed = h('div', 'led'), parLed = h('div', 'led');
+  const paintRoute = () => { const r = glob('route').get(); serLed.classList.toggle('on', !r); parLed.classList.toggle('on', !!r); };
+  paintRoute(); glob('route').sub(paintRoute);
+  const routeRow = h('div', 'row', { style: 'margin-top:auto;gap:8px;padding-bottom:2px' },
+    h('div', 'row', { style: 'gap:4px' }, serLed, L('SER')),
+    h('div', 'btn', { style: 'width:34px;height:18px', onclick: () => { glob('route').set(!glob('route').get()); touch('FILTER ROUTE', glob('route').get() ? 1 : 0); } }),
+    h('div', 'row', { style: 'gap:4px' }, parLed, L('PAR')),
+    Knob(glob('fbal'), 'BALANCE', { size: 26, color: 'var(--ptr-yellow)', bip: true, def: .5, fmt: fmtBip }));
+
+  return grp('FILTERS', 'padding:16px 10px 8px;display:flex;flex-direction:column;gap:7px;align-items:center',
+    f1.typeRow, f1.knobs, h('div', 'divider-h'), f2.typeRow, f2.knobs, routeRow);
 }
 
-// ---- gain law + constellation ---------------------------------------------
-function toneGain(i, phi) {
-  const dir = clamp01(sliderState('dir' + SFX[i]).getNormalisedValue());
-  const vint = clamp01(sliderState('vint' + SFX[i]).getNormalisedValue());
-  const a = dir * 2 * Math.PI, g = Math.max(0, Math.cos(phi - a));
-  return (1 - vint) + vint * g * g;
+/* ---- DREAM VECTOR (radar) ------------------------------------------------- */
+let RADAR = null;
+function buildVector() {
+  const box = h('div', null, { style: 'position:relative;width:150px;height:132px;background:linear-gradient(180deg,#333857 0%,#242640 50%,#484D70 100%);border:1px solid #4D547A;border-radius:6px;box-shadow:inset 0 1px 1px rgba(255,255,255,.12),inset 0 -2px 4px rgba(0,0,0,.4)' });
+  const svg = s('svg', { viewBox: '0 0 150 132', style: 'position:absolute;inset:0;width:100%;height:100%' });
+  box.append(svg);
+  // corner screws around orb
+  [[6,6],[135,6],[6,117],[135,117]].forEach(([x,y]) => box.append(h('div', null, { style: `position:absolute;left:${x}px;top:${y}px;width:9px;height:9px;border-radius:50%;background:radial-gradient(circle at 40% 40%,#8087A8,#141724);box-shadow:0 1px 1px rgba(0,0,0,.6)` })));
+  RADAR = svg;
+
+  const shape = Stepper(glob('vecShape'), VECSHAPES, { readStyle: 'width:36px;height:16px', arrowStyle: 'width:14px;height:16px', label: 'ORBIT SHAPE', onLcd: () => openMenu('ORBIT SHAPE', VECSHAPES, glob('vecShape')) });
+  const left = h('div', 'col', { style: 'align-items:center;gap:4px' }, box,
+    h('div', 'lbl-sm', null, 'VECTOR RADAR \u00b7 PHASE'), h('div', 'row', { style: 'gap:4px;align-items:center' }, L('SHAPE'), shape));
+
+  const knobs = h('div', 'col', { style: 'gap:6px;justify-content:space-around;padding:2px 0' },
+    Knob(glob('vphase'), 'PHASE', { size: 32, color: 'var(--ptr-yellow)' }), Knob(glob('orbRate'), 'RATE', { size: 32 }),
+    ledToggle(glob('orbit'), 'ORBIT'), ledToggle(glob('venv'), 'P-ENV'),
+    h('div', 'btn', { style: 'width:40px;height:14px', onclick: openPenv }, 'EDIT'));
+  // relabel toggles
+  knobs.children[2].append(h('div', 'lbl-sm', null, 'ORBIT'));
+  knobs.children[3].append(h('div', 'lbl-sm', { style: 'white-space:nowrap' }, 'P-ENV'));
+
+  const dirInt = h('div', 'col', { style: 'gap:5px;justify-content:space-around;padding:2px 0' },
+    h('div', 'row', { style: 'align-items:flex-end;gap:8px;padding-left:18px' },
+      h('div', null, { style: 'width:44px;text-align:center;font:700 7.5px var(--f-silk);color:var(--silk-hi)' }, 'DIRECTION'),
+      h('div', null, { style: 'width:44px;text-align:center;font:700 7.5px var(--f-silk);color:var(--silk-hi)' }, 'INTENSITY')),
+    ...TONES.map((n, i) => h('div', 'row', { style: 'align-items:center;gap:8px' },
+      h('div', null, { style: `width:10px;font:800 11px var(--f-lcd);color:${TONE_COLORS[i]}` }, n),
+      h('div', null, { style: 'width:44px;display:flex;justify-content:center' }, Knob(tone('dir', i), null, { size: 22, color: 'var(--ptr-yellow)' })),
+      h('div', null, { style: 'width:44px;display:flex;justify-content:center' }, Knob(tone('vint', i), null, { size: 22, color: 'var(--ptr-yellow)' })))));
+
+  return grp('DREAM VECTOR', 'padding:16px 10px 8px;display:flex;gap:10px', left, knobs, h('div', 'divider-v'), dirInt);
 }
 
-// ---- row 2: DREAM VECTOR | MOD MATRIX | FX ---------------------------------
-function buildRow2() {
-  const row = mk('div', 'display:grid;grid-template-columns:420px 296px 1fr;gap:10px;padding:14px 12px 0;height:212px;box-sizing:border-box');
-
-  // ---- DREAM VECTOR ----
-  const gV = groupPanel('padding:16px 10px 8px;display:flex;gap:10px', 'DREAM VECTOR');
-  // left: constellation
-  const left = mk('div', 'display:flex;flex-direction:column;align-items:center;gap:4px');
-  const flowBox = mk('div', 'position:relative;width:150px;height:132px;background:#07070a;border-radius:3px;box-shadow:inset 0 2px 8px rgba(0,0,0,.9)');
-  const svg = mkNS('svg'); setAttrs(svg, { viewBox: '0 0 150 132' }); svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
-  const ys = [22, 52, 82, 112], x0 = 22, x1 = 117, y1 = 66;
-  const paths = [], nodes = [], nlabels = [], dots = [];
-  for (let i = 0; i < 4; i++) {
-    const p = mkNS('path'); setAttrs(p, { d: `M ${x0 + 9} ${ys[i]} C ${x0 + 45} ${ys[i]}, ${x1 - 40} ${y1}, ${x1} ${y1}`, fill: 'none', stroke: '#ffd23f' }); svg.appendChild(p); paths.push(p);
-  }
-  for (let i = 0; i < 4; i++) {
-    const c = mkNS('circle'); setAttrs(c, { cx: x0, cy: ys[i] }); svg.appendChild(c); nodes.push(c);
-    const t = mkNS('text'); setAttrs(t, { x: x0, y: ys[i] + 3, 'text-anchor': 'middle', 'font-family': 'Doto', 'font-weight': 800, 'font-size': 8 }); t.textContent = TONELET[i]; svg.appendChild(t); nlabels.push(t);
-    const d = mkNS('circle'); setAttrs(d, { fill: '#ff2b3e' }); svg.appendChild(d); dots.push(d);
-  }
-  const sumC = mkNS('circle'); setAttrs(sumC, { cx: 126, cy: 66, r: 9, fill: 'none', stroke: '#464e94', 'stroke-width': 1.5 }); svg.appendChild(sumC);
-  const sumT = mkNS('text'); setAttrs(sumT, { x: 126, y: 69, 'text-anchor': 'middle', 'font-family': 'Doto', 'font-weight': 800, 'font-size': 9, fill: '#ffd23f' }); sumT.textContent = 'Σ'; svg.appendChild(sumT);
-  const mixT = mkNS('text'); setAttrs(mixT, { x: 126, y: 88, 'text-anchor': 'middle', 'font-family': 'Doto', 'font-weight': 800, 'font-size': 7, fill: '#9aa1d8' }); mixT.textContent = 'MIX'; svg.appendChild(mixT);
-  const phBg = mkNS('rect'); setAttrs(phBg, { x: 6, y: 122, width: 138, height: 3, fill: '#1c2040' }); svg.appendChild(phBg);
-  const phBar = mkNS('rect'); setAttrs(phBar, { y: 122, width: 10, height: 3, fill: '#ff2b3e' }); svg.appendChild(phBar);
-  flowBox.appendChild(svg); left.appendChild(flowBox);
-  left.appendChild(mk('div', "font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.12em", 'SIGNAL FLOW · PHASE'));
-  const shRow = mk('div', 'display:flex;align-items:center;gap:4px');
-  shRow.appendChild(mk('div', "font:600 8px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.08em", 'SHAPE'));
-  shRow.appendChild(stepper('<', () => cbCycle('vec_orbit_shape', -1), 14, 16, 9));
-  shRow.appendChild(tbtn("width:36px;height:16px;font:700 8px 'Barlow Semi Condensed'", () => ORBITSHAPES[cIdx('vec_orbit_shape', ORBITSHAPES.length)], () => openSelMenu('ORBIT SHAPE', ORBITSHAPES, () => cIdx('vec_orbit_shape', ORBITSHAPES.length), (i) => { comboState('vec_orbit_shape').setChoiceIndex(i); scheduleRefresh(); })));
-  shRow.appendChild(stepper('>', () => cbCycle('vec_orbit_shape', +1), 14, 16, 9));
-  left.appendChild(shRow);
-  gV.appendChild(left);
-  // mid: PHASE/RATE + ORBIT/P-ENV/EDIT
-  const mid = mk('div', 'display:flex;flex-direction:column;gap:6px;justify-content:center');
-  mid.appendChild(knob({ adapter: slAdapter('vec_phase'), label: 'PHASE', ptr: '#ffd23f', size: 32, dynLabel: () => 'PHASE' }).col);
-  mid.appendChild(knob({ adapter: slAdapter('vec_orbit_rate'), label: 'RATE', size: 32 }).col);
-  const orbRow = mk('div', 'display:flex;align-items:center;gap:5px');
-  orbRow.appendChild(led(6, () => toggleState('vec_orbit_on').getValue()));
-  orbRow.appendChild(pushToggle('width:26px;height:14px', 'vec_orbit_on'));
-  orbRow.appendChild(mk('div', "font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8", 'ORBIT'));
-  mid.appendChild(orbRow);
-  const penvRow = mk('div', 'display:flex;align-items:center;gap:5px');
-  penvRow.appendChild(led(6, () => toggleState('vec_penv_on').getValue()));
-  penvRow.appendChild(pushToggle('width:26px;height:14px', 'vec_penv_on'));
-  penvRow.appendChild(mk('div', "font:600 7.5px 'Barlow Semi Condensed';color:#9aa1d8", 'P-ENV'));
-  mid.appendChild(penvRow);
-  mid.appendChild(tbtn("width:40px;height:14px;font:700 7px 'Barlow Semi Condensed';letter-spacing:.1em;border-radius:3px", () => 'EDIT', () => { penvOpen = true; syncOverlays(); }));
-  gV.appendChild(mid);
-  gV.appendChild(mk('div', 'width:1px;align-self:stretch;background:#464e94;opacity:.4'));
-  // right: per-tone DIR/INT
-  const rightC = mk('div', 'display:flex;flex-direction:column;gap:4px;justify-content:center');
-  for (let i = 0; i < 4; i++) {
-    const ti = i;
-    const r = mk('div', 'display:flex;align-items:center;gap:6px');
-    const let_ = mk('div', "width:10px;font:800 9px 'Doto'", TONELET[i]);
-    refreshers.push(() => { let_.style.color = sel === ti ? '#ff5b6e' : '#9aa1d8'; });
-    r.appendChild(let_);
-    [['dir', 'DIR'], ['vint', 'INT']].forEach(([k, l]) =>
-      r.appendChild(knob({ adapter: slAdapter(k + SFX[i]), label: l + ' ' + TONELET[i], ptr: '#ffd23f', size: 22, ptrTop: 1, labelSize: 7, row: true }).col));
-    rightC.appendChild(r);
-  }
-  rightC.appendChild(mk('div', "font:600 7px 'Barlow Semi Condensed';color:#7d84c0;letter-spacing:.1em;text-align:center", 'DIR · INT'));
-  gV.appendChild(rightC);
-  row.appendChild(gV);
-  // constellation updater
-  refreshers.push(() => {
-    const phi = previewPhase * 2 * Math.PI;
-    for (let i = 0; i < 4; i++) {
-      const on = toggleState('on' + SFX[i]).getValue();
-      const gain = on ? toneGain(i, phi) : 0;
-      setAttrs(paths[i], { 'stroke-width': +(0.5 + gain * 2.5).toFixed(1), opacity: +(0.08 + gain * 0.8).toFixed(2) });
-      setAttrs(nodes[i], { r: +(6 + gain * 3).toFixed(2), fill: on ? '#ffd23f' : '#3a3520', opacity: on ? +(0.3 + gain * 0.7).toFixed(2) : 0.25 });
-      nlabels[i].setAttribute('fill', sel === i ? '#ff5b6e' : '#07070a');
-      if (gain > .05 && on) {
-        const tt = flow[i], u = 1 - tt, y = ys[i];
-        const bx = u * u * u * (x0 + 9) + 3 * u * u * tt * (x0 + 45) + 3 * u * tt * tt * (x1 - 40) + tt * tt * tt * x1;
-        const by = u * u * u * y + 3 * u * u * tt * y + 3 * u * tt * tt * y1 + tt * tt * tt * y1;
-        setAttrs(dots[i], { cx: +bx.toFixed(1), cy: +by.toFixed(1), r: +(1.5 + gain * 2).toFixed(1), opacity: +(0.3 + gain * 0.7).toFixed(2) }); dots[i].style.display = '';
-      } else dots[i].style.display = 'none';
-    }
-    phBar.setAttribute('x', (6 + previewPhase * 128).toFixed(1));
+/* ---- MOD MATRIX + GLOBAL LFO --------------------------------------------- */
+function buildMatrix() {
+  const rows = [0, 1, 2].map(i => {
+    const S = mtx(i, 'src'), D = mtx(i, 'dst'), A = mtx(i, 'amt');
+    const src = h('div', 'btn', { style: 'width:52px;height:18px;flex:none', onclick: () => openMenu('MOD SOURCE \u2014 SLOT ' + (i + 1), MSRC, S) });
+    const dst = h('div', 'btn', { style: 'width:52px;height:18px;flex:none', onclick: () => openMenu('MOD DEST \u2014 SLOT ' + (i + 1), MDST, D) });
+    const rot = h('div', 'knob-rot');
+    const amt = h('div', 'knob', { style: '--s:26px;flex:none' }, h('div', 'knob-cap', null, h('div', 'knob-face'), rot));
+    rot.append(h('div', 'knob-ptr', { style: '--pc:var(--ptr-yellow)' }));
+    const fill = h('div', null, { style: 'position:absolute;left:0;top:0;bottom:0;opacity:.8;width:0%;background:var(--ptr-yellow)' });
+    dragBehaviour(amt, A, { label: 'AMT ' + (i + 1), bip: true, def: .5, fmt: fmtBip });
+    const paintSrc = () => src.textContent = MSRC[S.get()]; paintSrc(); S.sub(paintSrc);
+    const paintDst = () => dst.textContent = MDST[D.get()]; paintDst(); D.sub(paintDst);
+    const paintAmt = v => { rot.style.setProperty('--rot', Math.round(-135 + v * 270) + 'deg'); fill.style.width = Math.round(Math.abs(v - .5) * 200) + '%'; fill.style.background = v < .5 ? 'var(--led-on)' : 'var(--ptr-yellow)'; };
+    paintAmt(A.get()); A.sub(paintAmt);
+    return h('div', 'row', { style: 'gap:5px' }, h('div', null, { style: 'font:700 8px var(--f-silk);color:var(--silk);width:8px' }, String(i + 1)),
+      src, h('div', null, { style: 'font:800 10px var(--f-lcd);color:var(--lcd-ink)' }, '>'), dst, amt,
+      h('div', 'grow', { style: 'height:8px;background:var(--track);border-radius:2px;position:relative;overflow:hidden' }, fill));
   });
+  const glfoRate = Knob(glob('glfoRate'), 'RATE', { size: 30 });
+  const glfoSyncLed = Led(glob('glfoSync'));
+  const glfoSyncBtn = h('div', 'btn', { style: 'width:32px;height:15px', onclick: () => { glob('glfoSync').set(!glob('glfoSync').get()); touch('G-LFO SYNC', glob('glfoSync').get() ? 1 : 0); } }, 'SYNC');
+  const glfoWave = Stepper(glob('glfoWave'), WAVE_SHAPES, { readStyle: 'width:40px;height:18px', arrowStyle: 'width:14px;height:18px', label: 'G-LFO SHAPE', onLcd: () => openMenu('GLOBAL LFO SHAPE', WAVE_SHAPES, glob('glfoWave')) });
+  const glfo = h('div', 'row', { style: 'gap:8px;margin-top:auto' }, LH('GLOBAL LFO'), glfoRate, h('div', 'row', { style: 'gap:4px' }, glfoSyncLed, glfoSyncBtn), glfoWave);
+  return grp('MOD MATRIX', 'padding:16px 10px 8px;display:flex;flex-direction:column;gap:5px', ...rows, glfo);
+}
+/* menu overlay bound to a plain getter/setter (for UI.matrix objects) */
+function openMenuObj(title, arr, get, set) {
+  const cur = get();
+  const rows = arr.map((it, i) => h('div', 'menu-row' + (i === cur ? ' cur' : ''), { onclick: () => { set(i); closeOverlay(); } },
+    h('span', null, { style: 'width:20px' }, String(i + 1).padStart(2, '0')), h('span', null, null, (i === cur ? '\u25B8 ' : '') + it)));
+  showOverlay(h('div', 'menu', { onclick: e => e.stopPropagation() },
+    h('div', 'menu-head', null, h('span', null, null, title), h('span', null, null, 'ESC=EXIT')),
+    h('div', 'menu-list', null, ...rows)));
+}
 
-  // ---- MOD MATRIX ----
-  const gM = groupPanel('padding:16px 10px 8px;display:flex;flex-direction:column;gap:5px', 'MOD MATRIX');
-  for (let i = 0; i < 3; i++) {
-    const n = i + 1, srcId = 'mtx' + n + '_src', dstId = 'mtx' + n + '_dst', amtId = 'mtx' + n + '_amt';
-    const r = mk('div', 'display:flex;align-items:center;gap:5px');
-    r.appendChild(mk('div', "font:700 8px 'Barlow Semi Condensed';color:#9aa1d8;width:8px", String(n)));
-    r.appendChild(tbtn("width:52px;height:18px;font:700 8px 'Barlow Semi Condensed';flex:none", () => MSRC[cIdx(srcId, MSRC.length)], () => openSelMenu('MOD SOURCE — SLOT ' + n, MSRC, () => cIdx(srcId, MSRC.length), (j) => { comboState(srcId).setChoiceIndex(j); scheduleRefresh(); })));
-    r.appendChild(mk('div', "font:800 10px 'Doto';color:#ffd23f", '>'));
-    r.appendChild(tbtn("width:52px;height:18px;font:700 8px 'Barlow Semi Condensed';flex:none", () => MDST[cIdx(dstId, MDST.length)], () => openSelMenu('MOD DEST — SLOT ' + n, MDST, () => cIdx(dstId, MDST.length), (j) => { comboState(dstId).setChoiceIndex(j); scheduleRefresh(); })));
-    r.appendChild(knob({ adapter: slAdapter(amtId), size: 26, inset: 4, ptrTop: 1, ptr: '#ffd23f', bip: true, bare: true, dynLabel: () => 'AMT ' + n }).col);
-    const barWrap = mk('div', 'flex:1;height:8px;background:#0c0e20;border-radius:2px;position:relative;overflow:hidden');
-    const bar = mk('div', 'position:absolute;left:0;top:0;bottom:0;opacity:.8;width:0%');
-    barWrap.appendChild(bar); r.appendChild(barWrap);
-    refreshers.push(() => { const a = clamp01(sliderState(amtId).getNormalisedValue()); bar.style.width = Math.round(Math.abs(a - .5) * 2 * 100) + '%'; bar.style.background = a < .5 ? '#ff2b3e' : '#ffd23f'; });
-    gM.appendChild(r);
-  }
-  const glfo = mk('div', 'display:flex;align-items:center;gap:8px;margin-top:auto');
-  glfo.appendChild(mk('div', "font:700 8px 'Barlow Semi Condensed';letter-spacing:.14em;color:#c9cdf2", 'GLOBAL LFO'));
-  glfo.appendChild(knob({ adapter: slAdapter('lfo_rate'), label: 'RATE', size: 30 }).col);
-  glfo.appendChild(stepper('<', () => cbCycle('lfo_shape', -1), 14, 18, 9));
-  glfo.appendChild(tbtn("width:40px;height:18px;font:700 8px 'Barlow Semi Condensed'", () => LFOSHAPES[cIdx('lfo_shape', LFOSHAPES.length)], () => openSelMenu('GLOBAL LFO SHAPE', LFOSHAPES, () => cIdx('lfo_shape', LFOSHAPES.length), (i) => { comboState('lfo_shape').setChoiceIndex(i); scheduleRefresh(); })));
-  glfo.appendChild(stepper('>', () => cbCycle('lfo_shape', +1), 14, 18, 9));
-  gM.appendChild(glfo);
-  row.appendChild(gM);
+/* ---- FX ------------------------------------------------------------------- */
+function buildFX() {
+  const fxRow = (name, typeArr, typeKey, knobDefs, onKey, focusArr, focusKey, paramKey, syncKey, divider) => {
+    const typeLcd = h('div', 'lcd click', { style: 'width:52px;height:18px', onclick: () => openMenu(name + ' TYPE', typeArr, glob(typeKey)) });
+    const paintT = () => typeLcd.textContent = typeArr[glob(typeKey).get()]; paintT(); glob(typeKey).sub(paintT);
+    const knobs = h('div', 'grow row', { style: 'justify-content:space-evenly;align-items:flex-start' },
+      ...knobDefs.map(([k, l]) => {
+        const synced = syncKey && k === knobDefs[1][0] && glob(syncKey).get();
+        return Knob(glob(k), synced ? SYNCDIVS[Math.min(11, Math.floor(glob(k).get() * 12))] : l, { size: 26, color: synced ? 'var(--ptr-yellow)' : null });
+      }));
+    const focus = h('div', 'lcd click', { style: 'width:52px;height:18px', onclick: () => cyc(glob(focusKey), focusArr.length, 1) });
+    const paintF = () => focus.textContent = focusArr[glob(focusKey).get()]; paintF(); glob(focusKey).sub(paintF);
+    const paramK = Knob(glob(paramKey), 'PARAMS', { size: 26, color: 'var(--ptr-yellow)' });
+    const mid = h('div', 'row', { style: 'flex:none;gap:8px' }, h('div', 'col', { style: 'align-items:center;gap:2px' }, h('div', 'lbl-sm', null, 'FOCUS'), focus), paramK);
+    const tail = h('div', 'row', { style: 'flex:none;width:82px;justify-content:flex-end;gap:6px' });
+    if (syncKey) { const sLed = Led(glob(syncKey)); tail.append(h('div', 'col', { style: 'align-items:center;gap:2px' }, sLed, h('div', 'btn', { style: 'width:30px;height:13px', onclick: () => { glob(syncKey).set(!glob(syncKey).get()); touch(name + ' SYNC', glob(syncKey).get() ? 1 : 0); rebuildFX(); } }, 'SYNC'))); }
+    const onLed = Led(glob(onKey));
+    tail.append(h('div', 'row', { style: 'gap:5px' }, onLed, h('div', 'btn', { style: 'width:26px;height:14px', onclick: () => { glob(onKey).set(!glob(onKey).get()); touch(name + ' ON', glob(onKey).get() ? 1 : 0); } })));
+    const row = h('div', 'row', { style: 'gap:6px' },
+      h('div', 'lbl-hi', { style: 'width:30px;flex:none' }, name),
+      h('div', 'col', { style: 'align-items:center;gap:2px;flex:none' }, h('div', 'lbl-sm', null, 'TYPE'), typeLcd),
+      knobs, mid, tail);
+    return h('div', 'col', { style: 'gap:6px' }, row, divider ? h('div', 'divider-h', { style: 'opacity:.4' }) : null);
+  };
+  const util = h('div', 'btn', { style: 'position:absolute;top:-9px;right:10px;padding:1px 7px;font-size:7.5px;z-index:2', onclick: openUtil }, 'UTIL \u25b8');
+  return grp('FX', 'padding:16px 12px 10px;display:flex;flex-direction:column;justify-content:space-between;gap:6px',
+    util,
+    fxRow('MOD', MODFX, 'mfxType', [['mfxMix','MIX'],['mfxRate','RATE'],['mfxDepth','DEPTH']], 'mfxOn', MODFXFOCUS, 'mfxFocus', 'mfxParam', null, true),
+    fxRow('DELAY', DLYMODES, 'dlyMode', [['dMix','MIX'],['dTime','TIME'],['dFb','FB']], 'dlyOn', DLYFOCUS, 'dlyFocus', 'dParam', 'dlySync', true),
+    fxRow('REVERB', REVTYPES, 'revType', [['rMix','MIX'],['rSize','SIZE'],['rDamp','DAMP']], 'revOn', REVFOCUS, 'revFocus', 'rParam', null, false));
+}
+let fxHost = null;
+function rebuildFX() { const f = buildFX(); if (fxHost && fxHost.parentNode) fxHost.replaceWith(f); fxHost = f; }
 
-  // ---- FX ----
-  const gX = groupPanel('padding:16px 12px 8px;display:flex;flex-direction:column;gap:6px', 'FX');
-  const utilBtn = mk('div', "position:absolute;top:-9px;right:10px;background:#232850;padding:1px 7px;border:1px solid #464e94;border-radius:3px;font:700 7.5px 'Barlow Semi Condensed';color:#c9cdf2;letter-spacing:.12em;cursor:pointer;z-index:2", 'UTIL ▸');
-  utilBtn.addEventListener('click', () => { utilOpen = true; syncOverlays(); });
-  gX.appendChild(utilBtn);
-  const fxRow = (name, modeId, modeList, primary, focusList, focusId, slot, onId, hasSync, divider) => {
-    const wrap = mk('div', 'display:flex;flex-direction:column;gap:6px');
-    const r = mk('div', 'display:flex;align-items:center;gap:4px');
-    r.appendChild(mk('div', "width:28px;font:700 7.5px 'Barlow Semi Condensed';letter-spacing:.08em;color:#c9cdf2", name));
-    r.appendChild(lcd("width:46px;height:18px;justify-content:center;flex:none;font:800 8px 'Doto'", () => modeList[cIdx(modeId, modeList.length)], () => openSelMenu(name + ' TYPE', modeList, () => cIdx(modeId, modeList.length), (i) => { comboState(modeId).setChoiceIndex(i); scheduleRefresh(); })));
-    primary.forEach((def) => {
-      const [id, l] = def, synced = def[2];
-      r.appendChild(knob({ adapter: slAdapter(id), label: l, size: 26, w: 32,
-        dynLabel: synced ? (() => toggleState('dly_sync').getValue() ? SYNCDIVS[Math.min(SYNCDIVS.length - 1, Math.floor(clamp01(sliderState(id).getNormalisedValue()) * SYNCDIVS.length))] : l) : null,
-        dynPtr: synced ? (() => toggleState('dly_sync').getValue() ? '#ffd23f' : '#e8eaff') : null }).col);
+/* ---- UTILITY + P-ENV modals ---------------------------------------------- */
+function openUtil() {
+  const knob = (k, l, c) => Knob(glob(k), l, { size: 30, color: c });
+  const lofiFocus = h('div', 'lcd click', { style: 'width:62px;height:16px', onclick: () => { cyc(glob('lofiFocus'), LOFIFOCUS.length, 1); openUtil(); } });
+  const talkFocus = h('div', 'lcd click', { style: 'width:62px;height:16px', onclick: () => cyc(glob('talkFocus'), TALKFOCUS.length, 1) });
+  const bind = (lcd, arr, key) => { const p = () => lcd.textContent = arr[glob(key).get()]; p(); glob(key).sub(p); };
+  bind(lofiFocus, LOFIFOCUS, 'lofiFocus'); bind(talkFocus, TALKFOCUS, 'talkFocus');
+  // LO-FI PARAMS knob is focus-aware: BITS/SRATE/COMPAND/ALIAS each drive their own APVTS param
+  const LOFI_IDS = ['lofiBits', 'lofiSrate', 'lofiCompand', 'lofiAlias'];
+  const lofiParamKnob = Knob(glob(LOFI_IDS[glob('lofiFocus').get()]), 'PARAMS', { size: 30, color: 'var(--ptr-yellow)' });
+  const prePost = h('div', 'btn', { style: 'width:88px;height:18px', onclick: () => { glob('prePost').set(!glob('prePost').get()); pp(); } });
+  const pp = () => prePost.textContent = (glob('prePost').get() ? 'POST' : 'PRE') + ' FILTERS'; pp();
+  const row = (...k) => h('div', 'row', { style: 'gap:10px;align-items:center' }, ...k);
+  const modal = h('div', 'modal', { onclick: e => e.stopPropagation() },
+    h('div', 'menu-head', { style: "font:700 10px var(--f-silk);letter-spacing:.18em;color:var(--silk-hi)" }, h('span', null, null, 'UTILITY \u2014 LO-FI \u00b7 WIDTH \u00b7 TALK'), h('span', { style: 'color:var(--silk)' }, null, 'ESC=EXIT')),
+    row(Led(glob('lofiOn')), tglBtn('lofiOn', 'LO-FI', 52), lofiFocus, lofiParamKnob),
+    row(Led(glob('widthOn')), tglBtn('widthOn', 'WIDTH', 52), knob('widthAmt', 'WIDTH'), knob('haas', 'HAAS'), Led(glob('bassMono')), tglBtn('bassMono', 'BASS MONO', 74)),
+    row(Led(glob('talkOn')), tglBtn('talkOn', 'TALK', 52), talkFocus, knob('talkParam', 'PARAMS', 'var(--ptr-yellow)')),
+    h('div', 'row', { style: 'gap:10px;border-top:1px solid var(--frame);padding-top:10px' }, Led(glob('limiter_on')), tglBtn('limiter_on', 'LIMITER', 64), h('div', 'lbl-sm', null, 'OUTPUT BRICKWALL \u00b7 DEFAULT ON')),
+    h('div', 'row', { style: 'gap:10px;border-top:1px solid var(--frame);padding-top:10px' }, h('div', 'lbl', null, 'LO-FI / WIDTH PLACEMENT'), prePost));
+  showOverlay(modal);
+}
+function tglBtn(key, text, w) {
+  const b = h('div', 'btn', { style: `width:${w}px;height:18px`, onclick: () => { glob(key).set(!glob(key).get()); touch(text, glob(key).get() ? 1 : 0); } }, text);
+  const p = () => b.classList.toggle('on', !!glob(key).get()); p(); glob(key).sub(p); return b;
+}
+function openPenv() {
+  const k = (key, l, c) => Knob(glob(key), l, { size: 38, color: c, def: GLOBAL_DEFAULTS[key] });
+  const loopLed = Led(glob('penvLoop'));
+  const modal = h('div', 'modal', { onclick: e => e.stopPropagation() },
+    h('div', 'menu-head', { style: "font:700 10px var(--f-silk);letter-spacing:.18em;color:var(--silk-hi)" }, h('span', null, null, 'P-ENV \u2014 VECTOR PHASE ENVELOPE'), h('span', { style: 'color:var(--silk)' }, null, 'ESC=EXIT')),
+    h('div', 'row', { style: 'gap:14px;align-items:center' }, k('penvStart', 'START', 'var(--ptr-yellow)'), k('penvEnd', 'END', 'var(--ptr-yellow)'), k('penvTime', 'TIME'),
+      h('div', 'col', { style: 'align-items:center;gap:4px' }, loopLed, h('div', 'btn', { style: 'width:34px;height:22px', onclick: () => { const v = !glob('penvLoop').get(); glob('penvLoop').set(v); touch('P-ENV LOOP', v ? 1 : 0); } }), h('div', 'lbl-hi', null, 'LOOP'))));
+  showOverlay(modal);
+}
+
+/* ---- PRESET BROWSER (factory + user bank) -------------------------------- */
+function openPresetBrowser() {
+  const factory = h('div', 'menu-list', { style: 'max-height:430px' });
+  PRESETS.forEach((p, i) => {
+    const row = h('div', 'menu-row' + (UI.presetSel.bank === 'FACTORY' && UI.presetSel.i === i ? ' cur' : ''), { onclick: () => { UI.presetSel = { bank: 'FACTORY', i }; UI.preset = i; refreshHeader(); reopenPreset(); } },
+      h('span', null, { style: 'width:34px' }, 'P' + String(i + 1).padStart(3, '0')), h('span', null, { style: 'width:42px' }, p[0]), h('span', null, null, p[1]));
+    factory.append(row);
+  });
+  const user = h('div', 'menu-list', { style: 'flex:1;min-height:64px;max-height:250px' });
+  if (!USER_PRESETS.length) user.append(h('div', null, { style: 'padding:6px;font:800 9px var(--f-lcd);color:#3a6d52' }, '(NO USER PRESETS \u2014 SAVE ONE)'));
+  USER_PRESETS.forEach((p, i) => {
+    const seld = UI.presetSel.bank === 'USER' && UI.presetSel.i === i;
+    const row = h('div', 'menu-row', { style: seld ? 'color:#07070a;background:#7dffc0' : 'color:#7dffc0', onclick: () => { UI.presetSel = { bank: 'USER', i }; UI.renameBuf = p.name; reopenPreset(); } },
+      h('span', null, { style: 'width:28px' }, 'U' + String(i + 1).padStart(2, '0')), h('span', null, null, p.name));
+    user.append(row);
+  });
+  const field = h('input', 'field', { placeholder: 'RENAME SELECTED USER\u2026', value: UI.renameBuf, oninput: e => UI.renameBuf = e.target.value.toUpperCase() });
+  const btn = (t, cls, fn) => h('div', 'btn', { style: 'flex:1;height:22px' + (cls || ''), onclick: fn }, t);
+  const actions = h('div', 'row', { style: 'gap:5px' },
+    btn('SAVE', '', () => { Bridge.fn('saveUserPreset')('USER ' + String(USER_PRESETS.length + 1).padStart(2, '0')); UI.presetSel = { bank: 'USER', i: USER_PRESETS.length - 1 }; UI.renameBuf = USER_PRESETS[UI.presetSel.i].name; touch('SAVE PRESET', 1); reopenPreset(); }),
+    btn('RENAME', '', () => { if (UI.presetSel.bank === 'USER' && USER_PRESETS[UI.presetSel.i]) { Bridge.fn('renameUserPreset')(USER_PRESETS[UI.presetSel.i].name, UI.renameBuf); reopenPreset(); } }),
+    h('div', 'btn', { style: 'flex:1;height:22px;border-color:#7a2130;color:#ff8a97', onclick: () => { if (UI.presetSel.bank === 'USER' && USER_PRESETS[UI.presetSel.i]) { Bridge.fn('deleteUserPreset')(USER_PRESETS[UI.presetSel.i].name); UI.presetSel = { bank: 'FACTORY', i: 0 }; reopenPreset(); } } }, 'DELETE'));
+  const load = h('div', 'btn', { style: 'height:24px;background:#1e2547;color:var(--lcd-ink);font-size:9px;letter-spacing:.12em', onclick: closeOverlay }, 'LOAD SELECTED');
+  const box = h('div', null, { style: 'width:600px;max-height:540px;background:var(--lcd-bg);border:1px solid var(--frame);border-radius:4px;box-shadow:0 8px 40px #000;padding:12px;display:flex;flex-direction:column;gap:10px', onclick: e => e.stopPropagation() },
+    h('div', 'menu-head', null, h('span', null, null, 'PRESET BROWSER'), h('span', null, null, 'ESC=EXIT')),
+    h('div', 'row', { style: 'gap:12px;min-height:0' },
+      h('div', 'grow col', { style: 'gap:4px;min-height:0' }, h('div', 'lbl-hi', { style: 'color:var(--silk-hi)' }, 'FACTORY \u00b7 47'), factory),
+      h('div', null, { style: 'width:1px;background:var(--frame);opacity:.5' }),
+      h('div', 'col', { style: 'width:232px;gap:5px;min-height:0' }, h('div', 'lbl-hi', { style: 'color:#7dffc0' }, 'USER BANK'), user, field, actions, load,
+        h('div', null, { style: 'font:600 7px var(--f-silk);color:var(--silk-dim)' }, 'FACTORY READ-ONLY \u00b7 SAVE = USER COPY'))));
+  showOverlay(box, 'z11');
+}
+function reopenPreset() { openPresetBrowser(); }
+
+/* ============================================================ ANIMATION ==== */
+function drawRadar() {
+  if (!RADAR) return;
+  const CX = 75, CY = 63, R = 62, BR = '#339E61', FT = '#268052';
+  const phi = glob('vphase').get() * 2 * Math.PI;
+  const kids = [];
+  const grad = (id, stops, attrs = {}) => { const g = s('radialGradient', Object.assign({ id, cx: '50%', cy: '50%', r: '50%' }, attrs)); stops.forEach(([o, c, op]) => g.append(s('stop', { offset: o, 'stop-color': c, 'stop-opacity': op }))); return g; };
+  const defs = s('defs');
+  defs.append(grad('rf', [['0%','#0A0F0D'],['80%','#05080A'],['100%','#000503']]));
+  defs.append(grad('rp', [['0%','#144D2E',.3],['60%','#0F3824',.16],['100%','#0A2417',0]]));
+  defs.append(grad('rs', [['0%','#4DE699',.45],['100%','#4DE699',0]]));
+  defs.append(grad('rh', [['0%','#4DE699'],['60%','#1A6647'],['100%','#0A2417']]));
+  TONE_CORE.forEach((c, i) => { defs.append(grad('rc' + i, [['0%',c[0]],['45%',c[1]],['100%',c[2]]])); defs.append(grad('rg' + i, [['0%',TONE_COLORS[i],.55],['100%',TONE_COLORS[i],0]])); });
+  const bez = s('linearGradient', { id: 'rb', x1: CX, y1: CY - R, x2: CX, y2: CY + R, gradientUnits: 'userSpaceOnUse' });
+  [['0%','#6B7399'],['50%','#1A1C2E'],['100%','#474D70']].forEach(([o, c]) => bez.append(s('stop', { offset: o, 'stop-color': c })));
+  defs.append(bez);
+  const clip = s('clipPath', { id: 'rt' }); clip.append(s('circle', { cx: CX, cy: CY, r: R })); defs.append(clip);
+  kids.push(defs);
+  kids.push(s('circle', { cx: CX, cy: CY, r: R + 2, fill: 'none', stroke: 'url(#rb)', 'stroke-width': 3.9 }));
+  kids.push(s('circle', { cx: CX, cy: CY, r: R, fill: 'url(#rf)' }));
+  const tube = s('g', { 'clip-path': 'url(#rt)' });
+  tube.append(s('circle', { cx: CX, cy: CY, r: R, fill: 'url(#rp)' }));
+  [[.225,.3],[.452,.34],[.68,.4],[.906,.55]].forEach(([f, op]) => tube.append(s('circle', { cx: CX, cy: CY, r: (R*f).toFixed(1), fill: 'none', stroke: BR, 'stroke-width': 1, opacity: op })));
+  [[.134,.1],[.407,.13],[.68,.16],[.952,.22]].forEach(([f, op]) => tube.append(s('circle', { cx: CX, cy: CY, r: (R*f).toFixed(1), fill: 'none', stroke: FT, 'stroke-width': 1, opacity: op })));
+  const sa = phi;
+  tube.append(s('path', { d: `M ${CX} ${CY} L ${(CX+R*Math.cos(sa)).toFixed(1)} ${(CY-R*Math.sin(sa)).toFixed(1)} A ${R} ${R} 0 0 0 ${(CX+R*Math.cos(sa-.55)).toFixed(1)} ${(CY-R*Math.sin(sa-.55)).toFixed(1)} Z`, fill: 'url(#rs)' }));
+  tube.append(s('line', { x1: CX, y1: CY, x2: (CX+R*Math.cos(sa)).toFixed(1), y2: (CY-R*Math.sin(sa)).toFixed(1), stroke: '#4DE699', 'stroke-width': 1.2, opacity: .5 }));
+  TONES.forEach((n, i) => {
+    const on = tone('on', i).get();
+    const gain = on ? toneGain(i, phi) : 0;
+    const a = (TONE_ANGLE[i] + (tone('dir', i).get() - .5) * 40) * Math.PI / 180;
+    const r = R * (.28 + gain * .64), bx = +(CX + r * Math.cos(a)).toFixed(1), by = +(CY - r * Math.sin(a)).toFixed(1);
+    if (!on) { tube.append(s('circle', { cx: bx, cy: by, r: 3, fill: TONE_COLORS[i], opacity: .18 })); return; }
+    const cr = 3 + gain * 3;
+    tube.append(s('circle', { cx: bx, cy: by, r: cr * 2.4, fill: `url(#rg${i})` }));
+    if (i === UI.sel) tube.append(s('circle', { cx: bx, cy: by, r: cr + 3.5, fill: 'none', stroke: TONE_COLORS[i], 'stroke-width': 1, opacity: .8 }));
+    tube.append(s('circle', { cx: bx, cy: by, r: cr, fill: `url(#rc${i})` }));
+    const txt = s('text', { x: bx, y: by - cr - 3, 'text-anchor': 'middle', 'font-family': 'Doto', 'font-weight': 800, 'font-size': 9, fill: TONE_COLORS[i] }); txt.textContent = n; tube.append(txt);
+  });
+  for (let yy = 0; yy < 128; yy += 3) tube.append(s('rect', { x: 0, y: yy, width: 150, height: 1, fill: '#000', 'fill-opacity': .1 }));
+  kids.push(tube);
+  kids.push(s('circle', { cx: CX, cy: CY, r: R * .225, fill: 'none', stroke: BR, 'stroke-width': 1, opacity: .3 }));
+  kids.push(s('circle', { cx: CX, cy: CY, r: 4, fill: 'url(#rh)' }));
+  RADAR.replaceChildren(...kids);
+}
+function toneGain(i, phi) { const a = tone('dir', i).get() * 2 * Math.PI; const g = Math.max(0, Math.cos(phi - a)); const vint = tone('vint', i).get(); return (1 - vint) + vint * g * g; }
+
+let mL = 0, mR = 0;
+function tick() {
+  if (glob('orbit').get() && !overlayEl) glob('vphase').set((glob('vphase').get() + .003 + glob('orbRate').get() * .012) % 1);
+  const phi = glob('vphase').get() * 2 * Math.PI;
+  // spectrum
+  if (HEADER_ANIM) {
+    HEADER_ANIM.specBars.forEach((bar, i) => {
+      const f = i / 21; let e = 0;
+      TONES.forEach((n, ti) => { if (!tone('on', ti).get()) return; const g = toneGain(ti, phi) * tone('level', ti).get(); const bright = .35 + (WAVES[tone('wave', ti).get()] ? (tone('wave', ti).get() % 12) / 12 * .6 : 0); const c = .12 + bright * .5; e += g * Math.exp(-Math.pow((f - c) / (.16 + bright * .22), 2)) * (1 + .5 * Math.sin(phi * 4 + f * 9 + ti)); });
+      e *= .85 + .15 * Math.sin(phi * 5 + i * .7);
+      bar.style.height = Math.max(2, Math.round(3 + Math.min(1, e) * 27)) + 'px';
     });
-    const focusCol = mk('div', 'display:flex;flex-direction:column;align-items:center;gap:2px');
-    focusCol.appendChild(lcd("width:44px;height:15px;justify-content:center;font:800 7.5px 'Doto'", () => focusList[cIdx(focusId, focusList.length)], () => cbCycle(focusId, +1)));
-    focusCol.appendChild(mk('div', "font:600 6.5px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.06em", 'FOCUS'));
-    r.appendChild(focusCol);
-    r.appendChild(knob({ adapter: () => sliderState(slot + '_p' + cIdx(focusId, focusList.length)), label: 'PARAMS', ptr: '#ffd23f', size: 26, w: 32, labelSize: 7.5, dynLabel: () => 'PARAMS' }).col);
-    if (hasSync) {
-      const sc = mk('div', 'display:flex;flex-direction:column;align-items:center;gap:2px');
-      sc.appendChild(led(5, () => toggleState('dly_sync').getValue()));
-      const sb = tbtn("width:30px;height:13px;font:700 6.5px 'Barlow Semi Condensed';letter-spacing:.08em;border-radius:3px", null, () => { const t = toggleState('dly_sync'); t.setValue(!t.getValue()); }); sb.textContent = 'SYNC';
-      sc.appendChild(sb); r.appendChild(sc);
-    }
-    const onCol = mk('div', 'margin-left:auto;display:flex;align-items:center;gap:5px');
-    onCol.appendChild(led(6, () => toggleState(onId).getValue()));
-    onCol.appendChild(pushToggle('width:26px;height:14px', onId));
-    r.appendChild(onCol);
-    wrap.appendChild(r);
-    if (divider) wrap.appendChild(mk('div', 'width:100%;height:1px;background:#464e94;opacity:.4'));
-    return wrap;
-  };
-  gX.appendChild(fxRow('MOD', 'modfx_type', MODFX, [['modfx_rate', 'RATE'], ['modfx_depth', 'DEPTH'], ['modfx_mix', 'MIX']], MODFXFOCUS, 'modfx_pfocus', 'modfx', 'modfx_on', false, true));
-  gX.appendChild(fxRow('DELAY', 'dly_mode', DLYMODES, [['dly_time', 'TIME', true], ['dly_fb', 'FB'], ['dly_mix', 'MIX']], DLYFOCUS, 'dly_pfocus', 'dly', 'dly_on', true, true));
-  gX.appendChild(fxRow('REVERB', 'rev_type', REVTYPES, [['rev_size', 'SIZE'], ['rev_damp', 'DAMP'], ['rev_mix', 'MIX']], REVFOCUS, 'rev_pfocus', 'rev', 'rev_on', false, false));
-  row.appendChild(gX);
-
-  frame.appendChild(row);
-}
-
-// ---- rubber band + KEYS fold + keyboard/wheel strip -----------------------
-let keysFoldBtn, kbStrip;
-function buildKeys() {
-  // rubber-band separator (y640) with the KEYS fold pill centred on it
-  const rb = mk('div', 'position:absolute;left:0;top:640px;width:1140px;height:18px;z-index:7;background:linear-gradient(180deg, #101018 0%, #1c1c26 30%, #14141c 70%, #08080e 100%);box-shadow:0 2px 4px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center');
-  keysFoldBtn = mk('div', "width:56px;height:12px;background:#181b34;border:1px solid #464e94;border-radius:6px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.5);color:#c9cdf2;font:700 6.5px 'Barlow Semi Condensed';display:flex;align-items:center;justify-content:center;letter-spacing:.12em", '▲ KEYS');
-  keysFoldBtn.addEventListener('click', toggleKeys);
-  rb.appendChild(keysFoldBtn);
-  frame.appendChild(rb);
-
-  // key bed strip (y658, shown only when expanded)
-  kbStrip = mk('div', 'position:absolute;left:0;top:658px;width:1140px;height:190px;overflow:hidden;border-radius:0 0 8px 8px;background:#1a1c38;box-shadow:inset 0 1px 1px rgba(255,255,255,.1), inset 0 4px 8px rgba(0,0,0,.6);display:none');
-  kbStrip.appendChild(mk('div', 'position:absolute;left:8px;top:10px;width:128px;height:170px;border-radius:6px;background:linear-gradient(180deg, #0d0d1c 0%, #171a2e 100%);box-shadow:inset 0 3px 6px rgba(0,0,0,.7)'));
-  // pitch + mod wheels
-  const wheel = (x, slotX, ribCount, ptr) => {
-    kbStrip.appendChild(mk('div', `position:absolute;left:${slotX}px;top:25px;width:40px;height:140px;border-radius:20px;background:#05050d;box-shadow:inset 0 2px 5px rgba(0,0,0,.9)`));
-    const w = mk('div', `position:absolute;left:${x}px;top:36px;width:32px;height:118px;border-radius:16px;background:linear-gradient(180deg, #121426 0%, #383d61 35%, #454a73 50%, #383d61 65%, #121426 100%);box-shadow:0 2px 4px rgba(0,0,0,.6);cursor:ns-resize;overflow:hidden`);
-    const ribs = [];
-    for (let i = 0; i < ribCount; i++) { const r = mk('div', 'position:absolute;left:0;width:32px;height:2px;background:rgba(0,0,0,.55)'); w.appendChild(r); ribs.push(r); }
-    let stripe = null;
-    if (ptr) { stripe = mk('div', 'position:absolute;left:0;width:32px;height:3px;background:#ff2b3e;box-shadow:0 0 4px rgba(255,43,62,.7);border-radius:1px'); w.appendChild(stripe); }
-    kbStrip.appendChild(w);
-    return { w, ribs, stripe };
-  };
-  const pitch = wheel(28, 24, 19, true);
-  const modw = wheel(80, 76, 18, false);
-  kbStrip.appendChild(mk('div', "position:absolute;left:22px;top:12px;font:600 7px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.14em", 'PITCH'));
-  kbStrip.appendChild(mk('div', "position:absolute;left:81px;top:12px;font:600 7px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.14em", 'MOD'));
-  refreshers.push(() => {
-    for (let i = 0; i < pitch.ribs.length; i++) pitch.ribs[i].style.top = (2 + i * 6.2 + pitchVal * 20) + 'px';
-    if (pitch.stripe) pitch.stripe.style.top = (57.5 + pitchVal * 20) + 'px';
-    for (let i = 0; i < modw.ribs.length; i++) modw.ribs[i].style.top = (2 + i * 6.5 - modVal * 40) + 'px';
-  });
-  // PITCH: bipolar over 59px, springs back to 0 on release
-  pitch.w.addEventListener('pointerdown', (e) => {
-    e.preventDefault(); try { pitch.w.setPointerCapture(e.pointerId); } catch (_) {}
-    const sy = e.clientY;
-    const mv = (ev) => { pitchVal = Math.max(-1, Math.min(1, (ev.clientY - sy) / 59)); if (nfPitchBend) nfPitchBend(pitchVal); setTouched('PITCH BEND', (pitchVal + 1) / 2, true); scheduleRefresh(); };
-    const up = () => { pitch.w.removeEventListener('pointermove', mv); pitch.w.removeEventListener('pointerup', up); pitch.w.removeEventListener('pointercancel', up); pitchVal = 0; if (nfPitchBend) nfPitchBend(0); scheduleRefresh(); };
-    pitch.w.addEventListener('pointermove', mv); pitch.w.addEventListener('pointerup', up); pitch.w.addEventListener('pointercancel', up);
-  });
-  // MOD: unipolar over 118px, holds on release
-  modw.w.addEventListener('pointerdown', (e) => {
-    e.preventDefault(); try { modw.w.setPointerCapture(e.pointerId); } catch (_) {}
-    const sy = e.clientY, s0 = modVal;
-    const mv = (ev) => { modVal = Math.max(0, Math.min(1, s0 + (sy - ev.clientY) / 118)); if (nfModWheel) nfModWheel(modVal); setTouched('MOD WHEEL', modVal); scheduleRefresh(); };
-    const up = () => { modw.w.removeEventListener('pointermove', mv); modw.w.removeEventListener('pointerup', up); modw.w.removeEventListener('pointercancel', up); };
-    modw.w.addEventListener('pointermove', mv); modw.w.addEventListener('pointerup', up); modw.w.addEventListener('pointercancel', up);
-  });
-  // key bed (30 white / 21 black), left of the wheel bay (x=144)
-  const bed = mk('div', 'position:absolute;left:144px;top:0;right:0;bottom:0');
-  const semis = [0, 2, 4, 5, 7, 9, 11];
-  const whiteNote = (i) => 36 + Math.floor(i / 7) * 12 + semis[i % 7];
-  const held = { el: null };
-  const mkKey = (note, css, dnBg, upBg) => {
-    const k = mk('div', css + `;background:${upBg}`);
-    const dn = (e) => { e.preventDefault(); k.style.background = dnBg; setTouched('NOTE ON', clamp01((note - 36) / 60)); if (nfNoteOn) nfNoteOn(note, 0.8); scheduleRefresh(); };
-    const upf = () => { k.style.background = upBg; if (nfNoteOff) nfNoteOff(note); };
-    k.addEventListener('pointerdown', dn); k.addEventListener('pointerup', upf); k.addEventListener('pointerleave', upf); k.addEventListener('pointercancel', upf);
-    return k;
-  };
-  for (let i = 0; i < 30; i++) {
-    const css = `position:absolute;top:0;width:32.662px;height:170px;border-radius:0 0 3px 3px;box-shadow:1px 0 1px rgba(0,0,0,.35), inset 0 -3px 3px rgba(0,0,0,.25);cursor:pointer;left:${(i * 32.662).toFixed(2)}px`;
-    bed.appendChild(mkKey(whiteNote(i), css, 'linear-gradient(180deg, #b2b5c7 0%, #c7c9d6 75%, #e0e3ed 94%, #a4a8bd 100%)', 'linear-gradient(180deg, #c7c9d6 0%, #e0e3ed 75%, #f7f7fc 94%, #b2b5c7 100%)'));
+    const act = TONES.reduce((s2, n, i) => s2 + (tone('on', i).get() ? toneGain(i, phi) * tone('level', i).get() : 0), 0) / 4;
+    const m = glob('master').get();
+    mL = Math.max(mL * .82, m * (.45 + act * .8 + Math.random() * .12));
+    mR = Math.max(mR * .82, m * (.45 + act * .8 + Math.random() * .12));
+    HEADER_ANIM.mL.style.height = Math.round(Math.min(1, mL) * 100) + '%';
+    HEADER_ANIM.mR.style.height = Math.round(Math.min(1, mR) * 100) + '%';
+    HEADER_ANIM.limLed.classList.toggle('on', glob('limiter_on').get() && (mL > .9 || mR > .9));
   }
-  const blackIdx = [];
-  for (let i = 0; i < 30 && blackIdx.length < 21; i++) if ([0, 1, 3, 4, 5].includes(i % 7) && i < 29) blackIdx.push(i);
-  blackIdx.forEach((i) => {
-    const css = `position:absolute;top:0;width:20px;height:104px;border-radius:0 0 3px 3px;box-shadow:0 3px 5px rgba(0,0,0,.5);cursor:pointer;left:${(i * 32.662 + 22.5).toFixed(2)}px`;
-    bed.appendChild(mkKey(whiteNote(i) + 1, css, 'linear-gradient(180deg, #05050a 0%, #0a0a12 60%, #383b52 92%, #1a1a24 100%)', 'linear-gradient(180deg, #1a1a24 0%, #0a0a12 60%, #383b52 92%, #05050a 100%)'));
+  drawRadar();
+  requestAnimationFrame(tick);
+}
+
+/* ============================================================ FACEPLATE ==== */
+function buildFaceplate() {
+  const fp = h('div', 'faceplate');
+  fp.append(h('div', null, { style: 'position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.10) 0%,rgba(255,255,255,.03) 25%,rgba(0,0,0,.05) 80%,rgba(0,0,0,.12) 100%)' }));
+  fp.append(h('div', null, { style: 'position:absolute;inset:0;background:radial-gradient(ellipse 75% 75% at 50% 50%,rgba(0,0,0,0) 55%,rgba(0,0,0,.16) 100%)' }));
+  // brushed grain via canvas
+  const cv = document.createElement('canvas'); cv.width = 1140; cv.height = 660; cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
+  const ctx = cv.getContext('2d'); let seed = 19971; const mr = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+  for (let y = 1; y < 660; y += 4 + Math.floor(mr() * 5)) { ctx.fillStyle = (mr() > .45 ? '255,255,255' : '0,0,0').replace(/^/, 'rgba(') ; ctx.globalAlpha = 0.008 + mr() * .024; ctx.fillStyle = (mr() > .45 ? '#fff' : '#000'); ctx.fillRect(0, y, 1140, 0.5 + mr()); }
+  ctx.globalAlpha = 1; fp.append(cv);
+  const screws = h('div', 'screws');
+  [[22,22,37],[1118,22,112],[22,638,74],[1118,638,155]].forEach(([x, y, rot]) => {
+    const sc = h('div', null, { style: `position:absolute;left:${x-8}px;top:${y-8}px;width:16px;height:16px;border-radius:50%;background:radial-gradient(circle at 38% 38%,#6b708f,#292b42 70%,#0d0d1a);box-shadow:0 1px 2px rgba(0,0,0,.6)` },
+      h('div', null, { style: `position:absolute;left:3.5px;top:7.2px;width:9px;height:1.6px;border-radius:1px;background:#05050c;transform:rotate(${rot}deg)` }));
+    screws.append(sc);
   });
-  kbStrip.appendChild(bed);
-  frame.appendChild(kbStrip);
-
-  // VER label (getInfo overrides with the built version)
-  const ver = mk('div', "position:absolute;right:34px;top:626px;z-index:6;font:600 7.5px 'Barlow Semi Condensed';color:#7d84c0;letter-spacing:.16em", 'VER 1.0');
-  ver._isVer = true; frame.appendChild(ver); verEl = ver;
-}
-let verEl = null;
-
-// ---- overlays (menu / util / P-ENV) ---------------------------------------
-let menuOverlay, menuTitleEl, menuList, utilOverlay, penvOverlay;
-function buildOverlays() {
-  // menu overlay (dynamic list)
-  menuOverlay = mk('div', 'position:absolute;inset:0;background:rgba(7,7,10,.82);display:none;align-items:center;justify-content:center;z-index:10');
-  const box = mk('div', 'width:430px;max-height:520px;background:#07070a;border:1px solid #464e94;border-radius:4px;box-shadow:0 8px 40px #000;padding:12px;display:flex;flex-direction:column;gap:8px');
-  box.addEventListener('click', (e) => e.stopPropagation());
-  const head = mk('div', "display:flex;justify-content:space-between;font:800 12px 'Doto';color:#ffd23f");
-  menuTitleEl = mk('span', ''); head.appendChild(menuTitleEl); head.appendChild(mk('span', '', 'ESC=EXIT'));
-  menuList = mk('div', 'overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;min-height:0'); menuList.className = 'lcd-scroll';
-  box.appendChild(head); box.appendChild(menuList); menuOverlay.appendChild(box);
-  menuOverlay.addEventListener('click', () => { menu = null; syncOverlays(); });
-  frame.appendChild(menuOverlay);
-
-  // UTIL overlay
-  utilOverlay = mk('div', 'position:absolute;inset:0;background:rgba(7,7,10,.82);display:none;align-items:center;justify-content:center;z-index:10');
-  const ubox = mk('div', 'background:#1b1f40;border:1px solid #464e94;border-radius:4px;box-shadow:0 8px 40px #000;padding:14px 18px;display:flex;flex-direction:column;gap:12px;min-width:400px');
-  ubox.addEventListener('click', (e) => e.stopPropagation());
-  const uhead = mk('div', "display:flex;justify-content:space-between;gap:40px;font:700 10px 'Barlow Semi Condensed';color:#c9cdf2;letter-spacing:.18em");
-  uhead.appendChild(mk('span', '', 'UTILITY — LO-FI · WIDTH · TALK')); uhead.appendChild(mk('span', 'color:#9aa1d8', 'ESC=EXIT'));
-  ubox.appendChild(uhead);
-  // LO-FI row
-  const lofiRow = mk('div', 'display:flex;align-items:center;gap:10px');
-  lofiRow.appendChild(led(6, () => toggleState('lofi_on').getValue()));
-  { const b = tbtn("width:52px;height:18px;font:700 8px 'Barlow Semi Condensed';letter-spacing:.1em;border-radius:3px", null, () => { const t = toggleState('lofi_on'); t.setValue(!t.getValue()); }); b.textContent = 'LO-FI'; lofiRow.appendChild(b); }
-  lofiRow.appendChild(lcd("width:62px;height:16px;justify-content:center;font:800 8px 'Doto'", () => LOFIFOCUS[lofiFocus], () => { lofiFocus = (lofiFocus + 1) % LOFIFOCUS.length; scheduleRefresh(); }));
-  const lofiAdapter = () => {
-    if (lofiFocus === 3) { const t = toggleState('lofi_alias'); return { getNormalisedValue: () => t.getValue() ? 1 : 0, setNormalisedValue: (v) => t.setValue(v >= 0.5), sliderDragStarted() {}, sliderDragEnded() {} }; }
-    return sliderState(['lofi_bits', 'lofi_srate', 'lofi_compand'][lofiFocus]);
-  };
-  lofiRow.appendChild(knob({ adapter: lofiAdapter, label: 'PARAMS', ptr: '#ffd23f', size: 30, w: 38, labelSize: 7.5, dynLabel: () => 'LOFI ' + LOFIFOCUS[lofiFocus] }).col);
-  ubox.appendChild(lofiRow);
-  // WIDTH row
-  const widthRow = mk('div', 'display:flex;align-items:center;gap:10px');
-  widthRow.appendChild(led(6, () => toggleState('width_on').getValue()));
-  { const b = tbtn("width:52px;height:18px;font:700 8px 'Barlow Semi Condensed';letter-spacing:.1em;border-radius:3px", null, () => { const t = toggleState('width_on'); t.setValue(!t.getValue()); }); b.textContent = 'WIDTH'; widthRow.appendChild(b); }
-  widthRow.appendChild(knob({ adapter: slAdapter('width'), label: 'WIDTH', size: 30, w: 38, labelSize: 7.5 }).col);
-  widthRow.appendChild(knob({ adapter: slAdapter('width_haas'), label: 'HAAS', size: 30, w: 38, labelSize: 7.5 }).col);
-  const bassWrap = mk('div', 'display:flex;align-items:center;gap:5px;margin-left:6px');
-  bassWrap.appendChild(led(6, () => toggleState('width_bassmono').getValue()));
-  { const b = tbtn("width:74px;height:18px;font:700 7.5px 'Barlow Semi Condensed';letter-spacing:.06em;border-radius:3px", null, () => { const t = toggleState('width_bassmono'); t.setValue(!t.getValue()); }); b.textContent = 'BASS MONO'; bassWrap.appendChild(b); }
-  widthRow.appendChild(bassWrap);
-  ubox.appendChild(widthRow);
-  // TALK row
-  const talkRow = mk('div', 'display:flex;align-items:center;gap:10px');
-  talkRow.appendChild(led(6, () => toggleState('talk_on').getValue()));
-  { const b = tbtn("width:52px;height:18px;font:700 8px 'Barlow Semi Condensed';letter-spacing:.1em;border-radius:3px", null, () => { const t = toggleState('talk_on'); t.setValue(!t.getValue()); }); b.textContent = 'TALK'; talkRow.appendChild(b); }
-  talkRow.appendChild(lcd("width:62px;height:16px;justify-content:center;font:800 8px 'Doto'", () => TALKFOCUS[talkFocus], () => { talkFocus = (talkFocus + 1) % TALKFOCUS.length; scheduleRefresh(); }));
-  const talkAdapter = () => sliderState(['talk_va', 'talk_vb', 'talk_morph', 'talk_sens'][talkFocus]);
-  talkRow.appendChild(knob({ adapter: talkAdapter, label: 'PARAMS', ptr: '#ffd23f', size: 30, w: 38, labelSize: 7.5, dynLabel: () => 'TALK ' + TALKFOCUS[talkFocus] }).col);
-  ubox.appendChild(talkRow);
-  // PRE/POST placement
-  const ppRow = mk('div', 'display:flex;align-items:center;gap:10px;border-top:1px solid #464e94;padding-top:10px');
-  ppRow.appendChild(mk('div', "font:600 8px 'Barlow Semi Condensed';color:#9aa1d8;letter-spacing:.06em", 'LO-FI / WIDTH PLACEMENT'));
-  ppRow.appendChild(tbtn("width:88px;height:18px;font:700 8px 'Barlow Semi Condensed';letter-spacing:.08em;border-radius:3px", () => PREPOST[cIdx('fx_prepost', 2)] + ' FILTERS', () => { comboState('fx_prepost').setChoiceIndex(1 - cIdx('fx_prepost', 2)); scheduleRefresh(); }));
-  ubox.appendChild(ppRow);
-  utilOverlay.appendChild(ubox);
-  utilOverlay.addEventListener('click', () => { utilOpen = false; syncOverlays(); });
-  frame.appendChild(utilOverlay);
-
-  // P-ENV overlay
-  penvOverlay = mk('div', 'position:absolute;inset:0;background:rgba(7,7,10,.82);display:none;align-items:center;justify-content:center;z-index:10');
-  const pbox = mk('div', 'background:#1b1f40;border:1px solid #464e94;border-radius:4px;box-shadow:0 8px 40px #000;padding:14px 16px;display:flex;flex-direction:column;gap:10px');
-  pbox.addEventListener('click', (e) => e.stopPropagation());
-  const phead = mk('div', "display:flex;justify-content:space-between;gap:30px;font:700 10px 'Barlow Semi Condensed';color:#c9cdf2;letter-spacing:.18em");
-  phead.appendChild(mk('span', '', 'P-ENV — VECTOR PHASE ENVELOPE')); phead.appendChild(mk('span', 'color:#9aa1d8', 'ESC=EXIT'));
-  pbox.appendChild(phead);
-  const prow = mk('div', 'display:flex;align-items:center;gap:14px');
-  prow.appendChild(knob({ adapter: slAdapter('vec_penv_start'), label: 'START', ptr: '#ffd23f', size: 38, dynLabel: () => 'PENV START' }).col);
-  prow.appendChild(knob({ adapter: slAdapter('vec_penv_end'), label: 'END', ptr: '#ffd23f', size: 38, dynLabel: () => 'PENV END' }).col);
-  prow.appendChild(knob({ adapter: slAdapter('vec_penv_time'), label: 'TIME', size: 38, dynLabel: () => 'PENV TIME' }).col);
-  const loopCol = mk('div', 'display:flex;flex-direction:column;align-items:center;gap:4px');
-  loopCol.appendChild(led(8, () => toggleState('vec_penv_loop').getValue()));
-  loopCol.appendChild(pushToggle('width:34px;height:22px', 'vec_penv_loop'));
-  loopCol.appendChild(mk('div', "font:600 8px 'Barlow Semi Condensed';color:#c9cdf2;letter-spacing:.12em", 'LOOP'));
-  prow.appendChild(loopCol);
-  pbox.appendChild(prow);
-  penvOverlay.appendChild(pbox);
-  penvOverlay.addEventListener('click', () => { penvOpen = false; syncOverlays(); });
-  frame.appendChild(penvOverlay);
+  return [fp, screws];
 }
 
-function syncOverlays() {
-  utilOverlay.style.display = utilOpen ? 'flex' : 'none';
-  penvOverlay.style.display = penvOpen ? 'flex' : 'none';
-  menuOverlay.style.display = menu ? 'flex' : 'none';
-  if (menu) {
-    menuTitleEl.textContent = menu.title;
-    menuList.innerHTML = '';
-    const cur = menu.getCur();
-    menu.rows.forEach((rw, i) => {
-      const isCur = i === cur;
-      const row = mk('div', `display:flex;gap:10px;padding:3px 6px;cursor:pointer;font:800 12px 'Doto';color:${isCur ? '#07070a' : '#ffd23f'};background:${isCur ? '#ffd23f' : 'transparent'}`);
-      row.appendChild(mk('span', 'width:20px', rw.num));
-      row.appendChild(mk('span', 'width:44px', rw.cat));
-      row.appendChild(mk('span', '', (isCur ? '▸ ' : '') + rw.name));
-      row.addEventListener('click', (e) => { e.stopPropagation(); menu.pick(i); menu = null; syncOverlays(); });
-      menuList.appendChild(row);
-    });
-  }
-  scheduleRefresh();
+/* ============================================================ BUILD ======== */
+function build() {
+  const panel = h('div', 'panel');
+  const [fp, screws] = buildFaceplate();
+  panel.append(fp, screws);
+  panel.append(buildHeader());
+  const row1 = h('div', null, { style: 'display:grid;grid-template-columns:172px 1fr 200px;gap:10px;padding:14px 12px 0;height:352px' });
+  toneEditHost = buildToneEdit();
+  row1.append(buildTones(), toneEditHost, buildFilters());
+  panel.append(row1);
+  const row2 = h('div', null, { style: 'display:grid;grid-template-columns:376px 276px 1fr;gap:10px;padding:14px 12px 0;height:212px' });
+  fxHost = buildFX();
+  row2.append(buildVector(), buildMatrix(), fxHost);
+  panel.append(row2);
+  panel.append(h('div', 'grip', { onpointerdown: gripResize, ondblclick: () => { UI.scale = 1; panel.style.transform = 'scale(1)'; } }));
+  panel.append(h('div', null, { style: "position:absolute;right:34px;top:626px;font:600 7.5px var(--f-silk);color:var(--silk-dim);letter-spacing:.16em;z-index:6" }, 'VER 1.0'));
+  document.getElementById('root').append(panel);
+  requestAnimationFrame(tick);
 }
-const pad2 = (n) => String(n).padStart(2, '0');
-function openMenu(title, rows, getCur, pick) { if (midiLearn) return; menu = { title, rows, getCur, pick }; syncOverlays(); }
-function openWaveMenu() { openMenu('WAVE SELECT — TONE ' + TONELET[sel], WAVES.map((w, i) => ({ num: pad2(i + 1), cat: w.cat.toUpperCase(), name: (w.name + (w.tag ? ' [' + w.tag + ']' : '')).toUpperCase() })), () => selCbIdx('wave', WAVES.length), (i) => selCbSet('wave', i)); }
-function openSelMenu(title, list, getCur, pick) { openMenu(title, list.map((n, i) => ({ num: pad2(i + 1), cat: '', name: n })), getCur, pick); }
-function openPresetMenu() { openMenu('PRESET SELECT', PRESETS.map(([c, n], i) => ({ num: pad2(i + 1), cat: c, name: n })), () => preset, (i) => selectPreset(i)); }
-
-// ---- meters + animation ---------------------------------------------------
-let _mL = 0, _mR = 0, _mtL = 0, _mtR = 0;
-window.uiMeters = function (o) { if (o) { _mtL = clamp01(+o.l || 0); _mtR = clamp01(+o.r || 0); } };
-function animTick() {
-  const phi0 = previewPhase * 2 * Math.PI;
-  if (toggleState('vec_orbit_on').getValue())
-    previewPhase = (previewPhase + .003 + clamp01(sliderState('vec_orbit_rate').getNormalisedValue()) * .012) % 1;
-  else
-    previewPhase = clamp01(sliderState('vec_phase').getNormalisedValue());
-  const phi = previewPhase * 2 * Math.PI;
-  let act = 0;
-  for (let i = 0; i < 4; i++) {
-    const on = toggleState('on' + SFX[i]).getValue();
-    const g = on ? toneGain(i, phi) : 0;
-    flow[i] = (flow[i] + .01 + g * .05) % 1;
-    if (on) act += g * clamp01(sliderState('level' + SFX[i]).getNormalisedValue());
-  }
-  act /= 4;
-  if (MOCKMODE) { const m = clamp01(sliderState('master').getNormalisedValue()); _mtL = m * (.45 + act * .8 + Math.random() * .12); _mtR = m * (.45 + act * .8 + Math.random() * .12); }
-  _mL = Math.max(_mL * .82, _mtL); _mR = Math.max(_mR * .82, _mtR);
-  refresh();
+function gripResize(e) {
+  e.preventDefault(); const sy = e.clientY, s0 = UI.scale, panel = document.querySelector('.panel');
+  const mv = ev => { UI.scale = clamp(s0 + (ev.clientY - sy) / 660, .5, 2); panel.style.transform = `scale(${UI.scale})`; };
+  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); };
+  addEventListener('pointermove', mv); addEventListener('pointerup', up);
 }
 
-// ---- native bridge --------------------------------------------------------
-const nativeFn = (name) => { try { return Juce.getNativeFunction(name); } catch (_) { return null; } };
-const nfNoteOn = nativeFn('noteOn'), nfNoteOff = nativeFn('noteOff');
-const nfPitchBend = nativeFn('pitchBend'), nfModWheel = nativeFn('modWheel');
-const nfKeyboardFold = nativeFn('keyboardFold');
-// preset bank native bridge (processor-owned factory presets)
-const nfLoadPreset = nativeFn('loadPreset'), nfGetPresetList = nativeFn('getPresetList');
-const nfGetWaveList = nativeFn('getWaveList');
-// select preset i (wrapping): update the browser index + ask the processor to
-// recall it -> the APVTS relays then refresh every panel control automatically.
-function selectPreset(i) {
-  const n = PRESETS.length; if (!n) return;
-  preset = ((i % n) + n) % n;
-  if (nfLoadPreset) nfLoadPreset(preset);
-  scheduleRefresh();
-}
-// on boot, fetch the factory bank names/categories from the processor and use
-// it as the preset browser's data source (replacing the hardcoded fallback).
-function loadPresetList() {
-  if (!nfGetPresetList) return;
-  try {
-    const p = nfGetPresetList();
-    if (p && p.then) p.then((list) => {
-      if (Array.isArray(list) && list.length) {
-        PRESETS = list.map((e) => [(e && e.category) || '', (e && e.name) || '']);
-        if (preset >= PRESETS.length) preset = 0;
-        scheduleRefresh();
-      }
-    }).catch(() => {});
-  } catch (_) {}
-}
-// Replace the placeholder loop/hit wave names with the REAL bank names
-// (PAD_01, AIRY_06, MORPH_PADAIR, HIT_CHIFF, ...) fetched from the processor's
-// bank-authoritative list. Mutates WAVES in place (const binding), preserving
-// index order, then refreshes the wave display. Offline mock keeps placeholders.
-function loadWaveList() {
-  if (!nfGetWaveList) return;
-  try {
-    const p = nfGetWaveList();
-    if (p && p.then) p.then((list) => {
-      if (Array.isArray(list) && list.length) {
-        WAVES.length = 0;
-        list.forEach((e) => WAVES.push({
-          cat:  (e && e.category) || '',
-          name: (e && e.name) || '',
-          tag:  (e && e.tag) || '',
-        }));
-        scheduleRefresh();
-      }
-    }).catch(() => {});
-  } catch (_) {}
-}
-function applyVersion() {
-  let p = null; try { p = Juce.getNativeFunction('getInfo')(); } catch (_) {}
-  if (p && p.then) p.then((info) => { if (info && info.version && verEl) verEl.textContent = 'VER ' + info.version; }).catch(() => {});
-}
-
-// ---- window-derived resize (fit) ------------------------------------------
-// The WINDOW size is the sole source of truth; content scale is DERIVED:
-// scale = min(innerWidth/1140, innerHeight/currentBaseH). transform-origin is
-// top-left; a centering translate positions the (possibly letter-boxed) frame.
-// No in-page grip, no GUI-zoom -- scale is only ever set here.
-function fit() {
-  const baseH = kbdOpen ? 848 : 660;
-  frame.style.height = baseH + 'px';
-  const k = Math.min(window.innerWidth / 1140, window.innerHeight / baseH);
-  const x = Math.max(0, (window.innerWidth - 1140 * k) / 2);
-  const y = Math.max(0, (window.innerHeight - baseH * k) / 2);
-  frame.style.transform = `translate(${x}px, ${y}px) scale(${k})`;
-}
-function toggleKeys() {
-  kbdOpen = !kbdOpen;
-  kbStrip.style.display = kbdOpen ? 'block' : 'none';
-  keysFoldBtn.textContent = kbdOpen ? '▼ KEYS' : '▲ KEYS';
-  if (nfKeyboardFold) nfKeyboardFold(kbdOpen);   // host resizes the editor window; its resize event re-fits
-  fit();
-}
-
-// ---- boot -----------------------------------------------------------------
-buildFaceplate();
-buildHeader();
-buildRow1();
-buildRow2();
-buildKeys();
-buildOverlays();
-
-// relay -> UI: refresh whenever any bound parameter changes (host automation,
-// preset recall, other views). Menus/util/penv drive their own updates.
-[...sCache.values()].forEach((s) => s.valueChangedEvent.addListener(scheduleRefresh));
-[...tCache.values()].forEach((s) => s.valueChangedEvent.addListener(scheduleRefresh));
-[...cCache.values()].forEach((s) => { s.valueChangedEvent.addListener(scheduleRefresh); if (s.propertiesChangedEvent) s.propertiesChangedEvent.addListener(scheduleRefresh); });
-
-window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { menu = null; utilOpen = false; penvOpen = false; syncOverlays(); } });
-window.addEventListener('resize', fit);
-
-applyVersion();
-loadPresetList();   // pull the processor-owned factory bank into the browser
-loadWaveList();     // pull the REAL bank wave names (loop/hit) from the processor
-syncOverlays();
-refresh();
-fit();
-setInterval(animTick, 40);   // constellation / flow dots / meters
+if (document.readyState !== 'loading') build(); else addEventListener('DOMContentLoaded', build);
