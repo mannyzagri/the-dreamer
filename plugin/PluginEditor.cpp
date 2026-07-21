@@ -15,41 +15,37 @@ constexpr int kFoldedH = 660;    // v13: keyboard collapsed (control panel + rub
 // the page JS asks for the same ids via getSliderState/getToggleState/
 // getComboBoxState. Built by loop (4 tone blocks a_-d_ share suffixes).
 // DSP_BUILD.md section-9 ids; per-tone params take suffixes _a.._d
+// v15 production face (design_handoff_dreamer_gui) -- lists mirror app.js's
+// GLOBAL_ID/TONE_ID + KIND/TONE_KIND binding contract EXACTLY (per relay type).
 juce::StringArray makeSliderIds() {
     juce::StringArray ids;
     for (const char* sx : { "_a", "_b", "_c", "_d" })
-        for (const char* s : { "level", "oct", "fine", "start", "velo", "pan",
-                               "shape_depth", "noise", "noise_color",
-                               "dir", "vint", "aux_amt",
+        for (const char* s : { "level", "oct", "semi", "fine", "start", "velo", "pan",
+                               "shape_depth", "noise", "noise_color", "dir", "vint",
+                               "aux_amt", "hit_stretch", "hit_pitchtrim",
+                               "loop_rate", "detune_amount",
                                "lfo1_rate", "lfo1_depth", "lfo2_rate", "lfo2_depth",
-                               "tvf_cut", "tvf_res", "tvf_env", "tvf_kf",  // (per-tone)
+                               "tvf_cut", "tvf_res", "tvf_env", "tvf_kf",
                                "tvf_a", "tvf_d", "tvf_s", "tvf_r",
                                "tva_a", "tva_d", "tva_s", "tva_r",
-                               "aux_a", "aux_d", "aux_s", "aux_r",
-                               // v13 NEW per-tone (added by the concurrent DSP phase --
-                               // FINAL ids; Params.h may still be mid-edit):
-                               "hit_stretch", "hit_pitchtrim" })
+                               "aux_a", "aux_d", "aux_s", "aux_r" })
             ids.add(juce::String(s) + sx);
-    for (const char* s : { "master",
-                           "vec_phase", "vec_orbit_rate",
+    for (const char* s : { "master", "vec_phase", "vec_orbit_rate",
                            "vec_penv_start", "vec_penv_end", "vec_penv_time",
-                           "lfo_rate",
-                           "mtx1_amt", "mtx2_amt", "mtx3_amt",
+                           "lfo_rate", "mtx1_amt", "mtx2_amt", "mtx3_amt",
                            "flt1_cut", "flt1_res", "flt1_env",
-                           "flt2_cut", "flt2_res", "flt2_morph", "flt_bal",
-                           // v13: all four FX PARAMS extras per slot (p0..p3) so the
-                           // PARAMS knob can edit whichever the focus selector picks.
-                           "modfx_rate", "modfx_depth", "modfx_mix",
-                           "modfx_p0", "modfx_p1", "modfx_p2", "modfx_p3",
-                           "dly_time", "dly_fb", "dly_mix",
-                           "dly_p0", "dly_p1", "dly_p2", "dly_p3",
-                           "rev_size", "rev_damp", "rev_mix",
-                           "rev_p0", "rev_p1", "rev_p2", "rev_p3",
-                           // v13 UTIL overlay stages (LO-FI / WIDTH / TALK)
-                           "lofi_bits", "lofi_srate", "lofi_compand",
-                           "width", "width_haas",
-                           "talk_va", "talk_vb", "talk_morph", "talk_sens",
-                           "drift" })
+                           "flt2_cut", "flt2_res", "flt2_env", "flt2_morph", "flt_bal",
+                           // v15 FX: one PARAMS proxy knob per slot (focus-shadow)
+                           "modfx_rate", "modfx_depth", "modfx_mix", "modfx_param",
+                           "dly_time", "dly_fb", "dly_mix", "dly_param",
+                           "rev_size", "rev_damp", "rev_mix", "rev_param",
+                           // LO-FI raw (GUI focus-routes to these) + inert lofi_param;
+                           // WIDTH; TALK proxy param
+                           "lofi_bits", "lofi_srate", "lofi_compand", "lofi_alias", "lofi_param",
+                           "width", "width_haas", "talk_param",
+                           // D5 global offsets, D8 g-octave
+                           "g_env_a", "g_env_d", "g_env_s", "g_env_r",
+                           "g_cutoff", "g_res", "g_octave" })
         ids.add(s);
     return ids;
 }
@@ -57,14 +53,15 @@ juce::StringArray makeSliderIds() {
 juce::StringArray makeToggleIds() {
     juce::StringArray ids;
     for (const char* sx : { "_a", "_b", "_c", "_d" })
-        for (const char* s : { "on", "start_random", "lfo1_sync", "lfo2_sync" })
+        for (const char* s : { "on", "start_random", "lfo1_sync", "lfo2_sync",
+                               "loop_rate_sync", "loop_varispeed" })
             ids.add(juce::String(s) + sx);
-    for (const char* s : { "vec_orbit_on", "vec_orbit_voice",
+    for (const char* s : { "flt_route", "fx_prepost",              // v15: now Bool
+                           "vec_orbit_on", "vec_orbit_voice",
                            "vec_penv_on", "vec_penv_loop",
-                           "modfx_on", "dly_on", "dly_sync", "rev_on",
-                           // v13 UTIL overlay toggles
-                           "lofi_on", "lofi_alias",
-                           "width_on", "width_bassmono", "talk_on" })
+                           "lfo_sync", "modfx_on", "dly_on", "dly_sync", "rev_on",
+                           "lofi_on", "width_on", "width_bassmono", "talk_on",
+                           "limiter_on" })
         ids.add(s);
     return ids;
 }
@@ -74,21 +71,18 @@ juce::StringArray makeComboIds() {
     for (const char* sx : { "_a", "_b", "_c", "_d" })
         for (const char* s : { "wave", "shape", "tvf_type",
                                "aux_dest", "lfo1_dest", "lfo2_dest",
-                               "lfo1_shape", "lfo2_shape",   // v11 per-tone LFO shape
-                               // v13 NEW per-tone (concurrent DSP phase -- FINAL ids):
-                               "voicing", "dreamy_spread", "loop_mode", "hit_play" })
+                               "lfo1_shape", "lfo2_shape",
+                               "voicing", "dreamy_spread", "loop_mode", "hit_play",
+                               "loop_rate_beats", "detune_voices" })  // v15: now Choice
             ids.add(juce::String(s) + sx);
     for (const char* s : { "vec_orbit_shape", "lfo_shape",
                            "mtx1_src", "mtx2_src", "mtx3_src",
-                           // mtx*_dst gains a 9th choice "Fx Param" in Params.h
-                           // (DSP phase) -- the relay is unchanged; only the choice
-                           // list grows, so no new id here.
                            "mtx1_dst", "mtx2_dst", "mtx3_dst",
-                           "flt_route", "flt1_type", "flt2_type",
+                           "flt1_type", "flt2_type",
                            "modfx_type", "dly_mode", "rev_type",
-                           // v13 FX PARAMS focus selectors + UTIL PRE/POST switch
-                           "modfx_pfocus", "dly_pfocus", "rev_pfocus", "fx_prepost",
-                           "interp", "engine" })
+                           // FX PARAMS focus selectors (incl v15 lofi/talk)
+                           "modfx_pfocus", "dly_pfocus", "rev_pfocus",
+                           "lofi_pfocus", "talk_pfocus" })
         ids.add(s);
     return ids;
 }
@@ -271,7 +265,67 @@ juce::WebBrowserComponent::Options TheDreamerEditor::makeOptions()
             [this](const juce::Array<juce::var>& a,
                    juce::WebBrowserComponent::NativeFunctionCompletion completion)
             {
-                if (a.size() >= 1) processor.setCurrentProgram((int)a[0]);
+                // GUI preset list is 0-based over the FACTORY bank; call
+                // applyPreset directly (setCurrentProgram is offset by the D4
+                // synthetic INIT at host program 0).
+                if (a.size() >= 1) processor.applyPreset((int)a[0]);
+                completion(juce::var());
+            })
+        // D3 analyzer tap: last N final-output samples for the GUI FFT.
+        .withNativeFunction("getScopeData",
+            [this](const juce::Array<juce::var>& a,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                completion(processor.getScopeData(a.size() >= 1 ? (int)a[0] : 2048));
+            })
+        // D12 output-limiter gain reduction (dB) for the LIM activity LED.
+        .withNativeFunction("getLimiterGR",
+            [this](const juce::Array<juce::var>&,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                completion(juce::var(processor.getLimiterGR()));
+            })
+        // D13 SOUND OFF panic (all notes off + FX flush).
+        .withNativeFunction("panic",
+            [this](const juce::Array<juce::var>&,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                processor.panic();
+                completion(juce::var());
+            })
+        // D14 user preset bank (factory stays read-only via getPresetList).
+        .withNativeFunction("getUserPresetList",
+            [this](const juce::Array<juce::var>&,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                completion(processor.getUserPresetList());
+            })
+        .withNativeFunction("saveUserPreset",
+            [this](const juce::Array<juce::var>& a,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (a.size() >= 1) processor.saveUserPreset(a[0].toString());
+                completion(juce::var());
+            })
+        .withNativeFunction("renameUserPreset",
+            [this](const juce::Array<juce::var>& a,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (a.size() >= 2) processor.renameUserPreset(a[0].toString(), a[1].toString());
+                completion(juce::var());
+            })
+        .withNativeFunction("deleteUserPreset",
+            [this](const juce::Array<juce::var>& a,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (a.size() >= 1) processor.deleteUserPreset(a[0].toString());
+                completion(juce::var());
+            })
+        .withNativeFunction("loadUserPreset",
+            [this](const juce::Array<juce::var>& a,
+                   juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (a.size() >= 1) processor.loadUserPreset(a[0].toString());
                 completion(juce::var());
             });
 

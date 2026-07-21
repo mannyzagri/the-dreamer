@@ -595,18 +595,21 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     const bool  lofiOn   = pLofiOn->load() > 0.5f;
     const bool  lofiPre  = pFxPrePost->load() > 0.5f;        // Pre = 1
-    // v15 focus-shadow (lofi/talk): the PARAMS knob overrides the focus-selected
-    // named sub-param; the rest read their own params.
-    const int   lofiFocus = juce::jlimit(0, 3, (int)pLofiPFocus->load());
-    const float lofiKnob  = pLofiParam->load();
-    const float lofiBits  = lofiFocus == 0 ? lofiKnob : pLofiBits->load();
-    const float lofiSrate = lofiFocus == 1 ? lofiKnob : pLofiSrate->load();
-    const float lofiComp  = lofiFocus == 2 ? lofiKnob : pLofiCompand->load();
-    const bool  lofiAlias = lofiFocus == 3 ? (lofiKnob > 0.5f) : (pLofiAlias->load() > 0.5f);
+    // LO-FI reads its RAW named params directly: the v15 GUI does its own focus
+    // routing (the PARAMS knob rebinds to lofi_bits/srate/compand/alias per
+    // lofi_pfocus), so the DSP must NOT shadow via lofi_param. (lofi_param +
+    // lofi_pfocus stay as params for GUI binding but are engine-inert here.)
+    const float lofiBits  = pLofiBits->load();
+    const float lofiSrate = pLofiSrate->load();
+    const float lofiComp  = pLofiCompand->load();
+    const bool  lofiAlias = pLofiAlias->load() > 0.5f;
     const bool  widthOn   = pWidthOn->load() > 0.5f;
     const float widthAmt  = pWidth->load(), widthHaas = pWidthHaas->load();
     const bool  widthBM   = pWidthBassMono->load() > 0.5f;
     const bool  talkOn    = pTalkOn->load() > 0.5f;
+    // TALK keeps the focus-shadow: the v15 GUI's TALK PARAMS knob binds the
+    // proxy talk_param (unlike LO-FI's raw routing), so the focused vowel/morph/
+    // sens sub-param reads talk_param; the rest read their own params.
     const int   talkFocus = juce::jlimit(0, 3, (int)pTalkPFocus->load());
     const float talkKnob  = pTalkParam->load();
     const float talkVa    = talkFocus == 0 ? talkKnob : pTalkVa->load();

@@ -1,26 +1,26 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>The Dreamer</title>
+  <!-- Fonts are bundled locally via @font-face in style.css (Google Fonts is
+       CSP-blocked in the plugin WebView). style.css also carries the whole
+       design-token + component sheet (v15 production face). -->
   <link rel="stylesheet" href="style.css">
-  <!-- JUCE native-integration bootstrap. check_native_interop.js MUST load
-       before app.js: in the plugin it hands over the real window.__JUCE__;
-       offline (headless Chrome) it installs the placeholder that makes every
-       bridge call harmless. A missing module silently kills all page JS
-       (CLAUDE-WORKFLOW s4), so this reference and app.js's import of index.js
-       are load-bearing -- both files ship in the CMake binary-data list. -->
+  <!-- check_native_interop.js MUST load first (classic script): in the plugin it
+       hands over the real window.__JUCE__; headless it installs a harmless
+       placeholder. A missing module silently kills all page JS (workflow s4). -->
   <script src="check_native_interop.js"></script>
 </head>
 <body>
-  <!-- The one scaled frame (screws, faceplate, controls, key bed, overlays
-       all live inside it and scale together). app.js builds the entire tree
-       from the v13 master geometry and drives fit() from the window size. -->
-  <div id="frame"></div>
-
-  <!-- app.js is a module; it imports ./index.js (the JUCE frontend relay
-       library). Both stay in juce_add_binary_data. -->
-  <script type="module" src="app.js"></script>
+  <!-- app.js builds the locked 1140x660 panel into #root and scales it. It reads
+       window.Juce (the juce_gui_extra relay module) when present, else a mock. -->
+  <div id="root"></div>
+  <script type="module">
+    import * as Juce from "./index.js";
+    window.Juce = Juce;            // app.js reads window.Juce for the relays
+    import("./app.js");            // load once, after Juce is in place
+  </script>
 </body>
 </html>
