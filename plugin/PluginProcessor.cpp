@@ -228,6 +228,14 @@ void TheDreamerProcessor::flushFx() noexcept
     ensemble.reset(); dimension.reset(); rotary.reset(); barberpole.reset();
     chorus.reset();   flanger.reset();      phaser.reset();
     for (int ch = 0; ch < 2; ++ch) dcBlock[ch].reset();
+    // TD-001: a flush must clear EVERY stateful stage, or poisoned state
+    // survives the recovery. Previously missed: the global filters (their
+    // recursions kept ringing through D13/panic) and the POST stages.
+    for (int ch = 0; ch < 2; ++ch) { f1[ch].reset(); f2[ch].reset(); }
+    lofi.reset();
+    stereoWidth.reset();
+    talkbox.reset();
+    scopeBuf.fill(0.0f);                    // no stale garbage into the GUI FFT
 }
 
 // D3: snapshot the last n final-output samples (in order) as an Array<var> for
@@ -336,6 +344,11 @@ void TheDreamerProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     for (int ch = 0; ch < 2; ++ch) {
         f1[ch].setSampleRate(sampleRate);
         f2[ch].setSampleRate(sampleRate);
+        // TD-001: GlobalFilter::setSampleRate does NOT clear sub-filter state
+        // (ToneSvf/FilterExtra/ZPlane just store sr_) -- without this, filter
+        // recursion state survived host stop/start and SR changes.
+        f1[ch].reset();
+        f2[ch].reset();
         dcBlock[ch].prepare(sampleRate);
     }
     gfCtrl = 0;
@@ -632,6 +645,18 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     auto* left  = buffer.getWritePointer(0);
     auto* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : nullptr;
 
+#if DREAMER_TD001_TRACE
+    // TD-001 diagnostic tracer (compiled out in release). Per-stage block peaks
+    // + a ONE-SHOT stderr report on the first block where any stage exceeds
+    // the trip level (or goes non-finite) -- names the first runaway stage.
+    float trStg[8] = {};                 // 0 synth 1 filt 2 modfx 3 dly 4 rev 5 width 6 talk 7 final
+    static std::atomic<int>      trFired { 0 };
+    static std::atomic<uint64_t> trBlocks { 0 };
+    #define TR_TAP(slot) trStg[slot] = std::fmax(trStg[slot], std::fmax(std::fabs(l), std::fabs(r)))
+#else
+    #define TR_TAP(slot) ((void)0)
+#endif
+
     int nextEvent = 0;
     for (int n = 0; n < numSamples; ++n) {
         while (nextEvent < numEvents && events[nextEvent].offset <= n) {
@@ -648,6 +673,7 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
         float l = 0.0f, r = 0.0f;
         synth.process(l, r);
+        TR_TAP(0);
 
         // LO-FI PRE-filter: crush INTO the resonant filter sweep (the
         // musically valuable placement; architect F4)
@@ -691,6 +717,7 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         }
         l *= kVoiceHeadroom;
         r *= kVoiceHeadroom;
+        TR_TAP(1);
 
         if (modfxOn) {
             const float* p = fxP_[0];        // modfx PARAMS extras p0..p3
@@ -704,6 +731,7 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             default: barberpole.process(l, r, barberRateHz, p[0], p[1], p[2], mfMix); break;       // DIR/STAGES/FB
             }
         }
+        TR_TAP(2);
 
         float wetL, wetR;
         delay.processSampleWet(0.5f * (l + r), dfb, wetL, wetR);
@@ -713,6 +741,7 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         // 0.9 (< 0.95) above via dfb, so high fb can't build to clipping.
         l = l * (1.0f - dwet) + wetL * dwet;
         r = r * (1.0f - dwet) + wetR * dwet;
+        TR_TAP(3);
 
         left[n] = l;
         if (right != nullptr) right[n] = r;
@@ -778,6 +807,12 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         reverbWasActive = false;
         revCache.type = -1;
     }
+#if DREAMER_TD001_TRACE
+    for (int n = 0; n < numSamples; ++n) {
+        const float l = left[n], r = right != nullptr ? right[n] : left[n];
+        trStg[4] = std::fmax(trStg[4], std::fmax(std::fabs(l), std::fabs(r)));
+    }
+#endif
 
     // ---- POST stages (LO-FI if POST, WIDTH fixed POST, TALK) -> MASTER -----
     // WIDTH is fixed POST-filter (architect F4: pre-delay width only reaches
@@ -785,6 +820,7 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // sits after the POST slot (F-review recommended order).
     const bool limiterOn = pLimiterOn->load() > 0.5f;   // D12
     float peakL = 0.0f, peakR = 0.0f;
+    bool  nanSeen = false;                               // TD-001: fmax ABSORBS NaN
     float grMin = 1.0f;                                  // D12: worst gain ratio
     uint32_t sw = scopeWrite.load(std::memory_order_relaxed);   // D3 ring index
     for (int n = 0; n < numSamples; ++n) {
@@ -795,8 +831,10 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             lofi.process(l, r, lofiBits, lofiSrate, lofiComp, lofiAlias);
         if (widthOn)
             stereoWidth.process(l, r, widthAmt, widthHaas, widthBM);
+        TR_TAP(5);
         if (talkOn)
             talkbox.process(l, r, talkVa, talkVb, talkMorph, talkSens, 1.0f);
+        TR_TAP(6);
 
         const float g = masterSmoothed.getNextValue();
         l *= g; r *= g;
@@ -813,6 +851,7 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                 if (ratio < grMin) grMin = ratio;
             }
         }
+        TR_TAP(7);
         left[n] = l;
         if (right != nullptr) right[n] = r;
         // D3: tap the FINAL output (post-master/limiter) into the scope ring.
@@ -820,17 +859,56 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         ++sw;
         peakL = std::fmax(peakL, std::fabs(l));
         peakR = std::fmax(peakR, std::fabs(r));
+        nanSeen = nanSeen || (l != l) || (r != r);   // NaN != NaN; fmax would swallow it
     }
     scopeWrite.store(sw, std::memory_order_release);        // D3 publish
-    // D13 NaN-recovery (GAIN_STAGING 7d): a non-finite peak means the chain blew
-    // up -- clear the audio out, flush voices+FX, and blank the scope window so
-    // nothing propagates NaN downstream or into the GUI FFT.
-    if (! std::isfinite(peakL) || ! std::isfinite(peakR)) {
+    // D13 NaN-recovery (GAIN_STAGING 7d): a non-finite sample means the chain
+    // blew up -- clear the audio out, flush voices+FX, and blank the scope so
+    // nothing propagates downstream or into the GUI FFT. TD-001 fix: the old
+    // check tested isfinite(peak) only, but C++ fmax RETURNS THE NON-NAN
+    // OPERAND, so a pure-NaN sample was absorbed and D13 only ever fired on
+    // +/-Inf. nanSeen restores "NaN is NaN". (Finite overloads are a DIFFERENT
+    // failure class and deliberately do NOT trigger this path.)
+    if (nanSeen || ! std::isfinite(peakL) || ! std::isfinite(peakR)) {
         buffer.clear();
         flushFx();
         scopeBuf.fill(0.0f);
         peakL = peakR = 0.0f;
     }
+#if DREAMER_TD001_TRACE
+    ++trBlocks;
+    {
+        bool trip = false, nf = false;
+        for (int s = 0; s < 8; ++s) {
+            if (!std::isfinite(trStg[s])) { nf = true; trip = true; }
+            if (trStg[s] > 8.0f) trip = true;
+        }
+        if (trip && trFired.fetch_add(1) < 5) {
+            static const char* nm[8] = { "synth", "filters", "modfx", "delay",
+                                         "reverb", "width", "talk", "final" };
+            static const char* mf[7] = { "CHORUS", "FLANGER", "PHASER", "ENSEMBLE",
+                                         "DIMENSION", "ROTARY", "BARBERPOLE" };
+            int first = -1;
+            for (int s = 0; s < 8; ++s)
+                if (!std::isfinite(trStg[s]) || trStg[s] > 8.0f) { first = s; break; }
+            std::fprintf(stderr, "\n[TD001-TRACE] FAULT at block %llu (t=%.2fs) "
+                         "first-hot=%s%s\n  stage peaks:",
+                         (unsigned long long)trBlocks.load(),
+                         (double)trBlocks.load() * numSamples / getSampleRate(),
+                         first >= 0 ? nm[first] : "?", nf ? " (non-finite)" : "");
+            for (int s = 0; s < 8; ++s)
+                std::fprintf(stderr, " %s=%.4g", nm[s], (double)trStg[s]);
+            const int mt = juce::jlimit(0, 6, modfxType);
+            std::fprintf(stderr, "\n  modfx: on=%d type=%s rate=%.3f depth=%.3f mix=%.3f "
+                         "p=[%.3f %.3f %.3f %.3f] limiter=%d vintage=%d\n",
+                         (int)modfxOn, mf[mt], mfRate01, mfDepth, mfMix,
+                         fxP_[0][0], fxP_[0][1], fxP_[0][2], fxP_[0][3],
+                         (int)limiterOn, (int)vintage);
+            std::fflush(stderr);
+        }
+    }
+#endif
+#undef TR_TAP
     meterL.store(peakL, std::memory_order_relaxed);
     meterR.store(peakR, std::memory_order_relaxed);
     // D12: gain reduction in dB (>=0); 0 when off or not limiting.

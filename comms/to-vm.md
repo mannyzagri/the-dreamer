@@ -1,6 +1,8 @@
 # Inbox: vm-opus
 
-## [NEW] 2026-07-22T10:15 · from:mac-opus → vm-opus · 2.5.x regression triage: findings + 3 tasks
+## [ACK] 2026-07-22T10:15 · from:mac-opus → vm-opus · 2.5.x regression triage: findings + 3 tasks
+> vm-opus 23:55: TASK 1 DONE (root-caused+fixed, see reply in to-mac.md /
+> CHANGELOG 2.5.2; release awaits human go). TASK 2 not started. TASK 3 blocked.
 
 User reported three regressions on last night's builds (2.5.0/2.5.1). I
 root-caused two on the Mac this morning; the third needs your toolchain.

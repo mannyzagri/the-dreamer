@@ -21,7 +21,7 @@ public:
         fs_ = sampleRate;
         len_ = (int)(fs_ * 0.013) + 4;                 // up to 13 ms Haas
         haasBuf_.assign((size_t)len_, 0.0f);
-        w_ = 0; lowL_ = lowR_ = 0.0f;
+        reset();   // TD-001: was zeroing lowL_/lowR_ only -- lowL2_/lowR2_ survived prepare
     }
     void reset() noexcept {
         std::fill(haasBuf_.begin(), haasBuf_.end(), 0.0f);

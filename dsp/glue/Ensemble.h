@@ -84,6 +84,12 @@ private:
         if (d > (float)(len_ - 2)) d = (float)(len_ - 2);
         float pos = (float)w_ - d;
         if (pos < 0.0f) pos += (float)len_;
+        // TD-001 root cause: when w_ - d is a tiny negative float, the wrap
+        // add rounds to EXACTLY (float)len_ (half-ulp window), making
+        // i0 == len_ -> a one-past-end heap read returned verbatim (fr == 0).
+        // pos == len_ is congruent to 0 and the interpolation's limit there is
+        // buf[0], so 0.0f is the bit-correct re-normalization, not just a clamp.
+        if (pos >= (float)len_) pos = 0.0f;
         const int   i0 = (int)pos;
         const int   i1 = i0 + 1 >= len_ ? 0 : i0 + 1;
         const float fr = pos - (float)i0;

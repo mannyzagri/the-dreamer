@@ -95,6 +95,7 @@ private:
         if (d > (float)(len_ - 2)) d = (float)(len_ - 2);
         float pos = (float)w_ - d;
         if (pos < 0.0f) pos += (float)len_;
+        if (pos >= (float)len_) pos = 0.0f;   // TD-001: float wrap can land exactly on len_ (see Ensemble.h)
         const int   i0 = (int)pos;
         const int   i1 = i0 + 1 >= len_ ? 0 : i0 + 1;
         const float fr = pos - (float)i0;

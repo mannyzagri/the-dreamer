@@ -3,6 +3,38 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-22 (TD-001: 0 dBFS noise fix) — **RC 2.5.2** (branch
+  `fix/td-001-noise`; release/deploy pending user go). Bug (user report, mac
+  triage msg 2026-07-22T10:15): sustained full-scale noise after ~20-30 s of
+  use OR idle. **Root cause (proven, deterministic):** the fractional
+  delay-read helper in `Ensemble.h` (and latently `Dimension.h`/`Rotary.h`)
+  computed `pos = w_ - d; if (pos < 0) pos += (float)len_;` — when `d` lands
+  1-2 ulp above `w_`, the wrap-add rounds to EXACTLY `(float)len_`, so
+  `i0 == len_` → a **one-past-end heap read** returned verbatim (`fr == 0`).
+  Fired deterministically on preset 13 "SOLINA FIELDS" (ENSEMBLE modfx,
+  rate 0.3/depth 0.6) at ~14 s @44.1 k; audibility per launch = ASLR luck
+  (adjacent heap bytes as float ≈ 1e26). The burst then loaded juce::Reverb's
+  combs (fb ≤ 0.98 → rings for MINUTES) and the D12 limiter tanh-clipped it to
+  exactly the −0.1 dBFS ceiling → steady "0 dBFS noise"; D13 never fired (all
+  finite). Diagnosed via the new soak harness (`tools/hostprobe`, generalized
+  to code-bank `tools/vst3-probe`) + compiled-out stage tracer
+  (`DREAMER_TD001_TRACE`) + exhaustive index-math micro-proof.
+  **Fixes:** (1) re-normalize `pos >= len_ → 0.0f` (bit-correct congruent
+  limit) in Ensemble/Dimension/Rotary; (2) D13 was blind to pure NaN
+  (`std::fmax` returns the non-NaN operand) — added a per-sample NaN latch;
+  finite overloads deliberately do NOT trigger D13 (user directive: NaN is
+  NaN); (3) reset completeness: `flushFx()` now clears f1/f2 + LoFi/Width/
+  Talk + scope ring; `prepareToPlay` now resets f1/f2 (state survived host
+  stop/start); `StereoWidth::prepare` now calls `reset()` (missed
+  lowL2_/lowR2_). **Tests:** new `test_fx_read_bounds` harness (pre-fix math
+  exhibits 3572 OOB boundary cases; post-fix 0, exhaustive over every w_ ×
+  ulp-neighborhood × all three geometries; real classes finite/bounded over
+  the faulting trajectory) — added to validator.json. Validator dsp **11/11**;
+  end-to-end: 2× full vst3-probe suite (incl. the faulting preset sweep +
+  concurrent hammer) — 0 faults, 0 tracer trips (was: fault at block 148467).
+  Ported files untouched (rule 1); same hazard NOTED in ported ModFx.h/
+  Effects.h for the record. No param change → reload instance, no re-scan.
+
 - 2026-07-22 (loop-tuning regression fix) — **RC 2.5.1**. Bug (user report):
   every ENS loop played out of tune. Root cause: the v3 library is SYNTHESIZED at
   a fixed 220 Hz nominal (`bake_final.py`: `root=220.0`, "no rootHz correction, no
