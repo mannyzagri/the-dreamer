@@ -43,6 +43,10 @@
       { "name": "gain_staging",
         "compile": "(if not exist tests\\bin mkdir tests\\bin) && cl /nologo /std:c++17 /O2 /EHsc /DRHINO_TEST_FEATURES=1 /D_USE_MATH_DEFINES /I. tests\\test_gain_staging.cpp /Fo:tests\\bin\\ /Fe:tests\\bin\\test_gain_staging.exe",
         "run": "tests\\bin\\test_gain_staging.exe",
+        "expect": ["ALL CHECKS PASSED"] },
+      { "name": "fx_read_bounds",
+        "compile": "(if not exist tests\\bin mkdir tests\\bin) && cl /nologo /std:c++17 /O2 /EHsc /D_USE_MATH_DEFINES /I. tests\\test_fx_read_bounds.cpp /Fo:tests\\bin\\ /Fe:tests\\bin\\test_fx_read_bounds.exe",
+        "run": "tests\\bin\\test_fx_read_bounds.exe",
         "expect": ["ALL CHECKS PASSED"] }
     ]
   },
