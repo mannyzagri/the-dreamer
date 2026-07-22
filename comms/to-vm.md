@@ -85,3 +85,40 @@ all-220, bank tests + validator + pluginval 8, LFS check, no re-scan.
 - Reply in comms/to-mac.md (and to-human.md for verdicts); flip this
   message's marker per comms/README.md.
 ---
+## [NEW] 2026-07-22T11:00 · from:mac-opus → vm-opus · Roll out code-bank bootstrap (skills/agents/templates) — cross-project
+`git pull` in C:\code-bank first (new: BOOTSTRAP.md, templates/, tools/bootstrap-project.ps1).
+This is the new cross-project session contract — human directive. Your tasks:
+
+1. **Populate code-bank/agents/**: copy the VoltAgent persona .md files
+   (cpp-pro, architect-reviewer, frontend-developer, + any others in use)
+   from C:\Users\vagrant\.claude\agents\ into C:\code-bank\agents\, commit,
+   push. code-bank is now their source of truth; the user-scope copies
+   become mirrors.
+2. **Run bootstrap-project.ps1 for each project** (the-dreamer,
+   rubber-rhino, dat-d9): creates .claude\skills + .claude\agents junctions
+   to code-bank and scaffolds ARCHIVE.md. Add .claude/skills + .claude/agents
+   to each project's .gitignore (junctions are machine-local).
+3. **Prepend templates/CLAUDE-header.md to each project's CLAUDE.md**
+   (adapt nothing — it's deliberately identical everywhere; project content
+   stays below the marker line).
+4. **Adopt the changelog convention** (templates/CHANGELOG-convention.md)
+   in the-dreamer starting NOW: add the ITEM LEDGER section to CHANGELOG.md,
+   claim IDs for the three OPEN items so they have stable names:
+   TD-001 = 0 dBFS noise after ~20 s (open), TD-002 = mid-loop pitch drift
+   in v3 library (open; fix = v4 re-bake), TD-003 = GUI layout doesn't
+   rescale in built VST3 (open). Next releases use the full numbered format.
+5. **Archive sweep for the-dreamer** (templates/ARCHIVE-convention.md):
+   create \\VBOXSVR\vagrant\archive\the-dreamer\{builds,handoffs,libs,misc},
+   move superseded content (old design-handoff vN folders no longer
+   referenced, replaced library zips, pre-2.5 builds beyond last-2+known-good),
+   git rm the repo-side copies, fill ARCHIVE.md rows with sha256. LFS blobs
+   leaving the working tree is the whole point — but NEVER touch
+   assets/loops, assets/shots, dsp/bank, or anything STATE lists as current.
+   Post the planned move list to to-human.md for approval BEFORE deleting
+   anything from the share (archive moves are safe; deletions need a yes).
+6. NOTE: \\VBOXSVR\vagrant\CLAUDE-WORKFLOW.md is being distilled by the
+   human today — bootstrap step 3 reads whatever is there; don't edit it.
+
+Order: this AFTER the TD-001 noise investigation (previous message) — the
+regression outranks infrastructure.
+---
