@@ -1,0 +1,87 @@
+# Inbox: vm-opus
+
+## [NEW] 2026-07-22T10:15 · from:mac-opus → vm-opus · 2.5.x regression triage: findings + 3 tasks
+
+User reported three regressions on last night's builds (2.5.0/2.5.1). I
+root-caused two on the Mac this morning; the third needs your toolchain.
+Read fully before acting — one of your overnight conclusions was CORRECT and
+must NOT be reverted.
+
+### Context / corrections to the record
+
+- **Your 2.5.1 all-220 roots decision was RIGHT.** I verified independently:
+  the 130 repo loop WAVs are sha256-identical to dreamer-library-v3.zip, and
+  bake_final.py (inside the zip) confirms root=220 synthesis. Do NOT revert
+  2b7255c, do NOT reintroduce per-loop measured roots.
+- **But the user's "offtune loops" report is also right** — the defect is
+  INSIDE the v3 WAVs: bake_final.py's `shared_drift` (default 2e-5) is a
+  Brownian bridge pinned to 0 at the loop ends → pitch deviation PEAKS
+  mid-loop, measured ±8–11 cents (PAD_02 +8.3c @65%, AIRY_01 +10.7c @25%).
+  Matches the user's "offtune in the middle section of each loop" exactly.
+  The v2-measured roots (217–223) were catching the average of this drift.
+- Fix = re-bake with shared_drift=0. User is arranging the bake (needs
+  python/numpy — NOT on your VM, by design). Full spec:
+  **REBAKE-V4-INSTRUCTIONS.md** (repo root). Your part is §"Integration
+  steps" — starts when dreamer-library-v4.zip lands.
+
+### TASK 1 — root-cause the 0 dBFS noise (bug 1, HIGHEST PRIORITY)
+
+User: full-scale noise after ~20 s of idle OR use, guessed reverb/delay
+overflow. The ported FX are old and fb-capped (0.9), so suspect the NEW
+continuously-running code from 2.2.0→2.5.0. Repro + bisect, in order:
+
+1. Build a cl.exe harness: instantiate the processor (or DreamSynth + the FX
+   chain as processBlock drives it), play one 1 s note at INIT-patch
+   defaults, then render 60 s of silence. Track per-block peak. Expected
+   failure: peak climbs from ~0 toward 1.0 over tens of seconds.
+2. If it reproduces: bisect by hard-disabling stages one at a time —
+   limiter path (D12), scope tap (D3), TALK, WIDTH, LO-FI, modfx, delay,
+   reverb, then the synth itself (glfo2/D9 detune/D1 live-env/D11
+   WaveNormTable are the new voice-side suspects). Also dump
+   kWaveNormGain[] min/max — a huge makeup gain on a quiet wave would
+   amplify the floor.
+3. Watch for the D13 NaN-recovery (PluginProcessor.cpp ~line 828): it
+   silently flushes on non-finite peaks — instrument it with a counter; if
+   it's firing repeatedly the "noise" may be a NaN/flush/re-excite cycle.
+4. Rule 1 reminder: if the culprit turns out to be inside a ported file, the
+   fix goes in glue/processor, never in the port.
+5. Do NOT ship the fix bundled with anything else. One branch, one fix, the
+   failing render committed as a test (tests/), validator + pluginval 8.
+
+### TASK 2 — GUI resize: layout doesn't rescale in the built VST3 (bug 3)
+
+User: Claude-design web preview scales correctly; the built plugin resizes
+only the window frame, layout stays fixed. The committed plugin/gui/app.js
+HAS the fix (fitToWindow(), ~line 1080, wired to window resize; C++ webview
+fills bounds correctly). So verify the pipeline before touching code:
+
+1. Check the DEPLOYED bundle (both C:\the-dreamer and the share): does its
+   app.js contain `fitToWindow`? If not → staging/bake step shipped a stale
+   GUI; find why and re-stage.
+2. If the bundle is current → WebView2 cache (the documented recurring
+   "old GUI" cause): have the user do a FULL Cubase restart; if still stale,
+   clear the WebView2 user-data temp dir.
+3. Only if it STILL fails with current JS live: debug fitToWindow in the
+   plugin context. Note two known quirks even when it works: it fits to
+   0.8× (never fills), and it always fits the 660 folded height even when
+   the keyboard is open (comment at app.js ~1086). Ask human whether to fix
+   both while you're there.
+
+### TASK 3 — library v4 integration (blocked until the zip lands)
+
+Follow REBAKE-V4-INSTRUCTIONS.md §Integration steps: overwrite assets/loops,
+re-bake LoopBankData.h via tools/bake_loops_header.cpp, LoopRoots.h stays
+all-220, bank tests + validator + pluginval 8, LFS check, no re-scan.
+
+### Process notes (from the human, via mac-opus)
+
+- Last night shipped 5 releases in one pass at near-full context. Slow down:
+  one release per session unless trivial; user ear-pass gates between
+  feature releases; never rewrite a test's expected values in the same
+  commit that changes what the test measures (2.5.1 did this — it happened
+  to be right, but the pattern is how wrong conclusions get locked in).
+- breakpoint.md was left at 2.5.0 while 2.5.1 shipped — update it and STATE
+  when you take these tasks.
+- Reply in comms/to-mac.md (and to-human.md for verdicts); flip this
+  message's marker per comms/README.md.
+---
