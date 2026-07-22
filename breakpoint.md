@@ -3,16 +3,22 @@
 > Read AFTER PROJECT-NOTES.md STATE + CLAUDE.md. Overwrite-only, current open
 > loop only (superseded story lives in CHANGELOG.md).
 
-## Where things stand — 2.5.2 RELEASED + DEPLOYED, ear gate pending
+## Where things stand — 2.5.3 RELEASED + DEPLOYED (TD-001 + TD-003 both fixed), ear+eye gate pending
 
-- **TD-001 (0 dBFS noise after ~20-30 s)** root-caused, fixed, released,
-  deployed to both targets (pluginval 8 SUCCESS) — full story in
-  validation/TD-001-REPORT.md + CHANGELOG 2.5.2 entry. Validator dsp 11/11.
-- **NEXT: user ear pass** — RE-SCAN required (moduleinfo changed), remove/
-  re-add instance, header must read **2.5.2**, then: SOLINA FIELDS @44.1 k,
-  play + idle 60 s → must stay clean; panic now genuinely clears every stage.
-- After 2.5.2 soaks green: STRIP the `DREAMER_TD001_TRACE` blocks from
+- **TD-001 (0 dBFS noise)** fixed in 2.5.2, **TD-003 (GUI dead frame /
+  resize)** fixed in 2.5.3 — both deployed, pluginval 8 SUCCESS. Full TD-001
+  story: validation/TD-001-REPORT.md. TD-003: CHANGELOG 2.5.3 entry.
+- **NEXT: user ear+eye pass (one session)** — RE-SCAN, remove/re-add
+  instance, header must read **2.5.3**, then: (1) panel fills+centers the
+  window at open and at every resize; (2) SOLINA FIELDS @44.1 k, play + idle
+  60 s → stays clean; panic now genuinely clears every stage.
+- **TD-002 (mid-loop detune)**: VERIFIED nothing to disable DSP-side (roots
+  all 220, pitch = constant ratio) — the drift is baked in the v3 WAVs;
+  BLOCKED on dreamer-library-v4.zip (human-arranged python re-bake).
+- After 2.5.x soaks green: STRIP the `DREAMER_TD001_TRACE` blocks from
   PluginProcessor.cpp (architect verdict: tracer retires once closed).
+- ⚠ GUI-Claude upstream: the TD-003 app.js fix is handoff-overwrite class —
+  fold into the face master (like the 2.4.1 preset-load fix).
 
 ## OPEN — mac triage inbox (comms/to-vm.md, msg 2026-07-22T10:15, [ACK])
 - **TASK 2 — GUI resize doesn't rescale in built VST3**: verify pipeline

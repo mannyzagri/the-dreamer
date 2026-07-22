@@ -6,6 +6,22 @@ validation/.
 
 ---
 
+## 2.5.3 — GUI fills the window (released 2026-07-23, deployed both targets)
+
+### Fixed
+- **The plugin opened inside a larger empty frame and only rescaled after
+  resizing the window border first** (TD-003). The face now fills and
+  centers in the host window immediately at every size, exactly like
+  Rubber-Rhino — the fit logic was scaling to only 80% and centering the
+  wrong box.
+
+### Upgrading
+- GUI-only change, no parameter change. **Re-scan + remove/re-add the
+  instance** (or restart Cubase — also clears the WebView2 cache, the usual
+  "old GUI" culprit). Header stamp must read **2.5.3**.
+
+---
+
 ## 2.5.2 — "the 0 dBFS noise" fix (released 2026-07-22, deployed both targets)
 
 ### Fixed

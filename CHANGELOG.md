@@ -3,6 +3,23 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-23 (TD-003: GUI fit fills the host window) — **RC 2.5.3** (branch
+  `fix/td-003-resize` → main `162b133`; deployed both targets, pluginval 8).
+  Bug (user report vs rubber-rhino's instant resize): the plugin opened
+  inside a larger dead frame and the layout only rescaled after a first
+  host-border resize. Root cause in app.js `fitToWindow()`: the scale was
+  multiplied by **0.8** (panel never filled >80% of the window) and the CSS
+  flex centering positioned the UNSCALED 1140×660 box while the transform
+  shrank the visual around top-center → dead margins. Fix (frontend-developer
+  pass, rubber-rhino `fit()` as reference): full min-ratio scale,
+  `position:absolute` + `transform-origin 0 0` inline, scaled-box centering
+  with clamped offsets (offsetHeight keeps the open keybed anchored), + a
+  requestAnimationFrame re-fit at boot (late WebView2 viewport settle).
+  UI.scale consumers audited (grip dblclick/drag unaffected). GUI-only vs
+  2.5.2 (no param change) but moduleinfo changed → re-scan + remove/re-add.
+  ⚠ upstream: GUI-Claude must fold this into the face master or the next
+  handoff overwrites it (same class as the 2.4.1 preset-load fix).
+
 - 2026-07-22 (TD-001: 0 dBFS noise fix) — **RC 2.5.2** (branch
   `fix/td-001-noise` → main `0c52c12`; released+deployed both targets,
   pluginval 8 SUCCESS; **re-scan required** per release tool — moduleinfo
