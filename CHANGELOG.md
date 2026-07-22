@@ -4,7 +4,9 @@ History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
 - 2026-07-22 (TD-001: 0 dBFS noise fix) — **RC 2.5.2** (branch
-  `fix/td-001-noise`; release/deploy pending user go). Bug (user report, mac
+  `fix/td-001-noise` → main `0c52c12`; released+deployed both targets,
+  pluginval 8 SUCCESS; **re-scan required** per release tool — moduleinfo
+  changed). Bug (user report, mac
   triage msg 2026-07-22T10:15): sustained full-scale noise after ~20-30 s of
   use OR idle. **Root cause (proven, deterministic):** the fractional
   delay-read helper in `Ensemble.h` (and latently `Dimension.h`/`Rotary.h`)

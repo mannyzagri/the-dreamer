@@ -6,7 +6,7 @@ validation/.
 
 ---
 
-## 2.5.2 — "the 0 dBFS noise" fix (built 2026-07-22; deploy pending)
+## 2.5.2 — "the 0 dBFS noise" fix (released 2026-07-22, deployed both targets)
 
 ### Fixed
 - **Sustained full-scale noise after ~20-30 s of playing or idling**
@@ -34,8 +34,9 @@ validation/.
   valid audio.
 
 ### Upgrading
-- No parameter change vs 2.5.0/2.5.1 → **reload the instance** (or restart
-  Cubase); no re-scan needed. Coming from ≤2.4.x still needs a FULL re-scan.
+- **Re-scan required** (release-tool verdict: moduleinfo changed), then
+  remove/re-add the instance or restart Cubase (VST3s don't hot-reload).
+  Header stamp must read **2.5.2**.
 - Suggested verification after install: load **SOLINA FIELDS** at 44.1 kHz,
   play a chord, then let the instrument sit for 60 s — output stays clean.
 

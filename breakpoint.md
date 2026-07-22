@@ -3,16 +3,14 @@
 > Read AFTER PROJECT-NOTES.md STATE + CLAUDE.md. Overwrite-only, current open
 > loop only (superseded story lives in CHANGELOG.md).
 
-## Where things stand — TD-001 fixed on branch, 2.5.2 release pending
+## Where things stand — 2.5.2 RELEASED + DEPLOYED, ear gate pending
 
-- **TD-001 (0 dBFS noise after ~20-30 s)** root-caused and fixed on
-  `fix/td-001-noise` — full story in CHANGELOG 2.5.2 entry. Validator dsp
-  **11/11** (new `fx_read_bounds` gate), end-to-end 2× vst3-probe full suite
-  clean (was: deterministic fault at block 148467, preset SOLINA FIELDS).
-- **NEXT: user go → release.ps1 (bump 2.5.2, -DryRun first, remember the
-  [[release-ship-tool-gotchas]]) → deploy both targets → user ear pass**:
-  load SOLINA FIELDS @44.1 k, play + idle 60 s → must stay clean; panic
-  button now genuinely clears every stage if anything ever appears.
+- **TD-001 (0 dBFS noise after ~20-30 s)** root-caused, fixed, released,
+  deployed to both targets (pluginval 8 SUCCESS) — full story in
+  validation/TD-001-REPORT.md + CHANGELOG 2.5.2 entry. Validator dsp 11/11.
+- **NEXT: user ear pass** — RE-SCAN required (moduleinfo changed), remove/
+  re-add instance, header must read **2.5.2**, then: SOLINA FIELDS @44.1 k,
+  play + idle 60 s → must stay clean; panic now genuinely clears every stage.
 - After 2.5.2 soaks green: STRIP the `DREAMER_TD001_TRACE` blocks from
   PluginProcessor.cpp (architect verdict: tracer retires once closed).
 
