@@ -20,4 +20,8 @@ AWAITING YOUR GO: release.ps1 → 2.5.2 → deploy both targets. Ear-gate after:
 SOLINA FIELDS @44.1k, play + idle 60 s → must stay clean (no re-scan needed).
 New shared tool from the hunt: C:\code-bank\tools\vst3-probe (long-render
 soak harness for all the plugins; found what pluginval+validator missed).
+> UPDATE 2026-07-23T00:15 (go given in-session): **2.5.2 RELEASED + DEPLOYED**
+> both targets, pluginval 8 SUCCESS, main `3e29fe7`, src export refreshed.
+> Tool verdict: RE-SCAN required (moduleinfo changed) + remove/re-add the
+> instance; header must read 2.5.2. Your ear gate is the only open item.
 ---
