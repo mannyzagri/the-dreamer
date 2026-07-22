@@ -1085,8 +1085,17 @@ function fitToWindow() {
   /* Faceplate is a fixed 660px unit; the keybed extends BELOW it and must not
    * rescale or move the face. Always fit the 660 faceplate — opening the keybed
    * only reveals the bed under the blue KEYS band. */
-  UI.scale = 0.8 * Math.min(window.innerWidth / 1140, window.innerHeight / 660);
+  UI.scale = Math.min(window.innerWidth / 1140, window.innerHeight / 660);
+  /* CSS flex centers the UNscaled 1140×660 box, so the scaled panel sat inside a
+   * dead frame (TD-003). Position absolutely from the top-left instead and center
+   * the SCALED box ourselves (rubber-rhino fit() rule). offsetHeight is the
+   * layout height — 660 folded, 850 kbd-open — so the open keybed stays anchored
+   * under the face instead of being pushed off the bottom. */
+  panel.style.position = 'absolute';
+  panel.style.transformOrigin = '0 0';
   panel.style.transform = `scale(${UI.scale})`;
+  panel.style.left = Math.max(0, (window.innerWidth - 1140 * UI.scale) / 2) + 'px';
+  panel.style.top = Math.max(0, (window.innerHeight - panel.offsetHeight * UI.scale) / 2) + 'px';
 }
 addEventListener('resize', fitToWindow);
 
@@ -1148,6 +1157,7 @@ function build() {
   panel.append(h('div', null, { style: "position:absolute;right:34px;top:626px;font:600 7.5px var(--f-silk);color:var(--silk-dim);letter-spacing:.16em;z-index:6" }, 'VER 1.0'));
   document.getElementById('root').append(panel);
   hydrate(); startScope(); fitToWindow(); drawRadar();
+  requestAnimationFrame(fitToWindow);   // re-fit after the WebView2 viewport settles (TD-003)
   requestAnimationFrame(tick);
 }
 function gripResize(e) {
