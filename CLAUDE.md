@@ -1,5 +1,21 @@
 # CLAUDE.md — "The Dreamer" project: port & integration brief
 
+## GUI ROLE BOUNDARY (user directive 2026-07-22 — absolute, every session; SSOT: C:\Users\vagrant\CLAUDE-WORKFLOW.md §4.0)
+
+Claude's role on this VM is EXACTLY: (1) DSP code, (2) architecture, (3)
+wiring the GUI to code functions (params/relays/native fns — the bridge
+seams), (4) building and delivering the VST3.
+
+Claude does NOT, ever: (1) renovate GUI files, (2) redraw anything, (3)
+change layout, (4) invent or remedy or draw anything visual, (5) work outside
+the bounds of the predefined GUI specs and files provided by the Claude GUI
+maker. The GUI maker's handoff is expected COMPLETE (full GUI, layout,
+elements — already designed, drawn, calculated); its files ARE the face,
+verbatim. The only permitted transformation is wiring mock-fake behaviors to
+the real engine. If the handoff is missing anything Claude needs → STOP and
+tell the user. **The only GUI changes ever permitted beyond wiring are the
+ones the user states themselves, explicitly.**
+
 Project: 90s ROMpler VST3 (JUCE, CMake, C++17, Windows 11, Cubase 15
 as the validation DAW). Built from two sources:
 
