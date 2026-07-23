@@ -737,7 +737,9 @@ function buildToneEdit() {
   // ---- LFO rows
   const lfoRow = (n, rk, dk, sk, dk2, shk) => {
     const synced = P(sk).get();
-    const rate = Knob(P(rk), synced ? SYNCDIVS[Math.min(11, Math.floor(P(rk).get() * 12))] : 'RATE', { size: 26, color: synced ? 'var(--ptr-yellow)' : null });
+    /* division law = engine's round(v*11) (DreamVoice.h toneLfoDivisionBeats) —
+     * floor(v*12) disagreed at boundary values. ⚠ GUI-Claude fold upstream. */
+    const rate = Knob(P(rk), synced ? SYNCDIVS[Math.round(P(rk).get() * 11)] : 'RATE', { size: 26, color: synced ? 'var(--ptr-yellow)' : null });
     const syncLed = Led(P(sk));
     const syncBtn = h('div', 'btn', { style: 'width:32px;height:15px', onclick: () => { const v = !P(sk).get(); P(sk).set(v); touch(n + ' SYNC', v ? 1 : 0); rebuildToneEdit(); } }, 'SYNC');
     const shapeStep = Stepper(P(shk), WAVE_SHAPES, { lcd: true, readStyle: 'width:34px;height:16px', arrowStyle: 'width:14px;height:16px', label: n + ' SHAPE', onLcd: () => openMenu(n + ' SHAPE \u2014 TONE ' + TONES[i], WAVE_SHAPES, P(shk)) });
@@ -909,7 +911,8 @@ function buildFX() {
     const knobs = h('div', 'grow row', { style: 'justify-content:space-evenly;align-items:flex-start' },
       ...knobDefs.map(([k, l]) => {
         const synced = syncKey && k === knobDefs[1][0] && glob(syncKey).get();
-        return Knob(glob(k), synced ? SYNCDIVS[Math.min(11, Math.floor(glob(k).get() * 12))] : l, { size: 26, color: synced ? 'var(--ptr-yellow)' : null });
+        /* division law = engine's round(v*11) (PluginProcessor delay-sync read). */
+        return Knob(glob(k), synced ? SYNCDIVS[Math.round(glob(k).get() * 11)] : l, { size: 26, color: synced ? 'var(--ptr-yellow)' : null });
       }));
     const focus = h('div', 'lcd click', { style: 'width:52px;height:18px', onclick: () => cyc(glob(focusKey), focusArr.length, 1) });
     const paintF = () => focus.textContent = focusArr[glob(focusKey).get()]; paintF(); glob(focusKey).sub(paintF);
