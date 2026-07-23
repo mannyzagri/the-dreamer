@@ -78,6 +78,35 @@ static float renderPeak(const dreamer::DreamPatch& patch, int nSamples) {
 int main() {
     _mm_setcsr(_mm_getcsr() | 0x8040);   // FTZ/DAZ
 
+    // ---- [loudness] D11 WaveNorm calibration target (v2.5.4: -8 dBFS RMS) -
+    // Regression guard on the per-wave playback normalization: for any
+    // non-clamped CYCLE/LOOP wave, kWaveNormGain * measuredRms must equal the
+    // -8 dBFS RMS target (0.39811). Catches an accidental revert to the old
+    // -14 target (0.19953) or a bad re-bake. HITs (OneShot) are gain 1.0 by
+    // design (peak-normalized) and exempt.
+    std::printf("[loudness]\n");
+    {
+        constexpr double kTargetRms = 0.39811;   // 10^(-8/20)
+        constexpr float  kClampHi = 8.0f, kClampLo = 0.125f;
+        int checked = 0;
+        for (int i = 0; i < rompler::bank3::kNumWaveforms; ++i) {
+            const auto& w = rompler::bank3::kWaveforms[(size_t)i];
+            if (w.type == rompler::bank3::WaveType::OneShot) continue;
+            double sumsq = 0.0;
+            for (uint32_t s = 0; s < w.length; ++s) {
+                const double x = (double)w.samples[s] * (1.0 / 32768.0);
+                sumsq += x * x;
+            }
+            const double rms = w.length ? std::sqrt(sumsq / (double)w.length) : 0.0;
+            const float g = dreamer::kWaveNormGain[i];
+            if (g >= kClampHi || g <= kClampLo || rms < 1e-9) continue;  // skip clamped
+            CHECK(approx(g * rms, kTargetRms, 0.005), "WaveNorm gain hits the -8 dBFS RMS target");
+            ++checked;
+        }
+        std::printf("  verified %d non-clamped waves at -8 dBFS RMS target\n", checked);
+        CHECK(checked > 50, "enough waves exercised the loudness invariant");
+    }
+
     // ---- [tonesum] fix 1 ------------------------------------------------
     std::printf("[tonesum]\n");
     {
