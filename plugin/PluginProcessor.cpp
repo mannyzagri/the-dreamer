@@ -479,6 +479,7 @@ void TheDreamerProcessor::buildPatch(dreamer::DreamPatch& patch) const
         patch.slot[i].amt  = pMtxAmt[i]->load();
     }
     patch.drift = pDrift->load();
+    patch.morph = pFlt2Morph->load();   // TD-007: shared tone morph base
 }
 
 //==============================================================================
@@ -511,6 +512,7 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         lastOversample = os;
         for (int ch = 0; ch < 2; ++ch) { f1[ch].setOversample(os); f2[ch].setOversample(os); }
     }
+    synth.setOversample(os);   // TD-007: tone Rhino family (gated inside)
 
     numEvents = 0;
     drainGuiMidi();                 // GUI keyboard/wheels first: offset-0 events,
@@ -693,7 +695,9 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             for (int ch = 0; ch < 2; ++ch) {
                 f1[ch].setCutoffRes(h1, pFlt1Res->load());
                 f2[ch].setCutoffRes(h2, pFlt2Res->load());
-                f2[ch].setMorph(pFlt2Morph->load());   // routes flt2_morph -> DreamPlane Z-plane (type 13); harmless for other types
+                // TD-007: flt2_morph no longer feeds GlobalFilter -- the globals
+                // are choice-4 now (DreamPlane unreachable there); the morph
+                // drives every tone's ZPlane via buildPatch/DreamSynth instead.
             }
         }
         if (routing == 0) {                                  // SER (BAL inert)
@@ -1136,7 +1140,54 @@ void TheDreamerProcessor::setStateInformation(const void* data, int sizeInBytes)
 
     if (paramsXml != nullptr)
         {
-            apvts.replaceState(juce::ValueTree::fromXml(*paramsXml));
+            auto tree = juce::ValueTree::fromXml(*paramsXml);
+
+            // --- TD-007 global-filter-type remap (pre-TD-007 saved states) ---
+            // flt1_type/flt2_type shrank choice-14 -> choice-4, so any stored
+            // index > 3 can ONLY come from a pre-TD-007 state -- the remap is
+            // safe unconditionally, no version tag needed. Mapping:
+            //   0-3            keep                      (same first four types)
+            //   4,5,6,13       -> 0 LP24                 (Rhino LPs / DreamPln)
+            //   10 N+LP        -> 0 LP24                 (lowpass-ish, keep cut)
+            //   11 Formant     -> 2 BP                   (bandpass-ish)
+            //   7,8,9,12       -> 0 LP24 + cut=1.0 res=0 (notch/comb/allpass:
+            //                     near-transparent; LP24 at the STORED cutoff
+            //                     would gut the top end)
+            // tvf_type old 0-3 is a subset of the new 0-13: nothing to do.
+            {
+                auto paramChild = [&tree](const juce::String& id) {
+                    return tree.getChildWithProperty("id", id);
+                };
+                const char* typeIds[2] = { "flt1_type", "flt2_type" };
+                const char* cutIds[2]  = { "flt1_cut",  "flt2_cut"  };
+                const char* resIds[2]  = { "flt1_res",  "flt2_res"  };
+                for (int s = 0; s < 2; ++s)
+                {
+                    auto tp = paramChild(typeIds[s]);
+                    if (! tp.isValid()) continue;
+                    const int old = juce::roundToInt((double)tp.getProperty("value", 0.0));
+                    if (old <= 3) continue;                       // TD-007-native
+                    int nu = 0;                                   // default LP24
+                    bool transparent = false;
+                    switch (old) {
+                        case 10: nu = 0; break;                   // N+LP -> LP24
+                        case 11: nu = 2; break;                   // Formant -> BP
+                        case 7: case 8: case 9: case 12:          // notch/comb/allpass
+                            nu = 0; transparent = true; break;
+                        default: nu = 0; break;                   // 4,5,6,13 -> LP24
+                    }
+                    tp.setProperty("value", (double)nu, nullptr);
+                    if (transparent)
+                    {
+                        if (auto cp = paramChild(cutIds[s]); cp.isValid())
+                            cp.setProperty("value", 1.0, nullptr);
+                        if (auto rp = paramChild(resIds[s]); rp.isValid())
+                            rp.setProperty("value", 0.0, nullptr);
+                    }
+                }
+            }
+
+            apvts.replaceState(tree);
 
             // --- pluginval strictness-8 "Plugin state restoration" fix --------
             // Snap every AudioParameterBool to a clean 0.0/1.0 after a state load.

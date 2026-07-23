@@ -7,7 +7,8 @@
 //   * per-tone NOISE source (level + color one-pole, 12-bit quantized,
 //     mixed PRE-shaper; AUX dest 4 = NOISE, matrix dest NOISE)
 //   * tone chain (section 5): osc (+start/random) -> +noise -> waveshaper
-//     -> re-quantize 12-bit (ALWAYS) -> ToneSvf TVF -> TVA -> vector gain
+//     -> re-quantize 12-bit (ALWAYS) -> ToneFilter TVF (TD-007: full 14-type
+//     list, bit-exact ToneSvf for types 0-3) -> TVA -> vector gain
 //     -> pan -> stereo tone sum
 //   * per-voice humanization drift (section 3): S&H random walk ~0.2 Hz,
 //     global DRIFT depth 0..1 -> 0..+/-3 cents, one-pole slewed, applied
@@ -30,10 +31,11 @@
 #pragma once
 #include <cmath>
 #include <cstdint>
+#include <memory>                       // TD-007: heap-boxed voice bank
 #include "dsp/bank/Mode2Voice.h"        // rompler::EnvelopeAdsr (verified)
 #include "dsp/glue/PcmOsc3.h"
 #include "dsp/glue/Waveshaper.h"
-#include "dsp/glue/ToneSvf.h"
+#include "dsp/glue/ToneFilter.h"        // TD-007: 14-type per-tone TVF composite
 #include "dsp/glue/WaveNormTable.h"     // D11: per-wave playback loudness gain
 #include "dsp/ported/RhinoLfo.h"
 
@@ -77,7 +79,8 @@ struct ToneParams {
     int    shapeMode    = 0;       // 0 OFF, 1..5 ShaperTables order
     double shapeDepth   = 0.0;
 
-    int    tvfMode      = 0;       // LP24/LP12/BP/HP
+    int    tvfMode      = 0;       // TD-007: 0..13 full panel type list
+                                   // (0-3 SVF, 4-6 Rhino, 7-12 Extra, 13 DreamPln)
     double cutoffHz     = 8000.0;
     double resonance    = 0.0;
     double tvfEnvAmount = 0.0;     // Hz at env peak
@@ -131,6 +134,8 @@ struct DreamPatch {
     bool         glfo2Sync    = false;
     MatrixSlot   slot[3];
     double       drift = 0.0;      // global humanize depth 0..1
+    double       morph = 0.0;      // TD-007: shared tone-filter MORPH base
+                                   // (param flt2_morph, display "Tone Morph")
 };
 
 namespace mtx {
@@ -151,6 +156,8 @@ struct ModContext {
     float glfoValue      = 0.0f;   // global LFO (matrix source)
     float bpm            = 120.0f; // host tempo (tone-LFO sync divisions)
     float phi            = 0.0f;   // global phase part, turns
+    float morph          = 0.0f;   // TD-007: shared tone-filter MORPH
+                                   // (flt2_morph base + matrix Morph dest)
     float mtxPitchSemis  = 0.0f;
     float mtxShapeAdd    = 0.0f;
     float mtxPanAdd      = 0.0f;
@@ -261,11 +268,16 @@ public:
         tvfEnv_.setSampleRate(sr);
         tvaEnv_.setSampleRate(sr);
         auxEnv_.setSampleRate(sr);
-        svf_.setSampleRate(sr);
+        filter_.setSampleRate(sr);
+        filter_.setStagger((int)(seedBase & 15u));   // TD-007 R3 recalc stagger
         rng_.seed(0x9E3779B9u * (seedBase + 1u));
         lfo_[0].prepare(sr, (0xA5A5A5A5u ^ (seedBase * 2u)) | 1u);
         lfo_[1].prepare(sr, (0x5A5A5A5Au ^ (seedBase * 2u + 1u)) | 1u);
     }
+
+    // TD-007: engine oversample factor for the Rhino family (4-6). Cheap
+    // no-op unless the factor actually changes (RubberFilter gates inside).
+    void setOversample(int f) noexcept { filter_.setOversample(f); }
 
     void setInterpMode(int m) noexcept {
         const auto im = (m == 0 ? PcmOsc3::Interp::DropSample
@@ -306,8 +318,10 @@ public:
         tvfEnv_.noteOn();
         tvaEnv_.noteOn();
         auxEnv_.noteOn();
-        svf_.setMode(p.tvfMode);
-        svf_.reset();
+        // TD-007: same noteOn semantics as the old svf_.setMode + svf_.reset()
+        // for types 0-3; reset() also clears the other families (fresh anyway).
+        filter_.setType(p.tvfMode);
+        filter_.reset();
         noiseLp_ = 0.0f;
         vecGain_ = 0.0f;
         levelMul_ = 1.0f;
@@ -363,7 +377,7 @@ public:
         baseSemis_ = note_ - 69 + p.coarse + p.fineCents / 100.0;
         if (p.tvfMode != params_.tvfMode) {
             params_.tvfMode = p.tvfMode;
-            svf_.setMode(p.tvfMode);
+            filter_.setType(p.tvfMode);   // TD-007 reset rules live in ToneFilter
         }
         // D2 (felt bug): envelopes must read their A/D/S/R CONTINUOUSLY, not
         // latch them at note-on. Push the live rates into all three envelopes
@@ -477,7 +491,8 @@ public:
             double hz = keyHz + params_.tvfEnvAmount * tvf;
             hz *= std::pow(2.0, cutOct);
             hz = std::min(std::max(hz, 20.0), 18000.0);
-            svf_.setCutoffRes(hz, params_.resonance);
+            filter_.setMorph(m.morph);   // TD-007 shared morph (type 13 only)
+            filter_.setCutoffRes(hz, params_.resonance);
 
             {   // Dream Vector gain law, one-pole smoothed at control rate
                 const double d  = m.phi - params_.dir;
@@ -514,7 +529,7 @@ public:
         }
         x = Waveshaper::process(x, params_.shapeMode, shapeEff_);
         x = requant12(x);                                      // explicit stage
-        x = svf_.process(x);
+        x = filter_.process(x);          // TD-007 (bit-exact ToneSvf for 0-3)
         const float s = x * tva * velGain_ * vecGain_ * levelMul_;
         l += s * panL_;
         r += s * panR_;
@@ -541,7 +556,7 @@ private:
 
     PcmOsc3                osc_[kMaxTaps]; // s11 voicing x D9 detune taps (<=16)
     rompler::EnvelopeAdsr  tvfEnv_, tvaEnv_, auxEnv_;
-    ToneSvf                svf_;
+    ToneFilter             filter_;     // TD-007: 14-type per-tone TVF
     Lfo                    lfo_[2];      // v7 per-tone LFO pair (v11: per-LFO shape)
     ToneParams             params_;
     GlueRng                rng_;
@@ -608,6 +623,9 @@ public:
     }
     void noteOff() noexcept { for (auto& t : tones_) t.noteOff(); }
     void kill() noexcept    { for (auto& t : tones_) t.kill(); }
+    void setOversample(int f) noexcept {           // TD-007
+        for (auto& t : tones_) t.setOversample(f);
+    }
     bool isActive() const noexcept {
         for (auto& t : tones_) if (t.isActive()) return true;
         return false;
@@ -715,6 +733,7 @@ public:
         glfo_.prepare(sr, 0x1955B52Fu);
         glfo2_.prepare(sr, 0x2C6A5F3Bu);        // v16 GLOBAL LFO 2
         shRng_.seed(0x5EEDBA5Eu);
+        oversample_ = 0;               // TD-007: force re-push after prepare
         orbitPhase_ = 0.0;
         shHeld_ = shSlewed_ = 0.0f;
         ctrlCount_ = 0;
@@ -745,6 +764,14 @@ public:
     void setPitchBend(float semis) noexcept { bendSemis_ = semis; }
     void setWheel(float w01) noexcept { wheel_ = w01; }
     void setBpm(float bpm) noexcept { bpm_ = bpm > 1.0f ? bpm : 120.0f; }
+
+    // TD-007: engine oversample (Vintage 1 / Modern 2) for every tone's Rhino
+    // family. Gated here so the per-block call is a compare when unchanged.
+    void setOversample(int f) noexcept {
+        if (f == oversample_) return;
+        oversample_ = f;
+        for (auto& v : voices_) v.setOversample(f);
+    }
 
     void noteOn(int midiNote, float velocity01) noexcept {
         lastVelocity_ = velocity01;
@@ -809,6 +836,7 @@ public:
 
         ModContext m;
         m.bendSemis     = bendSemis_;
+        m.morph         = morphEff_;   // TD-007 shared tone morph (ctrl-rate)
         m.glfoValue     = glfo_.value();
         m.bpm           = bpm_;
         m.phi           = basePhi_;
@@ -848,7 +876,7 @@ private:
         };
 
         float pitch = 0, cut1 = 0, cut2 = 0, shape = 0, vecAdd = 0, pan = 0, noise = 0,
-              loopRate = 0;
+              loopRate = 0, morph = 0;
         for (const auto& s : patch_.slot) {
             if (s.src == mtx::srcNone || s.dest == mtx::dstNone) continue;
             if (s.src == mtx::srcVecPhs && s.dest == mtx::dstVecPhs) continue;
@@ -862,7 +890,9 @@ private:
             case mtx::dstPan:    pan    += v;         break;
             case mtx::dstNoise:  noise  += v;         break;
             case mtx::dstLoopRate: loopRate += v;     break;   // D15 (normalized offset)
-            case mtx::dstMorph:  break;               // reserved (V1.1/V2)
+            case mtx::dstMorph:  morph  += v;         break;   // TD-007: LIVE --
+                                                      // offsets the shared tone
+                                                      // Z-plane morph (type 13)
             case mtx::dstFxParam: break;              // s9 FX PARAM: reserved/inert
                                                       //  (needs GUI slot/focus target)
             default: break;
@@ -876,11 +906,27 @@ private:
         mtxPanAdd_       = pan;
         mtxNoiseAdd_     = noise;
         mtxLoopRateAdd_  = loopRate;
+        {   // TD-007: shared tone morph = flt2_morph base + matrix Morph dest
+            float mv = (float)patch_.morph + morph;
+            if (mv < 0.0f) mv = 0.0f; else if (mv > 1.0f) mv = 1.0f;
+            morphEff_ = mv;
+        }
         phi += vecAdd;
         basePhi_ = (float)(phi - std::floor(phi));
     }
 
-    DreamVoice voices_[kMaxVoices];
+    // TD-007 (flagged deviation, RT-safe): the 14-type ToneFilter grew each
+    // tone by ~9 KB (FilterExtra comb + Rhino + ZPlane), putting DreamSynth at
+    // ~1.1 MB -- past the 1 MB default stack that stack-local DreamSynth
+    // instances (test harnesses) rely on. The voice bank is boxed on the heap
+    // ONCE at construction (message thread; never the audio thread -- rule 5
+    // holds: zero allocation in prepare/process). voices_ is an array
+    // REFERENCE into the box so every existing loop and index reads exactly
+    // as before. (ToneFilter itself keeps all-fixed storage per the TD-007
+    // design; the box is one level up.)
+    struct VoiceBank { DreamVoice v[kMaxVoices]; };
+    std::unique_ptr<VoiceBank> voiceBank_ { std::make_unique<VoiceBank>() };
+    DreamVoice (&voices_)[kMaxVoices] = voiceBank_->v;
     bool       sustained_[kMaxVoices] = {};
     DreamPatch patch_;
     Lfo        glfo_, glfo2_;   // v16: two global LFOs
@@ -895,6 +941,8 @@ private:
     float      mtxPitchSemis_ = 0, mtxCut1Oct_ = 0, mtxCut2Oct_ = 0,
                mtxShapeAdd_ = 0, mtxPanAdd_ = 0, mtxNoiseAdd_ = 0,
                mtxLoopRateAdd_ = 0;   // D15
+    float      morphEff_ = 0.0f;      // TD-007 shared tone morph (ctrl-rate)
+    int        oversample_ = 0;       // TD-007 engine oversample (0 = unset)
     bool       sustainDown_ = false;
     int        ctrlCount_ = 0;
 };
