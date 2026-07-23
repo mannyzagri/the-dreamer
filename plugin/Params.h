@@ -25,8 +25,11 @@
 // there); GUI displays 0-127 (bipolar -63..+63) regardless.
 //
 // Choice-count freezes: wave 218 (78 cycle + 130 Loop + 10 Shot, bank3 order);
-// flt type 14; shaper 6; tvf type 4; lfo/orbit shapes 5; mtx src 7, dst 10;
-// voicing 4; dreamy_spread 3; loop_mode 2; hit_play 2; modfx 7; dly 3; rev 3.
+// flt type 4 (TD-007: globals shrank from 14); shaper 6; tvf type 14 (TD-007:
+// per-tone grew from 4 -- full list incl. DreamPln); lfo/orbit shapes 5;
+// mtx src 7, dst 10; voicing 4; dreamy_spread 3; loop_mode 2; hit_play 2;
+// modfx 7; dly 3; rev 3. TD-007 is a declared PARAM-LIST change (choice counts
+// moved on tvf_type_[t] / flt1_type / flt2_type) -> Cubase FULL RE-SCAN.
 
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -200,11 +203,17 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
 
     const StringArray shaperTypes { "Off", "Soft Fold", "Hard Fold", "Sine Fold",
                                     "Asym", "Drive" };
-    const StringArray tvfTypes    { "LP 24", "LP 12", "BP", "HP" };
-    const StringArray filterTypes { "LP 24", "LP 12", "BP", "HP", "Liquid",
+    // TD-007 filter-bank swap: the per-tone TVF gets the FULL 14-entry list
+    // (same first four entries/order as the old 4-entry tvf list, so saved
+    // tvf_type indices 0-3 keep their meaning); the two GLOBAL filters shrink
+    // to the simple 4 (first four of the old 14-entry list, same order --
+    // saved flt*_type 0-3 keep their meaning; >3 is remapped in
+    // setStateInformation).
+    const StringArray tvfTypes    { "LP 24", "LP 12", "BP", "HP", "Liquid",
                                     "Classic", "Ladder", "Notch", "Comb +",
                                     "Comb -", "N+LP", "Formant", "Allpass",
                                     "DreamPln" };
+    const StringArray filterTypes { "LP 24", "LP 12", "BP", "HP" };
     const StringArray lfoShapes   { "Tri", "Sin", "Saw", "Sqr", "S+H" };
     const StringArray orbitShapes { "Saw", "Tri", "Sin", "Sqr", "S+H" };
     const StringArray auxDests    { "Pitch", "Start", "Shape", "Pan", "Noise" };
@@ -339,7 +348,9 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     layout.add(uni(kFlt2Cut, "Filter 2 Cutoff", 1.0f));
     layout.add(uni(kFlt2Res, "Filter 2 Reso", 0.0f));
     layout.add(uni(kFlt2Env, "Filter 2 Env", 0.0f));      // v15: F2 env (like F1)
-    layout.add(uni(kFlt2Morph, "Filter 2 Morph", 0.0f));
+    // TD-007: id UNCHANGED (save-compat) but the knob now drives every tone's
+    // DreamPlane Z-plane morph (tvf_type 13), not the global filter 2.
+    layout.add(uni(kFlt2Morph, "Tone Morph", 0.0f));
 
     layout.add(uni(kLfoRate, "G-LFO Rate", 0.5f));
     layout.add(choice(kLfoShape, "G-LFO Shape", lfoShapes, 0));

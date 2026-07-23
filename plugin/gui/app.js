@@ -122,8 +122,13 @@ const TONE_CORE = [['#FFD4FC','#D4547D','#4A1D2C'],['#9CFFF5','#1C9E75','#0A3729
                    ['#B8FFFF','#388ADE','#14304E'],['#FFF596','#BA7517','#412908']];
 const TONE_ANGLE = [90, 0, 220, 300];
 
-const FTYPES  = ['LP 24','LP 12','BP','HP','LIQUID','CLASSIC','LADDER','NOTCH','COMB +','COMB -','N+LP','FORMANT','ALLPASS','DREAMPLN'];
-const TVFTYPES = ['LP24','LP12','BP','HP'];
+/* TD-007 filter-bank swap (wiring parity with plugin/Params.h choice lists):
+ * the TONE filter now carries the full 14-type list incl. DreamPlane; the two
+ * GLOBAL filters are simple 4-type. Same widgets, same layout — only the
+ * choice lists the existing steppers cycle changed, mirroring the param
+ * contract. ⚠ upstream: GUI-Claude fold (handoff-overwrite class). */
+const FTYPES  = ['LP 24','LP 12','BP','HP'];
+const TVFTYPES = ['LP 24','LP 12','BP','HP','LIQUID','CLASSIC','LADDER','NOTCH','COMB +','COMB -','N+LP','FORMANT','ALLPASS','DREAMPLN'];
 const SHAPES   = ['OFF','SOFT FOLD','HARD FOLD','SINE FOLD','ASYM','DRIVE'];
 const AUXDESTS = ['PITCH','START','SHAPE','PAN','NOISE'];
 const LFODESTS = ['PITCH','CUTOFF','SHAPE','LEVEL'];
@@ -211,7 +216,7 @@ const TONE_ID = {
 };
 const GLOBAL_DEFAULTS = {
   master: .78, f1Cut: .52, f1Res: .35, f1Env: .5, f2Cut: .7, f2Res: .2, f2Env: .5, f2Morph: .4,
-  route: 0, fbal: .5, f1Type: 6, f2Type: 13, orbRate: 0, vphase: .12, vecShape: 2, orbit: true, venv: false,
+  route: 0, fbal: .5, f1Type: 0, f2Type: 0, orbRate: 0, vphase: .12, vecShape: 2, orbit: true, venv: false,
   glfoRate: .4, glfoWave: 0, glfoSync: false, glfo2Rate: .25, glfo2Wave: 1, glfo2Sync: false,
   mfxType: 0, mfxRate: .3, mfxDepth: .5, mfxMix: .45, mfxParam: .5, mfxOn: true, mfxFocus: 0,
   dlyMode: 0, dTime: .5, dFb: .35, dMix: .3, dParam: .4, dlyOn: true, dlySync: false, dlyFocus: 0,

@@ -3,6 +3,51 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-23 (TD-007 FILTER-BANK SWAP + preset boilerplate-vibrato fix) —
+  **RC 2.7.0**. Two user reports actioned:
+  (1) **"LFO on detune/unison" on every preset, surviving wave changes** —
+  measured root cause: ALL 47 factory presets (v3 authoring AND the v5
+  re-voice) carried boilerplate `lfo1_dest=Pitch, lfo1_depth=0.15` on every
+  tone (seeded from the GUI mock defaults when the presets were first
+  authored). Engine pitch law `v·d²·12 semis` ⇒ **±27 cents at ~0.65 Hz**
+  (rate law 0.05·600^0.4) — a universal slow vibrato, NOT a DSP bug (APVTS
+  depth default is 0; INIT is clean). Fix: preset data — zeroed all 187
+  boilerplate 0.15 instances; kept STATIC BLOOM tone A depth 0.4 (deliberate
+  deviation).
+  (2) **TD-007 filter-bank swap** (scoped 2.5.6, user-ordered now):
+  per-tone TVF `tvf_type_[t]` choice 4 → the FULL 14-type list (LP 24/LP 12/
+  BP/HP/Liquid/Classic/Ladder/Notch/Comb ±/N+LP/Formant/Allpass/DreamPln);
+  global `flt1_type`/`flt2_type` choice 14 → 4 (LP 24/LP 12/BP/HP, defaults
+  0). Architect-gated design (accepted with conditions), cpp-pro
+  implementation: NEW dsp/glue/ToneFilter.h — mono per-tone composite
+  (ToneSvf + ported RubberFilter + FilterExtra + ZPlaneFilter, GlobalFilter's
+  exact index map). **Types 0-3 stay BIT-EXACT** (bare ToneSvf path, no
+  safety/trim, no reset on intra-SVF mode change — [bitexact] asserts 0
+  differing samples); safety() + kFamilyTrim[14] (all 1.0, ear-tunable) +
+  res^0.35 curve on families 4-13 only. `flt2_morph` KEEPS its id, display
+  name → "Tone Morph": one shared morph driving every tone DreamPlane
+  (GUI has exactly one MORPH knob — per-tone morph params rejected at the
+  design gate); matrix "Morph" dest is now LIVE (base+contribution, ctrl
+  rate). Matrix Cut 1/Cut 2 keep global-cutoff meaning. R3 recalc stagger:
+  per-(voice,tone) phased 16-sample coefficient grid for families 4-13
+  (chords don't fire 96 ZPlane recalcs in one sample); 0-3 update timing
+  untouched. Engine/vintage oversample now plumbed to the 96 tone Rhinos.
+  DreamSynth voice bank heap-boxed ONCE at construction (1.14 MB; RT-clean,
+  [alloc] 0 allocations over 96 instances). Old-project STATE REMAP in
+  setStateInformation (unconditional; >3 only possible pre-TD-007): 4/5/6/
+  10/13→0, 11→2 (Formant→BP), 7/8/9/12→0 + slot cut=1.0/res=0
+  (near-transparent, not muffled). Same mapping applied to the 47 factory
+  presets (9 slots in 8 presets downgraded — ETHEREAL DAWN f1 Ladder+f2
+  DreamPln, GHOST HARBOR f1 Liquid, HALF LIGHT f1 Classic, GLASS RIVER f2
+  DreamPln, CHOIR OF WIRES/SERAPHIM/GHOST HYMN/NEON PSALM f1 Formant→BP —
+  flag for the ear-pass). GUI wiring parity only: TVFTYPES↔FTYPES lists
+  swapped in app.js + mock f1/f2Type defaults 0 (⚠ GUI-Claude fold,
+  handoff-overwrite class). New harness tests/test_tone_filter.cpp wired
+  into validator.json ([dispatch]/[bitexact]/[switch]/[alloc]/[bench] —
+  worst family ZPLANE burst 46.4% realtime < 60% gate). **PARAM-LIST CHANGE
+  → Cubase FULL RE-SCAN.** ⚠ Ear-pass debt now three deep (loudness, v5
+  re-voice, TD-007 migration) — one Cubase session judges all.
+
 - 2026-07-23 (TD-005 REAL fix: envelope display wired to the real params;
   v5 preset re-voice recovered + repaired) — **RC 2.6.1**. Session audit of
   the previous pass found the 2.6.0 delivery half-landed:
