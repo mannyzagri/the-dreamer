@@ -3,6 +3,29 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-23 (TD-009/010/011: cycle stretch + user-patch persistence + stepper)
+  — **RC 2.7.3**. Three user reports:
+  (TD-009) STRETCH/P.TRIM greyed for cycle waves — engine's Cycle+STRETCH was
+  a documented D15 no-op. Now: **Cycle+STRETCH = the s13 varispeed** (note-
+  detached, baseFreq = rootHz·0.25·2^(4·stretch)·2^(trim/12), 0.25–4× +
+  ±24 st — folded into frequency, NOT speedMul, because PcmOsc3's cycle
+  increment law ignores speedMul by v2 bit-parity pin; audibly identical
+  semantics, PcmOsc3 untouched, flagged deviation). NORMAL cycle path proven
+  bit-identical across knob positions; new [cycle_stretch] harness section in
+  test_dsp_features (note-independence, log law, trim). GUI: compartment
+  condition !isENS → cycles get the live STRETCH/P.TRIM knobs in STRETCH
+  mode (ENS keeps LOOP RATE; NORMAL stays greyed).
+  (TD-010) User patch name lost on session reload (only params persisted) —
+  processor now keeps loadedUserPresetName (set by loadUserPreset, cleared
+  by factory loads/INIT); getStateInformation stores program + userPreset
+  attributes on the state root (legacy states unaffected); editor uiProgram
+  push latches on {program, effective-name} and carries user:true/false;
+  getInfo additively returns presetIndex/presetName/presetUser for boot.
+  (TD-011) Header ▲▼ steppers now cycle FACTORY + USER presets as one
+  wrapped list (live-read — sees saves/renames/deletes immediately; position
+  follows browser and host-side loads via uiProgram/UI.presetSel sync).
+  All app.js changes ⚠ GUI-Claude fold. No param-list change → reload.
+
 - 2026-07-23 (AUDIT PHASE 2: face wiring — keyboard/fold/resize, real feeds,
   staleness) — **RC 2.7.2**. User-reported: border-resize not scaling the
   faceplate + "the hidden keyboard should be part of the resize whether

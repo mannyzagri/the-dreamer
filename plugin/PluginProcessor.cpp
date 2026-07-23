@@ -205,6 +205,7 @@ void TheDreamerProcessor::applyPreset(int index)
         return;
     applyParamMap(presets[(size_t)index].values);
     currentProgram = index + 1;             // D4: host program 0 is INIT
+    loadedUserPresetName.clear();           // TD-010: factory load overrides user name
 }
 
 // D4 INIT patch. Reset every parameter to its APVTS default, then apply the
@@ -228,6 +229,7 @@ void TheDreamerProcessor::resetToInit()
         w->setValueNotifyingHost(w->convertTo0to1((float)sawIdx));
     }
     currentProgram = 0;
+    loadedUserPresetName.clear();           // TD-010: INIT overrides user name
 }
 
 const juce::String TheDreamerProcessor::getProgramName(int index)
@@ -1074,6 +1076,12 @@ bool TheDreamerProcessor::loadUserPreset(const juce::String& name)
     for (auto& prop : po->getProperties())
         values.emplace_back(prop.name.toString(), prop.value);
     applyParamMap(values);
+    // TD-010: remember the loaded user patch by its stored display name (falls
+    // back to the requested name for files without one). currentProgram keeps
+    // its existing convention (unchanged by a user load); the name wins in the
+    // editor's header display.
+    const juce::String stored = o->getProperty("name").toString();
+    loadedUserPresetName = stored.isNotEmpty() ? stored : name;
     return true;
 }
 bool TheDreamerProcessor::renameUserPreset(const juce::String& oldName, const juce::String& newName)
@@ -1122,6 +1130,10 @@ static const juce::Identifier kMidiLearnTag { "MIDILEARN" };
 void TheDreamerProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     juce::XmlElement root(kStateRoot);
+    // TD-010: persist the program index + any loaded-user-preset name as
+    // attributes on the wrapper element (legacy states simply lack them).
+    root.setAttribute("program", currentProgram);
+    root.setAttribute("userPreset", loadedUserPresetName);
     if (auto params = apvts.copyState().createXml())
         root.addChildElement(params.release());       // owned by root now
     auto* ml = root.createNewChildElement(kMidiLearnTag);
@@ -1145,10 +1157,14 @@ void TheDreamerProcessor::setStateInformation(const void* data, int sizeInBytes)
 
     juce::XmlElement* paramsXml = nullptr;
     juce::XmlElement* mlXml     = nullptr;
+    int          storedProgram = -1;                       // TD-010 (-1 = absent/legacy)
+    juce::String storedUserPreset;
     if (xml->hasTagName(kStateRoot))                       // D6 wrapper format
     {
         paramsXml = xml->getChildByName(apvts.state.getType());
         mlXml     = xml->getChildByName(kMidiLearnTag);
+        storedProgram    = xml->getIntAttribute("program", -1);
+        storedUserPreset = xml->getStringAttribute("userPreset");
     }
     else if (xml->hasTagName(apvts.state.getType()))       // legacy pre-D6 state
     {
@@ -1229,6 +1245,15 @@ void TheDreamerProcessor::setStateInformation(const void* data, int sizeInBytes)
                 if (auto* b = dynamic_cast<juce::AudioParameterBool*>(p))
                     b->setValueNotifyingHost(b->get() ? 1.0f : 0.0f);
         }
+
+    // TD-010: restore the program index + user-preset name AFTER the param
+    // tree has landed (the params ARE the sound -- these are display/host
+    // bookkeeping only, no applyPreset re-fire). Range-guarded; a legacy
+    // state without the attributes leaves currentProgram as today and
+    // clears any stale user name.
+    if (storedProgram >= 0 && storedProgram < getNumPrograms())
+        currentProgram = storedProgram;
+    loadedUserPresetName = storedUserPreset;
 }
 
 juce::AudioProcessorEditor* TheDreamerProcessor::createEditor()

@@ -180,17 +180,25 @@ void TheDreamerEditor::timerCallback()
     // Audit B9: the page's header preset name staled on host-side program
     // changes (Cubase preset menu) — it only tracked GUI-initiated loads.
     // Push {index,name} whenever the program moves; -1 forces the first push.
+    // TD-010: the latch ALSO fires when the EFFECTIVE display name changes
+    // (a user-preset load / session restore keeps the program index but the
+    // name is the truth). Effective name = loadedUserPresetName if non-empty,
+    // else the factory program name; user:true/false flags which.
     if (webView != nullptr)
     {
         const int prog = processor.getCurrentProgram();
-        if (prog != lastPushedProgram_)
+        const juce::String& userName = processor.getLoadedUserPresetName();
+        const bool user = userName.isNotEmpty();
+        const juce::String effective = user ? userName : processor.getProgramName(prog);
+        if (prog != lastPushedProgram_ || effective != lastPushedName_)
         {
             lastPushedProgram_ = prog;
-            const auto name = processor.getProgramName(prog)
+            lastPushedName_    = effective;
+            const auto name = effective
                                   .replace("\\", "\\\\").replace("'", "\\'");
             webView->evaluateJavascript(
                 "window.uiProgram && window.uiProgram({index:" + juce::String(prog)
-                + ",name:'" + name + "'});");
+                + ",name:'" + name + "',user:" + (user ? "true" : "false") + "});");
         }
     }
 }
@@ -206,13 +214,23 @@ juce::WebBrowserComponent::Options TheDreamerEditor::makeOptions()
         .withResourceProvider([this](const auto& url) { return getResource(url); })
 
         // Version + build stamp ("which build is this?" -- house rule)
+        // TD-010: also reports the EFFECTIVE preset name (user preset name if
+        // one is loaded, else the factory program name) + index + user flag,
+        // so the page header is right on boot before the first uiProgram push.
+        // Additive fields -- existing consumers of version/build unaffected.
         .withNativeFunction("getInfo",
-            [](const juce::Array<juce::var>&,
+            [this](const juce::Array<juce::var>&,
                juce::WebBrowserComponent::NativeFunctionCompletion completion)
             {
                 auto* obj = new juce::DynamicObject();
                 obj->setProperty("version", JucePlugin_VersionString);
                 obj->setProperty("build", juce::String(__DATE__) + " " + juce::String(__TIME__));
+                const int prog = processor.getCurrentProgram();
+                const juce::String& userName = processor.getLoadedUserPresetName();
+                const bool user = userName.isNotEmpty();
+                obj->setProperty("presetIndex", prog);
+                obj->setProperty("presetName", user ? userName : processor.getProgramName(prog));
+                obj->setProperty("presetUser", user);
                 completion(juce::var(obj));
             })
 

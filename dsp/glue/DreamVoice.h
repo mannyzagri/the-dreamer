@@ -446,19 +446,31 @@ public:
             //  * OneShot+STRETCH -> s13 varispeed (note-detached, pitch follows).
             //  * Loop+STRETCH -> LOOP RATE: decoupled granular morph sweep (pitch
             //    note-locked) unless loop_varispeed (plain pitch-follows varispeed).
-            //  * Cycle -> STRETCH has no meaning; note-tracked no-op.
+            //  * Cycle+STRETCH -> s13 varispeed, SAME semantics as OneShot
+            //    (TD-009, user-ordered extension 2026-07-23: note-detached
+            //    fixed-pitch playback at the bake root; STRETCH sweeps
+            //    0.25..4x, P.TRIM +/-24 st). PcmOsc3's Cycle increment law
+            //    deliberately ignores speedMul (v2 bit-parity), so the
+            //    varispeed is folded into baseFreq here instead -- identical
+            //    audible result for a single-cycle wave (rate IS pitch).
+            //    Cycle+NORMAL stays the untouched note-tracked v2 path.
             const bool stretchMode = (params_.hitPlay == 1);
             double baseFreq = 440.0 * std::pow(2.0, pitchSemis / 12.0);     // note-tracked
             double speedMul = 1.0;
             bool   loopGranular = false;
             double morphInc = 0.0;
-            if (waveType_ == rompler::bank3::WaveType::OneShot && stretchMode) {
+            if ((waveType_ == rompler::bank3::WaveType::OneShot
+                 || waveType_ == rompler::bank3::WaveType::Cycle) && stretchMode) {
                 double hs = params_.hitStretch;
                 if (hs < 0.0) hs = 0.0; else if (hs > 1.0) hs = 1.0;
                 const double speed = 0.25 * std::pow(2.0, 4.0 * hs);        // 0.25..4x
                 const double trim  = std::pow(2.0, params_.hitPitchTrim / 12.0);
                 baseFreq = rootHz_;
                 speedMul = speed * trim;
+                if (waveType_ == rompler::bank3::WaveType::Cycle) {
+                    baseFreq = rootHz_ * speedMul;   // TD-009: Cycle inc law has no
+                    speedMul = 1.0;                  // speedMul -> fold into freq
+                }
             } else if (waveType_ == rompler::bank3::WaveType::Loop && stretchMode) {
                 double v = params_.loopRate + (double)m.mtxLoopRateAdd;
                 if (v < 0.0) v = 0.0; else if (v > 1.0) v = 1.0;

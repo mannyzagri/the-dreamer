@@ -81,6 +81,14 @@ public:
     juce::String presetCategory(int index) const;
     juce::var    getPresetList() const;     // Array<{name,category}> for editors
 
+    // TD-010: name of the last successfully loaded USER preset ("" = none /
+    // factory). Set by loadUserPreset, cleared by applyPreset/resetToInit
+    // (so any factory or INIT load overrides it). Message thread only; the
+    // editor reads it to display the real patch name, and get/setState
+    // persist it so a DAW session reload shows the user patch, not a stale
+    // factory index.
+    const juce::String& getLoadedUserPresetName() const noexcept { return loadedUserPresetName; }
+
     // Bank-authoritative wave list (bank3 order): Array<{category,name,tag}>,
     // tag "" cycle / "ENS" loop / "SHOT" one-shot. The GUI wave overlay reads
     // this so loop/hit entries show the REAL bank names, not placeholders.
@@ -161,6 +169,7 @@ private:
     };
     std::vector<Preset> presets;
     int  currentProgram = 0;
+    juce::String loadedUserPresetName;   // TD-010 (message thread; "" = factory/INIT)
     void loadFactoryPresets();   // construction only; never on the audio thread
 
     dreamer::DreamSynth   synth;

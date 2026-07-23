@@ -17,10 +17,19 @@
 //   [s13 varispd]  ONESHOT STRETCH speed ratio = 0.25x @0, 1.0x @0.5, 4x @1.0
 //                  (log map); pitchtrim offsets semitones; STRETCH is note-
 //                  detached; NORMAL plays note-tracked.
+//   [cycle_stretch] TD-009 (user-ordered extension 2026-07-23): Cycle+STRETCH
+//                  is s13 varispeed with OneShot semantics (note-detached at
+//                  the bake root, STRETCH 0.25..4x, P.TRIM +/-24 st; folded
+//                  into baseFreq because the Cycle inc law has no speedMul).
+//                  Cycle+NORMAL renders bit-identical regardless of the
+//                  STRETCH knob and stays note-tracked (ZC pitch follows the
+//                  note); Cycle+STRETCH ZC pitch is note-INDEPENDENT and
+//                  follows hitStretch/trim.
 
 #include <immintrin.h>
 #include <cstdio>
 #include <cstdint>
+#include <cstring>
 #include <cmath>
 #include <vector>
 
@@ -235,6 +244,111 @@ static void testVarispeed()
     CHECK(approx(nrm.incSamplesForTest(), 2.0, 1e-3), "NORMAL note-tracked (oct = 2x)");
 }
 
+//============================================================ cycle_stretch
+// TD-009: PLAY MODE STRETCH on Cycle waves = s13 varispeed, OneShot semantics.
+// Rendered through the full DreamSynth (buildPatch-analogue -> Tone -> osc) so
+// the DreamVoice control-rate branch itself is under test, not just the osc.
+static int findBasicSawCycle()
+{
+    for (int i = 0; i < b3::kNumWaveforms; ++i) {
+        const auto& w = b3::kWaveforms[(size_t)i];
+        if (w.type == b3::WaveType::Cycle
+            && std::strcmp(w.category, "Basic") == 0
+            && std::strcmp(w.name, "Saw") == 0)
+            return i;
+    }
+    return kCycleIdx;   // fallback: first cycle
+}
+
+static std::vector<float> renderCycleTone(int sawIdx, int note, int hitPlay,
+                                          double hitStretch, double pitchTrim,
+                                          int nSamples)
+{
+    dreamer::DreamSynth synth;
+    synth.prepare(44100.0);
+    auto& p = synth.patch();
+    p.tone[0] = dreamer::ToneParams{};
+    p.tone[0].enabled       = true;
+    p.tone[0].waveIndex     = sawIdx;               // Basic Saw cycle
+    p.tone[0].level         = 0.9;
+    p.tone[0].cutoffHz      = 18000.0;
+    p.tone[0].tvfKeyFollow  = 0.0;
+    p.tone[0].tvfEnvAmount  = 0.0;
+    p.tone[0].tvaA = 0.001; p.tone[0].tvaS = 1.0; p.tone[0].tvaR = 0.5;
+    p.tone[0].tvfA = 0.001; p.tone[0].tvfS = 1.0;
+    p.tone[0].hitPlay       = hitPlay;
+    p.tone[0].hitStretch    = hitStretch;
+    p.tone[0].hitPitchTrim  = pitchTrim;
+    synth.updateLive();
+    synth.noteOn(note, 0.9f);
+    std::vector<float> buf((size_t)nSamples);
+    bool finite = true;
+    for (int i = 0; i < nSamples; ++i) {
+        float l = 0, r = 0; synth.process(l, r);
+        if (!std::isfinite(l) || !std::isfinite(r)) finite = false;
+        buf[(size_t)i] = l + r;
+    }
+    CHECK(finite, "cycle render finite");
+    return buf;
+}
+
+// fundamental via rising zero-crossing rate (saw: exactly one per period)
+static double zcHz(const std::vector<float>& b, int skip)
+{
+    int count = 0;
+    for (size_t i = (size_t)skip + 1; i < b.size(); ++i)
+        if (b[i - 1] <= 0.0f && b[i] > 0.0f) ++count;
+    const double secs = (double)(b.size() - (size_t)skip) / 44100.0;
+    return (double)count / secs;
+}
+
+static void testCycleStretch()
+{
+    const int sawIdx = findBasicSawCycle();
+    CHECK(b3::kWaveforms[(size_t)sawIdx].type == b3::WaveType::Cycle,
+          "cycle_stretch probe wave is a Cycle");
+    const float rootF = b3::kWaveforms[(size_t)sawIdx].rootHz;
+    const double root = rootF > 0.0f ? (double)rootF : 220.0;  // engine's guard
+    const int   kLen  = 44100 + 22050;      // 1.5 s
+    const int   kSkip = 11025;              // skip attack/settle (0.25 s)
+    const double tol  = 0.03;               // 3% on a ZC pitch estimate
+
+    // (a) NORMAL is untouched by the TD-009 branch: the STRETCH knob must have
+    //     ZERO effect (renders bit-identical across knob positions)...
+    const auto n69a = renderCycleTone(sawIdx, 69, 0, 0.0, 0.0, kLen);
+    const auto n69b = renderCycleTone(sawIdx, 69, 0, 0.5, 0.0, kLen);
+    const auto n69c = renderCycleTone(sawIdx, 69, 0, 1.0, 0.0, kLen);
+    bool identical = true;
+    for (size_t i = 0; i < n69a.size(); ++i)
+        if (n69a[i] != n69b[i] || n69a[i] != n69c[i]) { identical = false; break; }
+    CHECK(identical, "Cycle+NORMAL bit-identical for any hit_stretch value");
+
+    //     ...and stays note-tracked (ZC pitch follows the played note).
+    const auto n81 = renderCycleTone(sawIdx, 81, 0, 0.5, 0.0, kLen);
+    const double fN69 = zcHz(n69a, kSkip), fN81 = zcHz(n81, kSkip);
+    CHECK(approx(fN69, 440.0, 440.0 * tol), "Cycle+NORMAL note 69 -> ~440 Hz");
+    CHECK(approx(fN81 / fN69, 2.0, 2.0 * tol), "Cycle+NORMAL note-tracked (oct = 2x)");
+
+    // (b) STRETCH pitch is note-INDEPENDENT and follows hitStretch.
+    const auto s69 = renderCycleTone(sawIdx, 69, 1, 0.5, 0.0, kLen);
+    const auto s81 = renderCycleTone(sawIdx, 81, 1, 0.5, 0.0, kLen);
+    const double fS69 = zcHz(s69, kSkip), fS81 = zcHz(s81, kSkip);
+    CHECK(approx(fS69, root, root * tol), "Cycle+STRETCH @0.5 -> 1.0x root (note-detached)");
+    CHECK(approx(fS81 / fS69, 1.0, tol),  "Cycle+STRETCH pitch independent of note");
+
+    const auto sLo = renderCycleTone(sawIdx, 69, 1, 0.0,  0.0, kLen);
+    const auto sHi = renderCycleTone(sawIdx, 69, 1, 0.75, 0.0, kLen);
+    CHECK(approx(zcHz(sLo, kSkip), root * 0.25, root * 0.25 * tol),
+          "Cycle+STRETCH @0 -> 0.25x root");
+    CHECK(approx(zcHz(sHi, kSkip) / fS69, 2.0, 2.0 * tol),
+          "Cycle+STRETCH @0.75 -> 2x @0.5 (log law)");
+
+    //     P.TRIM offsets semitones (still varispeed).
+    const auto sTr = renderCycleTone(sawIdx, 69, 1, 0.5, 12.0, kLen);
+    CHECK(approx(zcHz(sTr, kSkip) / fS69, 2.0, 2.0 * tol),
+          "Cycle+STRETCH pitchtrim +12 -> 2x");
+}
+
 //============================================================ integration
 // Prove the params flow buildPatch-analogue -> Tone -> osc: a OneShot tone in
 // STRETCH-slow must render differently from the same tone in NORMAL.
@@ -287,6 +401,7 @@ int main()
     testVoicing();
     testLoopMode();
     testVarispeed();
+    testCycleStretch();
     testIntegration();
 
     if (failures == 0) std::printf("ALL CHECKS PASSED\n");
