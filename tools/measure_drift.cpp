@@ -48,7 +48,14 @@ static bool readWav(const std::string& path, std::vector<int16_t>& out, uint32_t
 static const int    SR   = 44100;
 static const double kRef = 220.0;
 static const int    kWin = (int)(0.3 * SR);        // 13230-sample window
-// search 165..294 Hz (period 150..267) -> +/-5 semitones around 220, no octave errors
+// search 165..294 Hz (period 150..267) -> +/-5 semitones around 220, no octave
+// errors. NOTE (v5): a handful of loops (evolving MORPH timbres, low-partial
+// PAD/VOX) have their STRONGEST autocorrelation periodicity at a subharmonic
+// (~110 Hz), so this tracker (and a wider one) locks to that octave and reports
+// a false "drift" -- an octave-error limitation, not a tuning defect (those
+// loops are synthesized at root 220 like the rest). Trust the bank root table +
+// ear for that subset; this tool is reliable only where the fundamental
+// dominates near 220.
 static const int    kMinLag = 150, kMaxLag = 267;
 
 // normalized-autocorrelation pitch of a Hann-windowed segment [start, start+kWin)
