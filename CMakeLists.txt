@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(TheDreamer VERSION 2.7.2 LANGUAGES C CXX)
+project(TheDreamer VERSION 2.7.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

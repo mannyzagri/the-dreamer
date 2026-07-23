@@ -470,9 +470,24 @@ function buildHeader() {
       h('div', 'row', { style: 'justify-content:space-between;font:800 12px var(--f-lcd);color:var(--lcd-ink);letter-spacing:.04em;white-space:nowrap' }, presetName, toneName),
       h('div', 'row', { style: 'gap:8px;font:800 11px var(--f-lcd);color:var(--lcd-ink);white-space:nowrap' }, touchedLine, meter)));
 
+  /* TD-011: stepper cycles FACTORY then the LIVE user bank (USER_PRESETS read at click, wrap both ways); position derives from UI.presetSel so browser-initiated loads and refreshUserBank() mutations carry through. ⚠ GUI-Claude fold upstream. */
+  const stepPreset = d => {
+    const nf = PRESETS.length, total = nf + USER_PRESETS.length;
+    let cur = UI.presetSel.bank === 'USER' ? nf + UI.presetSel.i : UI.presetSel.i;
+    if (cur < 0 || cur >= total) cur = Math.min(Math.max(UI.preset, 0), nf - 1);
+    const n = (cur + d + total) % total;
+    if (n < nf) {
+      UI.preset = n; UI.presetSel = { bank: 'FACTORY', i: n }; UI.headerName = null;
+      Bridge.fn('loadPreset')(n); refreshHeader();
+    } else {
+      const p = USER_PRESETS[n - nf];
+      UI.presetSel = { bank: 'USER', i: n - nf }; UI.renameBuf = p.name;
+      Bridge.fn('loadUserPreset')(p.name).then(() => { UI.headerName = p.name; refreshHeader(); });
+    }
+  };
   const steppers = h('div', 'col', { style: 'gap:3px;margin-right:6px' },
-    h('div', 'step', { style: 'width:22px;height:19px', onclick: () => { UI.preset = (UI.preset + PRESETS.length - 1) % PRESETS.length; UI.presetSel = { bank: 'FACTORY', i: UI.preset }; UI.headerName = null; Bridge.fn('loadPreset')(UI.preset); refreshHeader(); } }, '\u25B2'),
-    h('div', 'step', { style: 'width:22px;height:19px', onclick: () => { UI.preset = (UI.preset + 1) % PRESETS.length; UI.presetSel = { bank: 'FACTORY', i: UI.preset }; UI.headerName = null; Bridge.fn('loadPreset')(UI.preset); refreshHeader(); } }, '\u25BC'));
+    h('div', 'step', { style: 'width:22px;height:19px', onclick: () => stepPreset(-1) }, '\u25B2'),
+    h('div', 'step', { style: 'width:22px;height:19px', onclick: () => stepPreset(1) }, '\u25BC'));
 
   // right cluster: MIDI learn, meters, master, LIM/panic, power
   const midiLed = h('div', 'led');
@@ -603,7 +618,8 @@ function buildToneEdit() {
 
   // middle compartment
   let comp;
-  if (isSHOT() && P('hitPlay').get() === 1)
+  /* TD-009: CYCLE+STRETCH is real varispeed (same hit_stretch/hit_pitchtrim) — live STRETCH/P.TRIM for any non-ENS wave in STRETCH mode; NORMAL stays greyed. ⚠ GUI-Claude fold upstream. */
+  if (!isENS() && P('hitPlay').get() === 1)
     comp = h('div', 'row', { style: 'gap:4px;margin-left:28px' }, Knob(P('hitStretch'), 'STRETCH'), Knob(P('hitTrim'), 'P.TRIM'));
   else if (isENS() && P('hitPlay').get() === 1) {
     const synced = P('loopSync').get();
@@ -1126,12 +1142,18 @@ let mL = 0, mR = 0, beamAngle = 0;
 let realMeters = null;
 window.uiMeters = m => { if (m && typeof m.l === 'number' && typeof m.r === 'number') realMeters = m; };
 
-/* B9: host program push — editor calls window.uiProgram({index,name}) on program
- * change (index 0 = INIT, 1..N = factory). Defensive: no error if fields absent.
+/* B9/TD-010: host program push — editor calls window.uiProgram({index,name,user})
+ * on program change AND name changes (index 0 = INIT, 1..N = factory; user:true =
+ * user-preset name verbatim + stepper sync). Defensive: no error if fields absent.
  * ⚠ GUI-Claude fold upstream. */
 window.uiProgram = p => {
   if (!p || typeof p.index !== 'number') return;
-  if (p.index > 0 && p.index <= PRESETS.length) {
+  if (p.user) {
+    const nm = p.name != null ? String(p.name) : null;
+    UI.headerName = nm;
+    const ui = nm != null ? USER_PRESETS.findIndex(x => x.name === nm) : -1;
+    if (ui >= 0) UI.presetSel = { bank: 'USER', i: ui };
+  } else if (p.index > 0 && p.index <= PRESETS.length) {
     UI.preset = p.index - 1; UI.presetSel = { bank: 'FACTORY', i: UI.preset }; UI.headerName = null;
   } else {
     UI.headerName = p.index === 0 ? 'INIT' : (p.name != null ? String(p.name) : null);
@@ -1330,7 +1352,11 @@ function build() {
   /* B5: version silk from the binary (getInfo), literal fallback for browser QA.
    * User-sanctioned text wiring. ⚠ GUI-Claude fold upstream. */
   const verSilk = h('div', null, { style: "position:absolute;right:34px;top:626px;font:600 7.5px var(--f-silk);color:var(--silk-dim);letter-spacing:.16em;z-index:6" }, 'VER 1.0');
-  Bridge.fn('getInfo')().then(info => { if (info && info.version) verSilk.textContent = 'VER ' + info.version; }).catch(() => {});
+  Bridge.fn('getInfo')().then(info => {
+    if (info && info.version) verSilk.textContent = 'VER ' + info.version;
+    /* TD-010: defensive boot header init — preset-name field may be absent; routed through the uiProgram receiver. ⚠ GUI-Claude fold upstream. */
+    if (info && info.presetName) window.uiProgram({ index: typeof info.presetIndex === 'number' ? info.presetIndex : -1, name: info.presetName, user: !!info.presetUser });
+  }).catch(() => {});
   panel.append(verSilk);
   document.getElementById('root').append(panel);
   hydrate(); startScope(); fitToWindow(); drawRadar();
