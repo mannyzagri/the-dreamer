@@ -3,6 +3,26 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-23 (NEW SOUND LIBRARY v5 — replaces v3/v4 loops) — **RC 2.6.0**.
+  User directive: the previous outsourced bakes (v3/v4 static loops) are
+  completely replaced by **dreamer-library-v5.zip** (share). v5 = 130 new loop
+  WAVs (same LOCKED families/counts/names → wave indices unchanged, presets
+  still map) + the full bake sources (bake_final.py, bake_loops.py,
+  akwf_feats.json, fam_sources.json). Integration: overwrote assets/loops
+  (130), re-baked LoopBankData.h + WaveNormTable.h (per-wave −8 dBFS loudness
+  recomputed for v5 RMS — the TD-004 [loudness] guard caught the stale table),
+  updated assets/library-src provenance. **HITs (10) unchanged** (v5 hits
+  byte-identical → ShotBankData.h untouched). Roots stay all-220 (v5
+  synthesized at 220 nominal, drift=0 — verified flat <0.18¢ on the trackable
+  loops; supersedes the 2.5.5 TD-002 correction). validator dsp 11/11, bank
+  tests pass (counts/roots/12-bit/seam). No param change → reload.
+  ⚠ **Presets:** the 47 factory presets reference wave SLOTS; v5 puts NEW
+  timbres in those slots, so presets now play v5's sounds — they may need an
+  ear-pass/re-voice. ⚠ **Tuning tool:** ~9 loops (evolving MORPH + low-partial
+  PAD/VOX) have a strong subharmonic that octave-errors measure_drift; they are
+  at root 220 by the bake's construction + bank [intune]=0, but ear-confirm
+  those families.
+
 - 2026-07-23 (TD-005 preset envelope refresh + TD-006 DreamPlane level) —
   **RC 2.5.6**. Two user reports:
   (TD-005) Loading a preset didn't refresh the ENVELOPE display — it stayed at

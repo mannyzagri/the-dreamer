@@ -3,7 +3,16 @@
 > Read AFTER PROJECT-NOTES.md STATE + CLAUDE.md. Overwrite-only, current open
 > loop only (superseded story lives in CHANGELOG.md).
 
-## Where things stand — 2.5.6 RELEASED + DEPLOYED (TD-001/002/003/004/005/006 fixed), ear+eye gate pending
+## Where things stand — 2.6.0 RELEASED + DEPLOYED (NEW v5 LIBRARY + TD-001..006 fix stack), ear+eye gate pending
+
+- **2.6.0 = new v5 sound library** (130 loops replace v3/v4; same slots, new
+  content; HITs unchanged). See STATE "Sound library (v5)" row. Bake sources
+  now in assets/library-src. Presets play v5 timbres → may need re-voice.
+- measure_drift octave-errors on ~9 v5 loops (subharmonic) — tool limit, not a
+  tuning defect (STATE row). Ear-confirm PAD/VOX/MORPH pitch.
+- The 2.5.2–2.5.6 fixes (noise/loops/resize/loudness/preset-envelope/DreamPlane)
+  are all still in and deployed under 2.6.0.
+
 
 - **TD-005** preset-load envelope refresh (app.js wiring), **TD-006** DreamPlane
   level-match (ZPlane kMakeup 0.55) — both in 2.5.6, validator 11/11.

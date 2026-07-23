@@ -1,5 +1,24 @@
 # The Dreamer — Release Notes
 
+## 2.6.0 — new sound library (released 2026-07-23, deployed both targets)
+
+### Changed
+- **All 130 ENS loops are replaced with the new v5 sound library.** Same slots
+  and names, brand-new content — and every loop is in tune (the old mid-loop
+  drift is gone at the source). The 10 HIT one-shots are unchanged.
+
+### Heads-up
+- **Factory presets** now play the new v5 timbres in their loop slots — they
+  still load, but some may want a fresh ear-pass / re-voice since the underlying
+  sounds changed.
+
+### Upgrading
+- No parameter change → **reload the instance** (header **2.6.0**). Best
+  explored by browsing the ENS waves and the factory presets.
+
+---
+
+
 User-facing notes per release (what changed for you, what to do). The full
 engineering history lives in CHANGELOG.md; deep-dive incident reports live in
 validation/.

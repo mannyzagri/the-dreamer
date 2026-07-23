@@ -4,13 +4,16 @@
 > block. STATE is OVERWRITE-ONLY: update it in place as the last act of a work
 > pass — never append a second STATE block.
 
-## STATE (updated 2026-07-23, RC 2.5.6 — TD-005 preset envelope refresh + TD-006 DreamPlane level; stack: 2.5.5 loop-detune / 2.5.4 loudness / 2.5.3 GUI-fit / 2.5.2 noise; ear pass pending)
+## STATE (updated 2026-07-23, RC 2.6.0 — NEW v5 SOUND LIBRARY (replaces v3/v4 loops); + the 2.5.2–2.5.6 fix stack; ear pass pending)
 
-> History (0.1.0 … 2.5.5) lives in CHANGELOG.md. This block is CURRENT-ONLY.
+> History (0.1.0 … 2.5.6) lives in CHANGELOG.md. This block is CURRENT-ONLY.
 
 | Item | Value |
 |---|---|
-| Deployed version | **2.5.6 RC** — binary literal `2.5.6`, `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root), build↔local↔share SHA-identical, pluginval 8. **No param change → reload**; header must read 2.5.6. `juce_add_plugin VERSION ${PROJECT_VERSION}`. |
+| Deployed version | **2.6.0 RC** — binary literal `2.6.0`, `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root), build↔local↔share SHA-identical, pluginval 8. **No param change → reload**; header must read 2.6.0. `juce_add_plugin VERSION ${PROJECT_VERSION}`. |
+| Sound library (v5) | **dreamer-library-v5.zip** (share, \\VBOXSVR\vagrant\The Dreamer\) REPLACES v3/v4 loops. 130 NEW loop WAVs, SAME locked families/counts/names (indices unchanged). assets/loops overwritten; LoopBankData.h + WaveNormTable.h re-baked (WaveNorm −8 dBFS recomputed for v5 RMS). HITs (10) unchanged (byte-identical). Roots all-220 (v5 drift=0 bake, verified flat on trackable loops). Bake sources now in assets/library-src (bake_final.py/bake_loops.py/akwf_feats.json/fam_sources.json — Route A inputs finally in-repo). v3/v4 zips still on share for reference. |
+| ⚠ Presets vs v5 | 47 factory presets reference wave SLOTS → now play v5 timbres → may need re-voice/ear-pass (loads fine, no break). |
+| ⚠ measure_drift limit | tools/measure_drift.cpp octave-errors on ~9 v5 loops (evolving MORPH + low-partial PAD/VOX; strong subharmonic) → false huge "drift". They're at 220 by bake construction + bank [intune]=0. Ear-confirm those families. A robust (FFT/HPS) tuning check is a possible future tool. |
 | TD-005 (preset envelope refresh) | ✅ FIXED 2.5.6 — app.js renderEnv now subscribed to all env params (wiring-only). ⚠ **GUI-Claude fold upstream** (handoff-overwrite class). Other composites already refreshed. |
 | TD-006 (DreamPlane level) | ✅ FIXED 2.5.6 — ZPlaneFilter kMakeup 1.0→0.55 (−5.2 dB, matches pack mean; resonant peak ~6.4 dB kept). Ear-tunable. NOTE: full 14-type bank spans ~13 dB (HP +8, Formant −4, DreamPlane was +9.5 vs LP24) — a complete level-match is a separate optional task. |
 | TD-007 (swap filter banks) | ⏸ SCOPED + DEFERRED (user confirmed direction): **tone filter gets the 14-type selector (incl. DreamPlane); both global filters become simple LP/LP12/BP/HP**. Big change — breaks all presets (flt1/flt2_type + tvf_mode semantics swap → migration pass on 47 factory + user banks), param-list change → Cubase FULL RE-SCAN, mod-matrix Cut1/Cut2 + flt2_morph re-home to tone, GUI filter sections swap, 4× exotic filters (per-tone CPU/rule-1 Rhino/DreamPlane per voice). Do AFTER the user's ear-pass on 2.5.x. |
