@@ -683,6 +683,22 @@ function buildToneEdit() {
     paintCurve();
   }
   renderEnv();
+  /* --- preset-load refresh wiring (bridge seam only) ------------------------
+   * renderEnv() rebuilds the whole ENVELOPE section (route/tone buttons, title,
+   * sub, A/D/S/R sliders + paintCurve) from LIVE param values, but it was only
+   * invoked at build and on user gesture — never on external param change. So a
+   * preset load mutated the A/D/S/R params yet the display stayed stale (TD bug).
+   * Subscribe the EXISTING renderEnv to every param it reads so an external
+   * change (preset load) re-renders it: the per-tone A/D/S/R (all 4 tones × the
+   * three ENV_ADSR destinations), the global env params (ENV_GLOB), and the
+   * per-tone override flags (ENV_OVR — drives the override dots + FOLLOWS/OVERRIDE
+   * sub-line). renderEnv only .get()s these params (never .set()), so this is a
+   * one-way read refresh with no feedback loop. */
+  ['AMP', 'FILT', 'AUX'].forEach(dest => {
+    ENV_GLOB[dest].forEach(gk => glob(gk).sub(renderEnv));
+    ENV_ADSR[dest].forEach(pk => TONES.forEach((_, t) => tone(pk, t).sub(renderEnv)));
+    TONES.forEach((_, t) => tone(ENV_OVR[dest], t).sub(renderEnv));
+  });
 
   const tvfRow = h('div', 'row', { style: 'align-items:flex-start' },
     tvfSection,

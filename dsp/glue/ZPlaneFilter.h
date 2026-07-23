@@ -83,7 +83,13 @@ private:
 
     static constexpr double kRefHz  = 1000.0;   // frames authored at this cutoff
     static constexpr float  kRmax   = 0.9975f;  // pole-radius stability clamp
-    static constexpr float  kMakeup = 1.0f;     // bells are unity in the passband
+    // TD (2.5.6): the 6 cascaded peaking sections accumulate output level, so
+    // DreamPlane measured +9.5 dB vs LP24 / +5.75 dB vs the mean of the other
+    // 13 types (probe: white noise, cut 2000, res 0.4) -- audibly the loudest.
+    // -5.2 dB makeup lands its broadband RMS on the pack mean (+0.5 dB) while
+    // keeping the resonant formant peak audible (~6.4 dB, was ~11.6). Ear-
+    // tunable single constant (down = quieter/tamer, up = louder/more resonant).
+    static constexpr float  kMakeup = 0.55f;    // level-match to the filter pack (was 1.0)
     static constexpr double kBoostDb = 11.0;    // per-section resonant boost
 
     // frame tables: {freqHz, radius} x 6 sections, x 3 frames.
