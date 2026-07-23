@@ -4,13 +4,15 @@
 > block. STATE is OVERWRITE-ONLY: update it in place as the last act of a work
 > pass — never append a second STATE block.
 
-## STATE (updated 2026-07-23, RC 2.5.4 — output +6 dB louder; on top of 2.5.3 GUI-fit + 2.5.2 noise fix; ear+eye pass pending)
+## STATE (updated 2026-07-23, RC 2.5.5 — TD-002 loop-detune fixed VM-side; on top of 2.5.4 loudness / 2.5.3 GUI-fit / 2.5.2 noise; ear pass pending)
 
-> History (0.1.0 … 2.5.3) lives in CHANGELOG.md. This block is CURRENT-ONLY.
+> History (0.1.0 … 2.5.4) lives in CHANGELOG.md. This block is CURRENT-ONLY.
 
 | Item | Value |
 |---|---|
-| Deployed version | **2.5.4 RC** — binary literal `2.5.4`, `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root), build↔local↔share SHA-identical, pluginval 8 SUCCESS. **No param change → reload, NO re-scan** (unless release tool says moduleinfo moved); header must read 2.5.4. `juce_add_plugin VERSION ${PROJECT_VERSION}`. |
+| Deployed version | **2.5.5 RC** — binary literal `2.5.5`, `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root), build↔local↔share SHA-identical, pluginval 8. **No param change → reload**; header must read 2.5.5. `juce_add_plugin VERSION ${PROJECT_VERSION}`. |
+| TD-002 (loop detune) | ✅ **FIXED in 2.5.5, VM-side (Route B)** — the mid-loop drift (±8-11¢) AND the layered-loop center spread (~11¢) were baked into the v3 WAVs; corrected the delivered audio (not the engine). Tools: tools/measure_drift.cpp (validated pitch tracker) + tools/correct_drift.cpp (time-varying resample → flat 220). Re-baked LoopBankData.h from corrected assets/loops. Verified all 130: drift <0.86¢, all on 220 ±0.7¢, inharmonic byte-identical, lengths floated ±0.5%. LoopRoots.h stays all-220. **If the true dreamer-library-v4.zip ever lands, it cleanly replaces this (drift=0 by construction).** Reversible: `git checkout assets/loops` + re-bake. |
+| Library / assets note | assets/loops now holds the **corrected (v4-equivalent) WAVs**; correct_drift was a one-time v3→flat transform (do NOT re-run it on the already-corrected loops). Loop lengths now vary continuously (natural 220-centered), loopStart 0, names/order/count LOCKED (218 waves, indices = preset refs). |
 | Output loudness (2.5.4) | **+6 dB** via D11 WaveNorm target −14→−8 dBFS RMS (tools/bake_wave_norm.cpp; re-baked WaveNormTable.h, uniform ×2, max 6.72 < 8.0 clamp). Measured INIT saw −21.5 dBFS RMS / −15.2 peak; 4-saw maxed −6.7 peak. Levers if more/less wanted: WaveNorm target (this), kVoiceHeadroom 0.5, master default 0.78. Guard: test_gain_staging [loudness] asserts −8 target. **Ear-check on the ear pass — if still too quiet/now too hot, iterate this one constant.** |
 | EAR+EYE GATE PENDING (one session, all three) | (1) **+6 dB loudness** feels right (TD-004); (2) panel fills+centers at open and every resize (TD-003); (3) SOLINA FIELDS @44.1 k play+idle 60 s stays clean (TD-001). |
 | TD-003 (GUI fit) | ✅ **FIXED in 2.5.3** (main `162b133`): app.js fitToWindow scaled by 0.8 (never filled >80%) + CSS flex centered the UNSCALED box → dead frame, "resize lags". Now full min-ratio scale + absolute/origin-0,0 scaled-box centering + boot rAF re-fit (rubber-rhino fit() reference; frontend-developer pass). ⚠ **upstream: GUI-Claude must fold into the face master** (handoff-overwrite class, like the 2.4.1 preset-load fix). |

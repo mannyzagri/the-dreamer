@@ -3,6 +3,27 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-23 (TD-002: mid-loop + layered detune fixed, VM-side re-tune) —
+  **RC 2.5.5**. User report: ENS loops (esp. 2+ layered) detune in the middle
+  of the loop. Root cause (verified, not a DSP bug): pitch drift baked into
+  the v3 WAVs by bake_final.py's `shared_drift` (Brownian bridge pinned ~220
+  at the loop ends → pitch peaks mid-loop, ±8-11¢) PLUS a per-loop mean offset
+  (~±5¢ across loops) that made layered loops beat. No engine compensation
+  existed to disable (roots already all-220). Fixed the DELIVERED WAVs on the
+  VM (Route B — no python, no wait on the v4 zip): new house tools
+  `tools/measure_drift.cpp` (normalized-autocorrelation pitch, validated vs the
+  reference ±8-11¢ figures) + `tools/correct_drift.cpp` (time-varying resample
+  flattening each tonal loop to CONSTANT 220 Hz; cubic, wrap-continuous seam,
+  12-bit requant; inharmonic METAL_*/3 metal-MORPHs passed through byte-
+  identical). Re-baked LoopBankData.h from the corrected assets/loops.
+  **Verified (independent measure_drift, all 130):** within-loop drift ±8-11¢
+  → worst **0.86¢**; between-loop centering ~11¢ spread → **1.0¢** (every
+  tonal loop on 220 ±0.7¢) → layered loops no longer beat; inharmonic byte-
+  identical; loop lengths floated ±~0.5% (loopStart 0, seam body-relative OK).
+  LoopRoots.h unchanged (all 220). validator dsp 11/11. Names/order/count
+  LOCKED. If the true v4 zip ever lands it cleanly replaces this. No param
+  change → reload. (Reversible: git checkout assets/loops + re-bake.)
+
 - 2026-07-23 (TD-004: output +6 dB louder) — **RC 2.5.4**. Measured the
   plugin as quiet (STATE-flagged "~10 dB quieter"): INIT single saw sat at
   −27.5 dBFS RMS / −21.2 peak — ~15 dB under a commercial soft-synth default,

@@ -3,7 +3,7 @@
 > Read AFTER PROJECT-NOTES.md STATE + CLAUDE.md. Overwrite-only, current open
 > loop only (superseded story lives in CHANGELOG.md).
 
-## Where things stand — 2.5.4 RELEASED + DEPLOYED (TD-001 + TD-003 + TD-004), ear+eye gate pending
+## Where things stand — 2.5.5 RELEASED + DEPLOYED (TD-001/003/004/002 all fixed), ear+eye gate pending
 
 - **TD-001 (0 dBFS noise)** fixed 2.5.2, **TD-003 (GUI dead frame/resize)**
   fixed 2.5.3, **TD-004 (+6 dB louder)** 2.5.4 — all deployed, pluginval 8.
@@ -12,9 +12,12 @@
   (no param change): (1) +6 dB loudness feels right (iterate the WaveNorm
   target if not); (2) panel fills+centers at open and every resize; (3)
   SOLINA FIELDS @44.1 k play+idle 60 s stays clean; panic clears every stage.
-- **TD-002 (mid-loop detune)**: VERIFIED nothing to disable DSP-side (roots
-  all 220, pitch = constant ratio) — the drift is baked in the v3 WAVs;
-  BLOCKED on dreamer-library-v4.zip (human-arranged python re-bake).
+- **TD-002 (loop detune)**: ✅ FIXED in 2.5.5 VM-side (Route B) — corrected the
+  baked drift + layered-center spread in the delivered WAVs via
+  tools/correct_drift.cpp (flat 220, verified <0.86¢ all 130). assets/loops is
+  now the corrected audio; do NOT re-run correct_drift on it. If the true
+  dreamer-library-v4.zip lands, it cleanly replaces (drift=0 by construction) —
+  overwrite assets/loops + re-bake, no correction needed.
 - After 2.5.x soaks green: STRIP the `DREAMER_TD001_TRACE` blocks from
   PluginProcessor.cpp (architect verdict: tracer retires once closed).
 - ⚠ GUI-Claude upstream: the TD-003 app.js fix is handoff-overwrite class —

@@ -6,6 +6,23 @@ validation/.
 
 ---
 
+## 2.5.5 — loops play in tune (released 2026-07-23, deployed both targets)
+
+### Fixed
+- **ENS loops no longer drift out of tune through the middle of the loop, and
+  layering two or more no longer beats.** The pitch wobble (±8-11¢, peaking
+  mid-loop) and the small loop-to-loop tuning spread were baked into the v3
+  sound files; every tonal loop is now flat and centered on its note (within
+  ~1¢). Percussive/inharmonic loops (METAL and the metal morphs) are
+  unchanged. No change to which loop sits on which wave slot.
+
+### Upgrading
+- No parameter change → **reload the instance** (header **2.5.5**). Best
+  heard on a held pad or two layered ENS loops — the slow detune in the
+  sustain is gone.
+
+---
+
 ## 2.5.4 — +6 dB louder (released 2026-07-23, deployed both targets)
 
 ### Changed
