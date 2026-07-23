@@ -3,6 +3,37 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-23 (AUDIT PHASE 2: face wiring — keyboard/fold/resize, real feeds,
+  staleness) — **RC 2.7.2**. User-reported: border-resize not scaling the
+  faceplate + "the hidden keyboard should be part of the resize whether
+  collapsed or not". Verified page-side fit() correct headless (1x/1.5x
+  shots) — the live defects were the UNCONSUMED native seams (audit B-list).
+  frontend-developer wiring pass (app.js only, all ⚠ GUI-Claude fold):
+  (1) **keybed → real MIDI** (noteOn/noteOff incl. pointer-leave, wheels →
+  pitchBend/modWheel with spring-back), **KEYS pill → keyboardFold()** native
+  (window aspect follows 660↔848), **fitToWindow base = live layout height**
+  (660 folded / 850 open) so face+keybed scale as one unit in both states +
+  post-fold rAF re-fit; (2) ui_global_offset → Bridge.local (dead-relay
+  phantom, OFFSET LED works session-local); (3) version silk from getInfo()
+  (was hardcoded VER 1.0); (4) real header meters via new window.uiMeters
+  receiver + LIM LED from getLimiterGR (both were simulations); (5) radar
+  READ-ONLY (no longer scribbles vec_phase at 60 fps; display phase advances
+  by the engine's 0.02·400^v law; RATE Hz readout corrected from 1000^v);
+  (6) MODFX list 4→7 (DIMENSION/ROTARY/BARBERPOLE reachable, no more
+  "undefined" LCD); (7) staleness: wave-class compartment + tone-LFO/LOOP
+  RATE/DELAY sync labels rebuild on external change (round(v*11) law),
+  prePost paint+sub, LO-FI PARAMS knob re-binds on lofi_pfocus; (8) user
+  preset SAVE/RENAME/DELETE re-pull getUserPresetList (invisible-save +
+  empty-bank index + numbering fixed); (9) header preset name tracks host
+  program changes via NEW PluginEditor uiProgram push-on-change (30 Hz timer
+  latch) + user-preset loads; FACTORY count from data. Headless verification:
+  1140×660, 1710×990, and keybed-OPEN 1140×850 shots all fill correctly.
+  Deliberately untouched (upstream decisions): lofi_alias bool-as-knob (C4),
+  KEY FLW ±63 display law (D1), dead fmtTime (D2), subscription accumulation
+  (D3). release.ps1 flow; re-scan REQUIRED (moduleinfo). NOTE: the user's
+  resize observation may predate the TD-003 fix (eye gate was pending since
+  2.5.3) — re-judge border-resize on THIS build after the re-scan.
+
 - 2026-07-23 (AUDIT PHASE 1: preset boilerplate purge + latent fixes) —
   **RC 2.7.1**. Follow-up to the four-agent full-code audit (GUI↔param parity,
   preset data, DSP plumbing, GUI display truth — findings in the session

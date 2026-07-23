@@ -1,4 +1,12 @@
-# GUI DEFECT SHEET — for the GUI-Claude face master (2026-07-23, plugin @ 2.7.1)
+# GUI DEFECT SHEET — for the GUI-Claude face master (2026-07-23, plugin @ 2.7.2)
+
+> **STATUS UPDATE (2.7.2)**: every item in sections B and C except C4 has been
+> FIXED by wiring in the shipped app.js (frontend-developer pass, all changes
+> carry `⚠ GUI-Claude fold upstream` comments) — they move to the section-A
+> FOLD list. Plus new: fitToWindow base = live layout height (660/850) so the
+> keybed is part of the resize in both fold states (user-stated requirement);
+> `window.uiProgram` receiver (editor pushes program changes). Still open for
+> upstream DESIGN decisions: C4 (lofi_alias) and the D-series.
 
 Audience: **GUI-Claude** (the face designer/owner). Source: four-agent full-code
 audit of the v16 production face against the 2.7.x engine, plus the wiring

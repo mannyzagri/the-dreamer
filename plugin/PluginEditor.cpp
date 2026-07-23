@@ -176,6 +176,23 @@ void TheDreamerEditor::timerCallback()
         webView->evaluateJavascript(
             "window.uiMeters && window.uiMeters({l:" + juce::String(processor.getMeterL(), 4)
             + ",r:" + juce::String(processor.getMeterR(), 4) + "});");
+
+    // Audit B9: the page's header preset name staled on host-side program
+    // changes (Cubase preset menu) — it only tracked GUI-initiated loads.
+    // Push {index,name} whenever the program moves; -1 forces the first push.
+    if (webView != nullptr)
+    {
+        const int prog = processor.getCurrentProgram();
+        if (prog != lastPushedProgram_)
+        {
+            lastPushedProgram_ = prog;
+            const auto name = processor.getProgramName(prog)
+                                  .replace("\\", "\\\\").replace("'", "\\'");
+            webView->evaluateJavascript(
+                "window.uiProgram && window.uiProgram({index:" + juce::String(prog)
+                + ",name:'" + name + "'});");
+        }
+    }
 }
 
 //==============================================================================

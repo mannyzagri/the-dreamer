@@ -138,7 +138,7 @@ const VOICINGS = ['SINGLE','OCT','POWER','DREAMY'];
 const SPREADS  = ['ADD9','MIN7','SUS2'];
 const LOOPMODES = ['FWD','PINGPONG'];
 const PLAYMODES = ['NORMAL','STRETCH'];
-const MODFX = ['CHORUS','FLANGER','PHASER','ENSEMBLE'];
+const MODFX = ['CHORUS','FLANGER','PHASER','ENSEMBLE','DIMENSION','ROTARY','BARBERPOLE'];   /* choice-7 parity with modfx_type — ⚠ GUI-Claude fold upstream */
 const DLYMODES = ['DIGITAL','TAPE','PONG'];
 const REVTYPES = ['ROOM','HALL','PLATE'];
 const MSRC = ['G-LFO 1','VEC PHS','AUX','VELO','WHEEL','G-LFO 2','G-AUX'];
@@ -273,7 +273,10 @@ const TONE_KIND = {
  * a relay to a nonexistent backend never delivers a value, which left the
  * ENVELOPE editor reading dead states (TD-005 root cause). UI-local until the
  * real global-env tier lands in DSP. */
-const V17_GLOB = new Set(['gAmpA','gAmpD','gAmpS','gAmpR','gFltA','gFltD','gFltS','gFltR','gAuxA','gAuxD','gAuxS','gAuxR']);
+/* + globOffset: ui_global_offset has NO backing APVTS param (B1) — as a live
+ * relay it bound a dead endpoint (LED never lit, state lost). Session-local
+ * like the v17 tier. ⚠ GUI-Claude fold upstream. */
+const V17_GLOB = new Set(['gAmpA','gAmpD','gAmpS','gAmpR','gFltA','gFltD','gFltS','gFltR','gAuxA','gAuxD','gAuxS','gAuxR','globOffset']);
 const V17_TONE = new Set(['ampOvr','filtOvr','auxOvr']);
 const _cache = new Map();
 function glob(key) {
@@ -312,7 +315,8 @@ function mtx(n, field) {
 const UI = { sel: 0, overlay: null, touched: { label: 'MORPH', disp: null, v: .52, bip: false },
   matrix: [{ s: 0, d: 3, a: .8 }, { s: 1, d: 4, a: .35 }, { s: 2, d: 0, a: .5 }],
   penv: { start: 0, end: .5, time: .4, loop: false }, presetSel: { bank: 'FACTORY', i: 0 },
-  renameBuf: '', preset: 0, midiLearn: false, kbdOpen: false, scale: 1, envDest: 'AMP', envAll: false };
+  renameBuf: '', preset: 0, midiLearn: false, kbdOpen: false, scale: 1, envDest: 'AMP', envAll: false,
+  headerName: null };   /* headerName: override for the header preset display (INIT / user preset / host push) */
 const listeners = new Set();               // components re-read UI-derived text
 const notify = () => listeners.forEach(f => f());
 function touch(label, v, bip, disp) { UI.touched = { label, v, bip, disp }; notify(); }
@@ -467,8 +471,8 @@ function buildHeader() {
       h('div', 'row', { style: 'gap:8px;font:800 11px var(--f-lcd);color:var(--lcd-ink);white-space:nowrap' }, touchedLine, meter)));
 
   const steppers = h('div', 'col', { style: 'gap:3px;margin-right:6px' },
-    h('div', 'step', { style: 'width:22px;height:19px', onclick: () => { UI.preset = (UI.preset + PRESETS.length - 1) % PRESETS.length; UI.presetSel = { bank: 'FACTORY', i: UI.preset }; Bridge.fn('loadPreset')(UI.preset); refreshHeader(); } }, '\u25B2'),
-    h('div', 'step', { style: 'width:22px;height:19px', onclick: () => { UI.preset = (UI.preset + 1) % PRESETS.length; UI.presetSel = { bank: 'FACTORY', i: UI.preset }; Bridge.fn('loadPreset')(UI.preset); refreshHeader(); } }, '\u25BC'));
+    h('div', 'step', { style: 'width:22px;height:19px', onclick: () => { UI.preset = (UI.preset + PRESETS.length - 1) % PRESETS.length; UI.presetSel = { bank: 'FACTORY', i: UI.preset }; UI.headerName = null; Bridge.fn('loadPreset')(UI.preset); refreshHeader(); } }, '\u25B2'),
+    h('div', 'step', { style: 'width:22px;height:19px', onclick: () => { UI.preset = (UI.preset + 1) % PRESETS.length; UI.presetSel = { bank: 'FACTORY', i: UI.preset }; UI.headerName = null; Bridge.fn('loadPreset')(UI.preset); refreshHeader(); } }, '\u25BC'));
 
   // right cluster: MIDI learn, meters, master, LIM/panic, power
   const midiLed = h('div', 'led');
@@ -494,7 +498,8 @@ function buildHeader() {
     h('div', 'lbl-sm', null, 'POWER'));
 
   refreshHeader = () => {
-    presetName.textContent = 'P' + String(UI.preset + 1).padStart(3, '0') + ' ' + PRESETS[UI.preset][1];
+    presetName.textContent = UI.headerName != null ? UI.headerName
+      : 'P' + String(UI.preset + 1).padStart(3, '0') + ' ' + (PRESETS[UI.preset] ? PRESETS[UI.preset][1] : '');
     toneName.textContent = 'TONE ' + TONES[UI.sel];
     const t = UI.touched;
     touchedLine.textContent = t.label + ' ' + (t.disp != null ? t.disp : (t.bip ? fmtBip(t.v) : String(Math.round(t.v * 127)).padStart(3, ' ')));
@@ -553,6 +558,14 @@ function buildToneEdit() {
   const P = k => tone(k, i);
   const w = () => WAVES[P('wave').get()];
   const isENS = () => w()[2] === 'ENS', isSHOT = () => w()[2] === 'SHOT';
+  /* C1: the wave-class compartment (ENS loop cluster / SHOT stretch) is chosen
+   * at build — an EXTERNAL wave/hit_play change (preset load, host automation)
+   * left the old class on screen. Rebuild only when the built class/hitPlay
+   * actually changed and this tone is still shown (no rebuild loops: read-only
+   * guards, rebuild sets nothing). ⚠ GUI-Claude fold upstream. */
+  const builtClass = (w() && w()[2]) || '', builtHit = P('hitPlay').get();
+  P('wave').sub(() => { if (UI.sel === i && (((w() && w()[2]) || '') !== builtClass)) rebuildToneEdit(); });
+  P('hitPlay').sub(v => { if (UI.sel === i && v !== builtHit) rebuildToneEdit(); });
 
   // ---- WAVE / SHAPE / PLAY / LOOP row
   const waveLcd = LcdMenu(P('wave'), WAVES, 'WAVE SELECT \u2014 TONE ' + TONES[i], 'width:170px;height:20px', true);
@@ -595,6 +608,10 @@ function buildToneEdit() {
   else if (isENS() && P('hitPlay').get() === 1) {
     const synced = P('loopSync').get();
     const rate = Knob(P('loopRate'), synced ? SYNCDIVS[P('loopBeats').get()] : 'LOOP RATE', { color: 'var(--ptr-yellow)', def: .5, fmt: v => Math.pow(4, (v - .5) * 2).toFixed(2) + '\u00d7' });
+    /* C2: label snapshot \u2014 track EXTERNAL sync/beats changes (GUI sync click
+     * already rebuilds). \u26a0 GUI-Claude fold upstream. */
+    P('loopSync').sub(v => { if (UI.sel === i && !!v !== !!synced) rebuildToneEdit(); });
+    P('loopBeats').sub(b => { if (P('loopSync').get()) rate._setLabel(SYNCDIVS[b]); });
     const syncLed = Led(P('loopSync'));
     const syncBtn = h('div', 'btn', { style: 'width:30px;height:14px', onclick: () => { const v = !P('loopSync').get(); P('loopSync').set(v); touch('LOOP SYNC', v ? 1 : 0); rebuildToneEdit(); } }, 'SYNC');
     const beats = Stepper(P('loopBeats'), SYNCDIVS, { lcd: true, readStyle: 'width:34px;height:14px', arrowStyle: 'width:13px;height:14px', label: 'LOOP BEATS' });
@@ -740,6 +757,10 @@ function buildToneEdit() {
     /* division law = engine's round(v*11) (DreamVoice.h toneLfoDivisionBeats) —
      * floor(v*12) disagreed at boundary values. ⚠ GUI-Claude fold upstream. */
     const rate = Knob(P(rk), synced ? SYNCDIVS[Math.round(P(rk).get() * 11)] : 'RATE', { size: 26, color: synced ? 'var(--ptr-yellow)' : null });
+    /* C2: label snapshot — external sync change rebuilds the row (color+label);
+     * rate motion while synced re-labels with round(v*11). ⚠ GUI-Claude fold upstream. */
+    P(sk).sub(v => { if (UI.sel === i && !!v !== !!synced) rebuildToneEdit(); });
+    P(rk).sub(v => { if (P(sk).get()) rate._setLabel(SYNCDIVS[Math.round(v * 11)]); });
     const syncLed = Led(P(sk));
     const syncBtn = h('div', 'btn', { style: 'width:32px;height:15px', onclick: () => { const v = !P(sk).get(); P(sk).set(v); touch(n + ' SYNC', v ? 1 : 0); rebuildToneEdit(); } }, 'SYNC');
     const shapeStep = Stepper(P(shk), WAVE_SHAPES, { lcd: true, readStyle: 'width:34px;height:16px', arrowStyle: 'width:14px;height:16px', label: n + ' SHAPE', onLcd: () => openMenu(n + ' SHAPE \u2014 TONE ' + TONES[i], WAVE_SHAPES, P(shk)) });
@@ -843,7 +864,7 @@ function buildVector() {
     h('div', 'lbl-sm', null, 'VECTOR RADAR \u00b7 PHASE'), h('div', 'row', { style: 'gap:4px;align-items:center' }, L('SHAPE'), shape));
 
   const knobs = h('div', 'col', { style: 'gap:6px;justify-content:space-around;padding:2px 0' },
-    Knob(glob('vphase'), 'PHASE', { size: 32, color: 'var(--ptr-yellow)' }), Knob(glob('orbRate'), 'RATE', { size: 32, fmt: v => { const hz = 0.02 * Math.pow(1000, v); return (hz < 1 ? hz.toFixed(2) : hz.toFixed(1)) + ' Hz'; } }),
+    Knob(glob('vphase'), 'PHASE', { size: 32, color: 'var(--ptr-yellow)' }), Knob(glob('orbRate'), 'RATE', { size: 32, fmt: v => { const hz = 0.02 * Math.pow(400, v); return (hz < 1 ? hz.toFixed(2) : hz.toFixed(1)) + ' Hz'; } }),   /* engine law 0.02*400^v (DreamVoice.h orbitRateHz) — ⚠ GUI-Claude fold upstream */
     ledToggle(glob('orbit'), 'ORBIT'), ledToggle(glob('venv'), 'P-ENV'),
     h('div', 'btn', { style: 'width:40px;height:14px', onclick: openPenv }, 'EDIT'));
   // relabel toggles
@@ -910,9 +931,18 @@ function buildFX() {
     const paintT = () => typeLcd.textContent = typeArr[glob(typeKey).get()]; paintT(); glob(typeKey).sub(paintT);
     const knobs = h('div', 'grow row', { style: 'justify-content:space-evenly;align-items:flex-start' },
       ...knobDefs.map(([k, l]) => {
-        const synced = syncKey && k === knobDefs[1][0] && glob(syncKey).get();
+        const isTime = syncKey && k === knobDefs[1][0];
+        const synced = isTime && glob(syncKey).get();
         /* division law = engine's round(v*11) (PluginProcessor delay-sync read). */
-        return Knob(glob(k), synced ? SYNCDIVS[Math.round(glob(k).get() * 11)] : l, { size: 26, color: synced ? 'var(--ptr-yellow)' : null });
+        const kn = Knob(glob(k), synced ? SYNCDIVS[Math.round(glob(k).get() * 11)] : l, { size: 26, color: synced ? 'var(--ptr-yellow)' : null });
+        if (isTime) {
+          /* C2: label snapshot — external sync change rebuilds the FX block
+           * (GUI sync click already does); time motion while synced re-labels
+           * with round(v*11). ⚠ GUI-Claude fold upstream. */
+          glob(syncKey).sub(v => { if (!!v !== !!synced) rebuildFX(); });
+          glob(k).sub(v => { if (glob(syncKey).get()) kn._setLabel(SYNCDIVS[Math.round(v * 11)]); });
+        }
+        return kn;
       }));
     const focus = h('div', 'lcd click', { style: 'width:52px;height:18px', onclick: () => cyc(glob(focusKey), focusArr.length, 1) });
     const paintF = () => focus.textContent = focusArr[glob(focusKey).get()]; paintF(); glob(focusKey).sub(paintF);
@@ -947,9 +977,12 @@ function openUtil() {
   bind(lofiFocus, LOFIFOCUS, 'lofiFocus'); bind(talkFocus, TALKFOCUS, 'talkFocus');
   // LO-FI PARAMS knob is focus-aware: BITS/SRATE/COMPAND/ALIAS each drive their own APVTS param
   const LOFI_IDS = ['lofiBits', 'lofiSrate', 'lofiCompand', 'lofiAlias'];
-  const lofiParamKnob = Knob(glob(LOFI_IDS[glob('lofiFocus').get()]), 'PARAMS', { size: 30, color: 'var(--ptr-yellow)' });
-  const prePost = h('div', 'btn', { style: 'width:88px;height:18px', onclick: () => { glob('prePost').set(!glob('prePost').get()); pp(); } });
-  const pp = () => prePost.textContent = (glob('prePost').get() ? 'POST' : 'PRE') + ' FILTERS'; pp();
+  let lofiParamKnob = Knob(glob(LOFI_IDS[glob('lofiFocus').get()]), 'PARAMS', { size: 30, color: 'var(--ptr-yellow)' });
+  /* C3: prePost gets the standard paint+sub (was the file's one sub-less
+   * widget — stale on external fx_prepost change while the modal is open).
+   * ⚠ GUI-Claude fold upstream. */
+  const prePost = h('div', 'btn', { style: 'width:88px;height:18px', onclick: () => { glob('prePost').set(!glob('prePost').get()); } });
+  const pp = () => prePost.textContent = (glob('prePost').get() ? 'POST' : 'PRE') + ' FILTERS'; pp(); glob('prePost').sub(pp);
   const row = (...k) => h('div', 'row', { style: 'gap:10px;align-items:center' }, ...k);
   const modal = h('div', 'modal', { onclick: e => e.stopPropagation() },
     h('div', 'menu-head', { style: "font:700 10px var(--f-silk);letter-spacing:.18em;color:var(--silk-hi)" }, h('span', null, null, 'UTILITY \u2014 LO-FI \u00b7 WIDTH \u00b7 TALK'), h('span', { style: 'color:var(--silk)' }, null, 'ESC=EXIT')),
@@ -958,6 +991,14 @@ function openUtil() {
     row(Led(glob('talkOn')), tglBtn('talkOn', 'TALK', 52), talkFocus, knob('talkParam', 'PARAMS', 'var(--ptr-yellow)')),
     h('div', 'row', { style: 'gap:10px;border-top:1px solid var(--frame);padding-top:10px' }, Led(glob('limiter_on')), tglBtn('limiter_on', 'LIMITER', 64), h('div', 'lbl-sm', null, 'OUTPUT BRICKWALL \u00b7 DEFAULT ON')),
     h('div', 'row', { style: 'gap:10px;border-top:1px solid var(--frame);padding-top:10px' }, h('div', 'lbl', null, 'LO-FI / WIDTH PLACEMENT'), prePost));
+  /* C3: re-bind the LO-FI PARAMS knob when lofi_pfocus changes (external or
+   * GUI) so LCD and knob always agree; only while this modal is still in the
+   * DOM. ⚠ GUI-Claude fold upstream. */
+  glob('lofiFocus').sub(() => {
+    if (!modal.isConnected) return;
+    const fresh = Knob(glob(LOFI_IDS[glob('lofiFocus').get()]), 'PARAMS', { size: 30, color: 'var(--ptr-yellow)' });
+    lofiParamKnob.replaceWith(fresh); lofiParamKnob = fresh;
+  });
   showOverlay(modal);
 }
 function tglBtn(key, text, w) {
@@ -975,10 +1016,19 @@ function openPenv() {
 }
 
 /* ---- PRESET BROWSER (factory + user bank) -------------------------------- */
+/* B8: the user bank was fetched once at boot — SAVE/RENAME/DELETE reopened the
+ * browser from the stale array (invisible saves, empty-bank index bug, auto-
+ * name numbering off the stale count). Re-pull getUserPresetList after every
+ * mutation before reopening. ⚠ GUI-Claude fold upstream. */
+function refreshUserBank() {
+  return Bridge.fn('getUserPresetList')()
+    .then(l => { if (Array.isArray(l)) { USER_PRESETS.length = 0; l.forEach(p => USER_PRESETS.push({ name: p.name, category: p.category || 'USER', bank: 'USER' })); } })
+    .catch(() => {});
+}
 function openPresetBrowser() {
   const factory = h('div', 'menu-list', { style: 'max-height:430px' });
   PRESETS.forEach((p, i) => {
-    const row = h('div', 'menu-row' + (UI.presetSel.bank === 'FACTORY' && UI.presetSel.i === i ? ' cur' : ''), { onclick: () => { UI.presetSel = { bank: 'FACTORY', i }; UI.preset = i; Bridge.fn('loadPreset')(i); refreshHeader(); reopenPreset(); } },
+    const row = h('div', 'menu-row' + (UI.presetSel.bank === 'FACTORY' && UI.presetSel.i === i ? ' cur' : ''), { onclick: () => { UI.presetSel = { bank: 'FACTORY', i }; UI.preset = i; UI.headerName = null; Bridge.fn('loadPreset')(i); refreshHeader(); reopenPreset(); } },
       h('span', null, { style: 'width:34px' }, 'P' + String(i + 1).padStart(3, '0')), h('span', null, { style: 'width:42px' }, p[0]), h('span', null, null, p[1]));
     factory.append(row);
   });
@@ -986,21 +1036,30 @@ function openPresetBrowser() {
   if (!USER_PRESETS.length) user.append(h('div', null, { style: 'padding:6px;font:800 9px var(--f-lcd);color:#3a6d52' }, '(NO USER PRESETS \u2014 SAVE ONE)'));
   USER_PRESETS.forEach((p, i) => {
     const seld = UI.presetSel.bank === 'USER' && UI.presetSel.i === i;
-    const row = h('div', 'menu-row', { style: seld ? 'color:#07070a;background:#7dffc0' : 'color:#7dffc0', onclick: () => { UI.presetSel = { bank: 'USER', i }; UI.renameBuf = p.name; Bridge.fn('loadUserPreset')(p.name); reopenPreset(); } },
+    const row = h('div', 'menu-row', { style: seld ? 'color:#07070a;background:#7dffc0' : 'color:#7dffc0', onclick: () => { UI.presetSel = { bank: 'USER', i }; UI.renameBuf = p.name; Bridge.fn('loadUserPreset')(p.name).then(() => { UI.headerName = p.name; refreshHeader(); }); reopenPreset(); } },
       h('span', null, { style: 'width:28px' }, 'U' + String(i + 1).padStart(2, '0')), h('span', null, null, p.name));
     user.append(row);
   });
   const field = h('input', 'field', { placeholder: 'RENAME SELECTED USER\u2026', value: UI.renameBuf, oninput: e => UI.renameBuf = e.target.value.toUpperCase() });
   const btn = (t, cls, fn) => h('div', 'btn', { style: 'flex:1;height:22px' + (cls || ''), onclick: fn }, t);
   const actions = h('div', 'row', { style: 'gap:5px' },
-    btn('SAVE', '', () => { Bridge.fn('saveUserPreset')('USER ' + String(USER_PRESETS.length + 1).padStart(2, '0')); UI.presetSel = { bank: 'USER', i: USER_PRESETS.length - 1 }; UI.renameBuf = USER_PRESETS[UI.presetSel.i].name; touch('SAVE PRESET', 1); reopenPreset(); }),
-    btn('RENAME', '', () => { if (UI.presetSel.bank === 'USER' && USER_PRESETS[UI.presetSel.i]) { Bridge.fn('renameUserPreset')(USER_PRESETS[UI.presetSel.i].name, UI.renameBuf); reopenPreset(); } }),
-    h('div', 'btn', { style: 'flex:1;height:22px;border-color:#7a2130;color:#ff8a97', onclick: () => { if (UI.presetSel.bank === 'USER' && USER_PRESETS[UI.presetSel.i]) { Bridge.fn('deleteUserPreset')(USER_PRESETS[UI.presetSel.i].name); UI.presetSel = { bank: 'FACTORY', i: 0 }; reopenPreset(); } } }, 'DELETE'));
-  const load = h('div', 'btn', { style: 'height:24px;background:#1e2547;color:var(--lcd-ink);font-size:9px;letter-spacing:.12em', onclick: () => { if (UI.presetSel.bank === 'USER') { const p = USER_PRESETS[UI.presetSel.i]; if (p) Bridge.fn('loadUserPreset')(p.name); } else { UI.preset = UI.presetSel.i; Bridge.fn('loadPreset')(UI.presetSel.i); refreshHeader(); } closeOverlay(); } }, 'LOAD SELECTED');
+    btn('SAVE', '', () => { refreshUserBank().then(() => {
+      const nm = 'USER ' + String(USER_PRESETS.length + 1).padStart(2, '0');
+      return Bridge.fn('saveUserPreset')(nm).then(refreshUserBank).then(() => {
+        const idx = USER_PRESETS.findIndex(p => p.name === nm);
+        UI.presetSel = { bank: 'USER', i: idx >= 0 ? idx : Math.max(0, USER_PRESETS.length - 1) };
+        UI.renameBuf = USER_PRESETS[UI.presetSel.i] ? USER_PRESETS[UI.presetSel.i].name : '';
+        touch('SAVE PRESET', 1); reopenPreset(); }); }); }),
+    btn('RENAME', '', () => { if (UI.presetSel.bank === 'USER' && USER_PRESETS[UI.presetSel.i]) { Bridge.fn('renameUserPreset')(USER_PRESETS[UI.presetSel.i].name, UI.renameBuf).then(refreshUserBank).then(() => {
+      const idx = USER_PRESETS.findIndex(p => p.name === UI.renameBuf);
+      if (idx >= 0) UI.presetSel = { bank: 'USER', i: idx };
+      reopenPreset(); }); } }),
+    h('div', 'btn', { style: 'flex:1;height:22px;border-color:#7a2130;color:#ff8a97', onclick: () => { if (UI.presetSel.bank === 'USER' && USER_PRESETS[UI.presetSel.i]) { Bridge.fn('deleteUserPreset')(USER_PRESETS[UI.presetSel.i].name).then(refreshUserBank).then(() => { UI.presetSel = { bank: 'FACTORY', i: 0 }; reopenPreset(); }); } } }, 'DELETE'));
+  const load = h('div', 'btn', { style: 'height:24px;background:#1e2547;color:var(--lcd-ink);font-size:9px;letter-spacing:.12em', onclick: () => { if (UI.presetSel.bank === 'USER') { const p = USER_PRESETS[UI.presetSel.i]; if (p) Bridge.fn('loadUserPreset')(p.name).then(() => { UI.headerName = p.name; refreshHeader(); }); } else { UI.preset = UI.presetSel.i; UI.headerName = null; Bridge.fn('loadPreset')(UI.presetSel.i); refreshHeader(); } closeOverlay(); } }, 'LOAD SELECTED');
   const box = h('div', null, { style: 'width:600px;max-height:540px;background:var(--lcd-bg);border:1px solid var(--frame);border-radius:4px;box-shadow:0 8px 40px #000;padding:12px;display:flex;flex-direction:column;gap:10px', onclick: e => e.stopPropagation() },
     h('div', 'menu-head', null, h('span', null, null, 'PRESET BROWSER'), h('span', null, null, 'ESC=EXIT')),
     h('div', 'row', { style: 'gap:12px;min-height:0' },
-      h('div', 'grow col', { style: 'gap:4px;min-height:0' }, h('div', 'lbl-hi', { style: 'color:var(--silk-hi)' }, 'FACTORY \u00b7 47'), factory),
+      h('div', 'grow col', { style: 'gap:4px;min-height:0' }, h('div', 'lbl-hi', { style: 'color:var(--silk-hi)' }, 'FACTORY \u00b7 ' + PRESETS.length), factory),   /* B9: live count, not a literal \u2014 \u26a0 GUI-Claude fold upstream */
       h('div', null, { style: 'width:1px;background:var(--frame);opacity:.5' }),
       h('div', 'col', { style: 'width:232px;gap:5px;min-height:0' }, h('div', 'lbl-hi', { style: 'color:#7dffc0' }, 'USER BANK'), user, field, actions, load,
         h('div', null, { style: 'font:600 7px var(--f-silk);color:var(--silk-dim)' }, 'FACTORY READ-ONLY \u00b7 SAVE = USER COPY'))));
@@ -1012,7 +1071,8 @@ function reopenPreset() { openPresetBrowser(); }
 function drawRadar() {
   if (!RADAR) return;
   const CX = 75, CY = 63, R = 62, BR = '#339E61', FT = '#268052';
-  const phi = glob('vphase').get() * 2 * Math.PI;
+  /* B6: dot orbits from live vec_phase + local display phase (read-only radar). */
+  const phi = ((glob('vphase').get() + dispPhase) % 1) * 2 * Math.PI;
   const kids = [];
   const grad = (id, stops, attrs = {}) => { const g = s('radialGradient', Object.assign({ id, cx: '50%', cy: '50%', r: '50%' }, attrs)); stops.forEach(([o, c, op]) => g.append(s('stop', { offset: o, 'stop-color': c, 'stop-opacity': op }))); return g; };
   const defs = s('defs');
@@ -1059,19 +1119,61 @@ function drawRadar() {
 function toneGain(i, phi) { const a = tone('dir', i).get() * 2 * Math.PI; const g = Math.max(0, Math.cos(phi - a)); const vint = tone('vint', i).get(); return (1 - vint) + vint * g * g; }
 
 let mL = 0, mR = 0, beamAngle = 0;
+
+/* B3: real output meters — the editor pushes window.uiMeters({l,r}) at 30 Hz.
+ * Receiver stores the latest peaks; tick() applies its existing peak-hold+decay.
+ * Browser (no __JUCE__) keeps the simulated feed. ⚠ GUI-Claude fold upstream. */
+let realMeters = null;
+window.uiMeters = m => { if (m && typeof m.l === 'number' && typeof m.r === 'number') realMeters = m; };
+
+/* B9: host program push — editor calls window.uiProgram({index,name}) on program
+ * change (index 0 = INIT, 1..N = factory). Defensive: no error if fields absent.
+ * ⚠ GUI-Claude fold upstream. */
+window.uiProgram = p => {
+  if (!p || typeof p.index !== 'number') return;
+  if (p.index > 0 && p.index <= PRESETS.length) {
+    UI.preset = p.index - 1; UI.presetSel = { bank: 'FACTORY', i: UI.preset }; UI.headerName = null;
+  } else {
+    UI.headerName = p.index === 0 ? 'INIT' : (p.name != null ? String(p.name) : null);
+  }
+  refreshHeader?.();
+};
+
+/* B4: LIM LED from the real limiter GR (native poll at tick cadence, one call
+ * in flight); browser QA keeps the mock heuristic. ⚠ GUI-Claude fold upstream. */
+let limGR = 0, limPending = false;
+function pollLimiter() {
+  if (limPending) return; limPending = true;
+  Bridge.fn('getLimiterGR')().then(g => { limGR = +g || 0; limPending = false; })
+    .catch(() => { limPending = false; });
+}
+
+/* B6: radar is READ-ONLY — the GUI no longer writes vec_phase (it fought host
+ * automation with a wrong rate law). A local display phase advances with the
+ * ENGINE law 0.02*400^v Hz (DreamVoice.h orbitRateHz) on top of the live
+ * vec_phase base. ⚠ GUI-Claude fold upstream. */
+let dispPhase = 0;
 function tick() {
-  if (glob('orbit').get() && !overlayEl) { const hz = 0.02 * Math.pow(1000, glob('orbRate').get()); glob('vphase').set((glob('vphase').get() + hz / 60) % 1); }
+  if (glob('orbit').get() && !overlayEl) { const hz = 0.02 * Math.pow(400, glob('orbRate').get()); dispPhase = (dispPhase + hz / 60) % 1; }
   beamAngle = (beamAngle + 0.0175) % (2 * Math.PI);   // steady clockwise radar sweep (velocity reduced 65%)
-  const phi = glob('vphase').get() * 2 * Math.PI;
+  const phi = ((glob('vphase').get() + dispPhase) % 1) * 2 * Math.PI;
   // meters (the header spectrum is driven separately by pollScope() → getScopeData FFT)
   if (HEADER_ANIM) {
-    const act = TONES.reduce((s2, n, i) => s2 + (tone('on', i).get() ? toneGain(i, phi) * tone('level', i).get() : 0), 0) / 4;
-    const m = glob('master').get();
-    mL = Math.max(mL * .82, m * (.45 + act * .8 + Math.random() * .12));
-    mR = Math.max(mR * .82, m * (.45 + act * .8 + Math.random() * .12));
+    if (Bridge.live) {
+      const src = realMeters || { l: 0, r: 0 };
+      mL = Math.max(mL * .82, src.l);
+      mR = Math.max(mR * .82, src.r);
+      pollLimiter();
+      HEADER_ANIM.limLed.classList.toggle('on', glob('limiter_on').get() && limGR > 0);
+    } else {
+      const act = TONES.reduce((s2, n, i) => s2 + (tone('on', i).get() ? toneGain(i, phi) * tone('level', i).get() : 0), 0) / 4;
+      const m = glob('master').get();
+      mL = Math.max(mL * .82, m * (.45 + act * .8 + Math.random() * .12));
+      mR = Math.max(mR * .82, m * (.45 + act * .8 + Math.random() * .12));
+      HEADER_ANIM.limLed.classList.toggle('on', glob('limiter_on').get() && (mL > .9 || mR > .9));
+    }
     HEADER_ANIM.mL.style.height = Math.round(Math.min(1, mL) * 100) + '%';
     HEADER_ANIM.mR.style.height = Math.round(Math.min(1, mR) * 100) + '%';
-    HEADER_ANIM.limLed.classList.toggle('on', glob('limiter_on').get() && (mL > .9 || mR > .9));
   }
   drawRadar();
   requestAnimationFrame(tick);
@@ -1130,10 +1232,11 @@ function hydrate() {
  * scales uniformly — exactly the JUCE AffineTransform::scale rule, done in CSS here. */
 function fitToWindow() {
   const panel = document.querySelector('.panel'); if (!panel) return;
-  /* Faceplate is a fixed 660px unit; the keybed extends BELOW it and must not
-   * rescale or move the face. Always fit the 660 faceplate — opening the keybed
-   * only reveals the bed under the blue KEYS band. */
-  UI.scale = Math.min(window.innerWidth / 1140, window.innerHeight / 660);
+  /* 1d: base height = CURRENT layout height (.panel 660 folded / 850 kbd-open),
+   * not a hardcoded 660 — the whole unit incl. the opened keybed scales into
+   * the window in both fold states (user-stated). ⚠ GUI-Claude fold upstream. */
+  const baseH = panel.offsetHeight || 660;
+  UI.scale = Math.min(window.innerWidth / 1140, window.innerHeight / baseH);
   /* CSS flex centers the UNscaled 1140×660 box, so the scaled panel sat inside a
    * dead frame (TD-003). Position absolutely from the top-left instead and center
    * the SCALED box ourselves (rubber-rhino fit() rule). offsetHeight is the
@@ -1166,9 +1269,12 @@ function buildKeyboard() {
       if (isPitch) w.append(h('div', null, { style: `position:absolute;left:0;width:32px;height:3px;background:#ff2b3e;box-shadow:0 0 4px rgba(255,43,62,.7);border-radius:1px;top:${57.5 + val * 20}px` }));
     };
     paint();
+    /* 1b: wheels drive the engine (pitchBend -1..+1 / modWheel 0..1 natives);
+     * pitch springs back to center on release, as before, and reports it.
+     * ⚠ GUI-Claude fold upstream. */
     w.addEventListener('pointerdown', e => { e.preventDefault(); const sy = e.clientY, s0 = val;
-      const mv = ev => { val = clamp(s0 + (sy - ev.clientY) / 118, isPitch ? -1 : 0, 1); touch(isPitch ? 'PITCH BEND' : 'MOD WHEEL', isPitch ? (val + 1) / 2 : val); paint(); };
-      const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (isPitch) { val = 0; paint(); } };
+      const mv = ev => { val = clamp(s0 + (sy - ev.clientY) / 118, isPitch ? -1 : 0, 1); touch(isPitch ? 'PITCH BEND' : 'MOD WHEEL', isPitch ? (val + 1) / 2 : val); paint(); Bridge.fn(isPitch ? 'pitchBend' : 'modWheel')(val); };
+      const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (isPitch) { val = 0; paint(); Bridge.fn('pitchBend')(0); } };
       addEventListener('pointermove', mv); addEventListener('pointerup', up); });
     bed.append(w);
   };
@@ -1176,12 +1282,31 @@ function buildKeyboard() {
   bed.append(h('div', null, { style: 'position:absolute;left:22px;top:12px;font:600 7px var(--f-silk);color:#9aa1d8;letter-spacing:.14em' }, 'PITCH'));
   bed.append(h('div', null, { style: 'position:absolute;left:81px;top:12px;font:600 7px var(--f-silk);color:#9aa1d8;letter-spacing:.14em' }, 'MOD'));
   const keys = h('div', null, { style: 'position:absolute;left:144px;top:0;right:0;bottom:0' });
-  const press = el => e => { e.preventDefault(); const orig = el.style.background; el.style.background = 'linear-gradient(180deg,#ffe9a0,#ffd23f)'; touch('NOTE ON', .5); setTimeout(() => el.style.background = orig, 200); };
-  for (let k = 0; k < 30; k++) { const wk = h('div', null, { style: `position:absolute;top:0;width:32.662px;height:170px;border-radius:0 0 3px 3px;box-shadow:1px 0 1px rgba(0,0,0,.35),inset 0 -3px 3px rgba(0,0,0,.25);cursor:pointer;left:${(k * 32.662).toFixed(2)}px;background:linear-gradient(180deg,#f0f1fb 0%,#c7cae0 100%)` }); wk.addEventListener('pointerdown', press(wk)); keys.append(wk); }
-  Array.from({ length: 30 }, (_, k) => k).filter(k => [0, 1, 3, 4, 5].includes(k % 7) && k < 29).slice(0, 21).forEach(k => { const bk = h('div', null, { style: `position:absolute;top:0;width:20px;height:104px;border-radius:0 0 3px 3px;box-shadow:0 3px 5px rgba(0,0,0,.5);cursor:pointer;z-index:2;left:${(k * 32.662 + 22.5).toFixed(2)}px;background:linear-gradient(180deg,#26283e 0%,#0c0d18 100%)` }); bk.addEventListener('pointerdown', press(bk)); keys.append(bk); });
+  /* 1a: keybed → real MIDI via the noteOn/noteOff natives. White key k of the
+   * 30-key bed maps C-major from C3 (MIDI 48): degree [0,2,4,5,7,9,11][k%7];
+   * blacks (per the existing layout: after whites 0,1,3,4,5 of each octave)
+   * are white+1. Release AND pointer-leave-while-held send noteOff (no stuck
+   * notes); the flash + touch() behavior is unchanged. ⚠ GUI-Claude fold upstream. */
+  const KEY_DEG = [0, 2, 4, 5, 7, 9, 11], KEY_BASE = 48;
+  const whiteMidi = k => KEY_BASE + Math.floor(k / 7) * 12 + KEY_DEG[k % 7];
+  const press = (el, note) => e => {
+    e.preventDefault();
+    const orig = el.style.background; el.style.background = 'linear-gradient(180deg,#ffe9a0,#ffd23f)';
+    touch('NOTE ON', .5); setTimeout(() => el.style.background = orig, 200);
+    Bridge.fn('noteOn')(note, 0.79);
+    let done = false;
+    const off = () => { if (done) return; done = true; Bridge.fn('noteOff')(note);
+      el.removeEventListener('pointerup', off); el.removeEventListener('pointerleave', off); removeEventListener('pointerup', off); };
+    el.addEventListener('pointerup', off); el.addEventListener('pointerleave', off); addEventListener('pointerup', off);
+  };
+  for (let k = 0; k < 30; k++) { const wk = h('div', null, { style: `position:absolute;top:0;width:32.662px;height:170px;border-radius:0 0 3px 3px;box-shadow:1px 0 1px rgba(0,0,0,.35),inset 0 -3px 3px rgba(0,0,0,.25);cursor:pointer;left:${(k * 32.662).toFixed(2)}px;background:linear-gradient(180deg,#f0f1fb 0%,#c7cae0 100%)` }); wk.addEventListener('pointerdown', press(wk, whiteMidi(k))); keys.append(wk); }
+  Array.from({ length: 30 }, (_, k) => k).filter(k => [0, 1, 3, 4, 5].includes(k % 7) && k < 29).slice(0, 21).forEach(k => { const bk = h('div', null, { style: `position:absolute;top:0;width:20px;height:104px;border-radius:0 0 3px 3px;box-shadow:0 3px 5px rgba(0,0,0,.5);cursor:pointer;z-index:2;left:${(k * 32.662 + 22.5).toFixed(2)}px;background:linear-gradient(180deg,#26283e 0%,#0c0d18 100%)` }); bk.addEventListener('pointerdown', press(bk, whiteMidi(k) + 1)); keys.append(bk); });
   bed.append(keys);
   bed.style.display = UI.kbdOpen ? 'block' : 'none';
-  tabBtn.addEventListener('click', () => { UI.kbdOpen = !UI.kbdOpen; const panel = document.querySelector('.panel'); if (panel) panel.classList.toggle('kbd-open', UI.kbdOpen); bed.style.display = UI.kbdOpen ? 'block' : 'none'; tabBtn.textContent = tabTxt(); fitToWindow(); });
+  /* 1c: fold also drives the NATIVE editor height (keyboardFold(folded):
+   * kBaseH 848 open / kFoldedH 660 folded), then re-fits on the next rAF so
+   * fitToWindow measures the post-fold host window. ⚠ GUI-Claude fold upstream. */
+  tabBtn.addEventListener('click', () => { UI.kbdOpen = !UI.kbdOpen; const panel = document.querySelector('.panel'); if (panel) panel.classList.toggle('kbd-open', UI.kbdOpen); bed.style.display = UI.kbdOpen ? 'block' : 'none'; tabBtn.textContent = tabTxt(); Bridge.fn('keyboardFold')(!UI.kbdOpen); fitToWindow(); requestAnimationFrame(fitToWindow); });
   frag.append(tab, bed);
   return frag;
 }
@@ -1202,7 +1327,11 @@ function build() {
   panel.append(row2);
   panel.append(buildKeyboard());
   panel.append(h('div', 'grip', { onpointerdown: gripResize, ondblclick: () => { UI.scale = 1; panel.style.transform = 'scale(1)'; } }));
-  panel.append(h('div', null, { style: "position:absolute;right:34px;top:626px;font:600 7.5px var(--f-silk);color:var(--silk-dim);letter-spacing:.16em;z-index:6" }, 'VER 1.0'));
+  /* B5: version silk from the binary (getInfo), literal fallback for browser QA.
+   * User-sanctioned text wiring. ⚠ GUI-Claude fold upstream. */
+  const verSilk = h('div', null, { style: "position:absolute;right:34px;top:626px;font:600 7.5px var(--f-silk);color:var(--silk-dim);letter-spacing:.16em;z-index:6" }, 'VER 1.0');
+  Bridge.fn('getInfo')().then(info => { if (info && info.version) verSilk.textContent = 'VER ' + info.version; }).catch(() => {});
+  panel.append(verSilk);
   document.getElementById('root').append(panel);
   hydrate(); startScope(); fitToWindow(); drawRadar();
   requestAnimationFrame(fitToWindow);   // re-fit after the WebView2 viewport settles (TD-003)
