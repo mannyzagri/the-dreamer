@@ -87,6 +87,11 @@ const Bridge = (() => {
       }
       return mockState(id, def);
     },
+    /* UI-local state for ids with NO backing APVTS param (the reserved v17
+     * global-env tier). Wrapping these in a relay when live binds them to a
+     * dead endpoint that never receives values — route them to the local
+     * store instead so they behave as plain UI state. */
+    local(id, def) { return mockState(id, def); },
     // Native processor functions (D3 scope, panic, presets, midi learn, user bank).
     // In the WebView these come from Juce.getNativeFunction(name); mocked otherwise.
     fn(name) {
@@ -258,10 +263,19 @@ const TONE_KIND = {
 };
 
 /* Param handle cache. glob(key) / tone(key, toneIdx). */
+/* v17-RESERVED tier: these ids exist ONLY in the GUI (no APVTS param, no relay,
+ * no DSP yet — STATE "v17 tier reserved"). They must NOT be wrapped in relays:
+ * a relay to a nonexistent backend never delivers a value, which left the
+ * ENVELOPE editor reading dead states (TD-005 root cause). UI-local until the
+ * real global-env tier lands in DSP. */
+const V17_GLOB = new Set(['gAmpA','gAmpD','gAmpS','gAmpR','gFltA','gFltD','gFltS','gFltR','gAuxA','gAuxD','gAuxS','gAuxR']);
+const V17_TONE = new Set(['ampOvr','filtOvr','auxOvr']);
 const _cache = new Map();
 function glob(key) {
   const id = GLOBAL_ID[key];
-  if (!_cache.has(id)) _cache.set(id, Bridge.state(KIND[key] || 'slider', id, GLOBAL_DEFAULTS[key]));
+  if (!_cache.has(id)) _cache.set(id, V17_GLOB.has(key)
+    ? Bridge.local(id, GLOBAL_DEFAULTS[key])
+    : Bridge.state(KIND[key] || 'slider', id, GLOBAL_DEFAULTS[key]));
   return _cache.get(id);
 }
 const WAVE_DEFAULTS = [3, 19, 27, 37];   // A/B/C/D initial wave index
@@ -272,7 +286,9 @@ function toneDefault(key, ti) {
 }
 function tone(key, ti) {
   const id = TONE_ID[key] + '_' + TONES[ti].toLowerCase();
-  if (!_cache.has(id)) _cache.set(id, Bridge.state(TONE_KIND[key] || 'slider', id, toneDefault(key, ti)));
+  if (!_cache.has(id)) _cache.set(id, V17_TONE.has(key)
+    ? Bridge.local(id, toneDefault(key, ti))
+    : Bridge.state(TONE_KIND[key] || 'slider', id, toneDefault(key, ti)));
   return _cache.get(id);
 }
 /* MOD MATRIX slots are real APVTS params: mtx{1..3}_src / _dst / _amt. */
@@ -621,11 +637,19 @@ function buildToneEdit() {
   const envBlock = h('div', 'row', { style: 'gap:10px;align-items:stretch;margin-left:12px;flex:1' },
     envRoute,
     h('div', 'col', { style: 'gap:6px;flex:1' }, envTone, h('div', 'row', { style: 'gap:10px;align-items:flex-end;justify-content:space-between' }, envLcd, envSliders)));
-  const envVal = (dest, all, idx) => (all || !P(ENV_OVR[dest]).get()) ? glob(ENV_GLOB[dest][idx]).get() : P(ENV_ADSR[dest][idx]).get();
+  /* The engine reads ONLY the per-tone A/D/S/R params (tva_/tvf_/aux_) — the
+   * "global" env tier is UI-local (v17 reserved, no DSP). So the display's
+   * source of truth is the per-tone params: that is what a preset load sets
+   * and what sounds. TONE view reads them directly; ALL view shows the local
+   * template and WRITES THROUGH to all four tones' real params (the previous
+   * global-only write was inert in the plugin). The old "copy template over
+   * all 4 stages on first touch" is gone — it stomped freshly loaded preset
+   * envelopes. */
+  const envVal = (dest, all, idx) => all ? glob(ENV_GLOB[dest][idx]).get() : P(ENV_ADSR[dest][idx]).get();
   function commitEnv(idx, v) {
     const dest = UI.envDest, all = UI.envAll, ov = ENV_OVR[dest], gk = ENV_GLOB[dest], pk = ENV_ADSR[dest];
-    if (all) glob(gk[idx]).set(v);
-    else { if (!P(ov).get()) { pk.forEach((k, j) => P(k).set(glob(gk[j]).get())); P(ov).set(true); } P(pk[idx]).set(v); }
+    if (all) { glob(gk[idx]).set(v); TONES.forEach((_, t) => tone(pk[idx], t).set(v)); }
+    else { P(pk[idx]).set(v); if (!P(ov).get()) P(ov).set(true); }
     touch(dest + ' ' + ['A','D','S','R'][idx], v);
   }
   function paintCurve() {

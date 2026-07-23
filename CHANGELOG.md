@@ -3,6 +3,39 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-23 (TD-005 REAL fix: envelope display wired to the real params;
+  v5 preset re-voice recovered + repaired) — **RC 2.6.1**. Session audit of
+  the previous pass found the 2.6.0 delivery half-landed:
+  (a) **TD-005 was not actually fixed by 2.5.6.** The subscription refresh
+  re-rendered the ENVELOPE section, but `envVal` read the v17-RESERVED
+  global-env tier (`gamp/gflt/gaux_env_*`, `*_ovr`) — ids that exist ONLY in
+  app.js (no APVTS param, no relay, no DSP). Live, those wrapped dead relays
+  that never receive a value, so the display could never show a loaded
+  preset's envelope; worse, the first drag copied that junk template over all
+  four per-tone A/D/S/R stages, stomping the loaded envelope. Wiring-only fix
+  (bridge seam, role-boundary safe): v17-reserved ids now route to a UI-local
+  store (`Bridge.local`) instead of dead relays; `envVal` reads the REAL
+  per-tone `tva_/tvf_/aux_` params (what the engine plays and presets set);
+  TONE edits write the touched stage directly (no template copy); ALL-mode
+  edits write through to all four tones' real params (previously inert in the
+  plugin). Cosmetic residue: the FOLLOWS GLOBAL/OVERRIDE sub-line + dots are
+  session-local until the real v17 global-env tier lands. ⚠ upstream:
+  GUI-Claude must fold this into the face master (handoff-overwrite class).
+  (b) **The v5 preset re-voice never shipped.** plugin/presets.json +
+  design-handoff/v6/wave-list-bank3.js were rewritten at 18:46, AFTER the
+  2.6.0 build (18:31) and never committed — the deployed 2.6.0 played v5
+  waves through the old v3-voiced presets. The re-voice (3,203 param changes,
+  166 wave-slot re-points into the v5 loop range 78-207) is now committed,
+  with three defects repaired: restored factory preset 0 **ETHEREAL DAWN**
+  (the rewrite had replaced it with a duplicate INIT — program 0 is already
+  native INIT; ETHEREAL DAWN uses only cycle waves 11/28/33/40, so verbatim
+  restore is v5-safe), dropped that duplicate INIT entry, fixed UTF-8
+  mojibake in the note field. check_presets: 47 presets, 219 ids ⊂ 281
+  APVTS, 0 unknown. No param-list change → Cubase reload (no re-scan).
+  validator 23/23 PASS, pluginval 8, deployed local + share SHA-identical.
+  ⚠ The re-voice itself is the previous session's un-auditioned work — the
+  v5 ear-pass judges it.
+
 - 2026-07-23 (NEW SOUND LIBRARY v5 — replaces v3/v4 loops) — **RC 2.6.0**.
   User directive: the previous outsourced bakes (v3/v4 static loops) are
   completely replaced by **dreamer-library-v5.zip** (share). v5 = 130 new loop
