@@ -3,7 +3,16 @@
 > Read AFTER PROJECT-NOTES.md STATE + CLAUDE.md. Overwrite-only, current open
 > loop only (superseded story lives in CHANGELOG.md).
 
-## Where things stand — 2.5.5 RELEASED + DEPLOYED (TD-001/003/004/002 all fixed), ear+eye gate pending
+## Where things stand — 2.5.6 RELEASED + DEPLOYED (TD-001/002/003/004/005/006 fixed), ear+eye gate pending
+
+- **TD-005** preset-load envelope refresh (app.js wiring), **TD-006** DreamPlane
+  level-match (ZPlane kMakeup 0.55) — both in 2.5.6, validator 11/11.
+- **TD-007 (filter-bank swap) SCOPED + DEFERRED** — see STATE row; user
+  confirmed "tone gets 14 types, global = LP/BP/HP"; big preset-breaking
+  change, do after the ear-pass.
+- ⚠ GUI-Claude upstream fold list now: TD-003 (fitToWindow) + TD-005
+  (renderEnv preset-refresh subscription) — both in app.js, both overwritten
+  by the next handoff unless folded into the face master.
 
 - **TD-001 (0 dBFS noise)** fixed 2.5.2, **TD-003 (GUI dead frame/resize)**
   fixed 2.5.3, **TD-004 (+6 dB louder)** 2.5.4 — all deployed, pluginval 8.

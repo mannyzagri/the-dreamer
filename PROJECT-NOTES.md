@@ -4,13 +4,16 @@
 > block. STATE is OVERWRITE-ONLY: update it in place as the last act of a work
 > pass — never append a second STATE block.
 
-## STATE (updated 2026-07-23, RC 2.5.5 — TD-002 loop-detune fixed VM-side; on top of 2.5.4 loudness / 2.5.3 GUI-fit / 2.5.2 noise; ear pass pending)
+## STATE (updated 2026-07-23, RC 2.5.6 — TD-005 preset envelope refresh + TD-006 DreamPlane level; stack: 2.5.5 loop-detune / 2.5.4 loudness / 2.5.3 GUI-fit / 2.5.2 noise; ear pass pending)
 
-> History (0.1.0 … 2.5.4) lives in CHANGELOG.md. This block is CURRENT-ONLY.
+> History (0.1.0 … 2.5.5) lives in CHANGELOG.md. This block is CURRENT-ONLY.
 
 | Item | Value |
 |---|---|
-| Deployed version | **2.5.5 RC** — binary literal `2.5.5`, `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root), build↔local↔share SHA-identical, pluginval 8. **No param change → reload**; header must read 2.5.5. `juce_add_plugin VERSION ${PROJECT_VERSION}`. |
+| Deployed version | **2.5.6 RC** — binary literal `2.5.6`, `The Dreamer.vst3` at C:\the-dreamer\ AND \\VBOXSVR\vagrant\ (share root), build↔local↔share SHA-identical, pluginval 8. **No param change → reload**; header must read 2.5.6. `juce_add_plugin VERSION ${PROJECT_VERSION}`. |
+| TD-005 (preset envelope refresh) | ✅ FIXED 2.5.6 — app.js renderEnv now subscribed to all env params (wiring-only). ⚠ **GUI-Claude fold upstream** (handoff-overwrite class). Other composites already refreshed. |
+| TD-006 (DreamPlane level) | ✅ FIXED 2.5.6 — ZPlaneFilter kMakeup 1.0→0.55 (−5.2 dB, matches pack mean; resonant peak ~6.4 dB kept). Ear-tunable. NOTE: full 14-type bank spans ~13 dB (HP +8, Formant −4, DreamPlane was +9.5 vs LP24) — a complete level-match is a separate optional task. |
+| TD-007 (swap filter banks) | ⏸ SCOPED + DEFERRED (user confirmed direction): **tone filter gets the 14-type selector (incl. DreamPlane); both global filters become simple LP/LP12/BP/HP**. Big change — breaks all presets (flt1/flt2_type + tvf_mode semantics swap → migration pass on 47 factory + user banks), param-list change → Cubase FULL RE-SCAN, mod-matrix Cut1/Cut2 + flt2_morph re-home to tone, GUI filter sections swap, 4× exotic filters (per-tone CPU/rule-1 Rhino/DreamPlane per voice). Do AFTER the user's ear-pass on 2.5.x. |
 | TD-002 (loop detune) | ✅ **FIXED in 2.5.5, VM-side (Route B)** — the mid-loop drift (±8-11¢) AND the layered-loop center spread (~11¢) were baked into the v3 WAVs; corrected the delivered audio (not the engine). Tools: tools/measure_drift.cpp (validated pitch tracker) + tools/correct_drift.cpp (time-varying resample → flat 220). Re-baked LoopBankData.h from corrected assets/loops. Verified all 130: drift <0.86¢, all on 220 ±0.7¢, inharmonic byte-identical, lengths floated ±0.5%. LoopRoots.h stays all-220. **If the true dreamer-library-v4.zip ever lands, it cleanly replaces this (drift=0 by construction).** Reversible: `git checkout assets/loops` + re-bake. |
 | Library / assets note | assets/loops now holds the **corrected (v4-equivalent) WAVs**; correct_drift was a one-time v3→flat transform (do NOT re-run it on the already-corrected loops). Loop lengths now vary continuously (natural 220-centered), loopStart 0, names/order/count LOCKED (218 waves, indices = preset refs). |
 | Output loudness (2.5.4) | **+6 dB** via D11 WaveNorm target −14→−8 dBFS RMS (tools/bake_wave_norm.cpp; re-baked WaveNormTable.h, uniform ×2, max 6.72 < 8.0 clamp). Measured INIT saw −21.5 dBFS RMS / −15.2 peak; 4-saw maxed −6.7 peak. Levers if more/less wanted: WaveNorm target (this), kVoiceHeadroom 0.5, master default 0.78. Guard: test_gain_staging [loudness] asserts −8 target. **Ear-check on the ear pass — if still too quiet/now too hot, iterate this one constant.** |

@@ -6,6 +6,21 @@ validation/.
 
 ---
 
+## 2.5.6 — preset envelope refresh + DreamPlane level (released 2026-07-23, deployed both targets)
+
+### Fixed
+- **Loading a preset now updates the envelope display.** It used to keep the
+  previous envelope shape even though the sound changed; it now redraws to the
+  loaded preset's A/D/S/R.
+- **The DreamPlane filter no longer sits louder than the other filter types.**
+  It's brought down ~5 dB to match the pack, while keeping its resonant
+  character. (Ear-tunable if you want it hotter or tamer.)
+
+### Upgrading
+- No parameter change → **reload the instance** (header **2.5.6**).
+
+---
+
 ## 2.5.5 — loops play in tune (released 2026-07-23, deployed both targets)
 
 ### Fixed

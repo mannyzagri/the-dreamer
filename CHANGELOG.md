@@ -3,6 +3,30 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-23 (TD-005 preset envelope refresh + TD-006 DreamPlane level) —
+  **RC 2.5.6**. Two user reports:
+  (TD-005) Loading a preset didn't refresh the ENVELOPE display — it stayed at
+  the previous shape though the A/D/S/R params loaded. Root cause: the WebView
+  `renderEnv()` reads live param values but was only invoked at build + on
+  gesture, never subscribed to the env params' valueChanged (unlike the
+  knobs' `paint(); sub(paint)` pattern). Fix (frontend-developer, wiring-only,
+  role-boundary safe): subscribe the existing `renderEnv` to all env params
+  (per-tone tva/tvf/aux a/d/s/r ×4 tones, 12 global env params, per-tone
+  _ovr flags) so a preset load re-renders it. No redraw/authoring. Other
+  composites (matrix/vector/P-ENV/util) already refresh. ⚠ upstream:
+  GUI-Claude must fold this into the face master (handoff-overwrite class).
+  (TD-006) DreamPlane (filter type 13) sounded louder than the other types.
+  Measured (white noise, cut 2000, res 0.4): **+9.5 dB vs LP24, +5.75 dB vs
+  the 13-type mean** — its 6 cascaded peaking sections accumulate level. Fix:
+  ZPlaneFilter kMakeup 1.0 → **0.55** (−5.2 dB), lands broadband RMS on the
+  pack mean (+0.5 dB) while keeping the resonant formant peak audible (~6.4 dB,
+  was ~11.6; test_filter_extra >6 dB still passes — no golden-value relaxed).
+  Ear-tunable single constant. (Noted but not changed: the full 14-type bank
+  spans ~13 dB; a complete level-match pass is a separate task.) validator dsp
+  11/11. No param change → reload. TD-007 (swap filter banks: tone gets the
+  14 types, global becomes LP/BP/HP) scoped + DEFERRED (breaks presets, needs
+  migration + re-scan).
+
 - 2026-07-23 (TD-002: mid-loop + layered detune fixed, VM-side re-tune) —
   **RC 2.5.5**. User report: ENS loops (esp. 2+ layered) detune in the middle
   of the loop. Root cause (verified, not a DSP bug): pitch drift baked into
