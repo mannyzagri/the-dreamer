@@ -3,15 +3,15 @@
 > Read AFTER PROJECT-NOTES.md STATE + CLAUDE.md. Overwrite-only, current open
 > loop only (superseded story lives in CHANGELOG.md).
 
-## Where things stand — 2.5.3 RELEASED + DEPLOYED (TD-001 + TD-003 both fixed), ear+eye gate pending
+## Where things stand — 2.5.4 RELEASED + DEPLOYED (TD-001 + TD-003 + TD-004), ear+eye gate pending
 
-- **TD-001 (0 dBFS noise)** fixed in 2.5.2, **TD-003 (GUI dead frame /
-  resize)** fixed in 2.5.3 — both deployed, pluginval 8 SUCCESS. Full TD-001
-  story: validation/TD-001-REPORT.md. TD-003: CHANGELOG 2.5.3 entry.
-- **NEXT: user ear+eye pass (one session)** — RE-SCAN, remove/re-add
-  instance, header must read **2.5.3**, then: (1) panel fills+centers the
-  window at open and at every resize; (2) SOLINA FIELDS @44.1 k, play + idle
-  60 s → stays clean; panic now genuinely clears every stage.
+- **TD-001 (0 dBFS noise)** fixed 2.5.2, **TD-003 (GUI dead frame/resize)**
+  fixed 2.5.3, **TD-004 (+6 dB louder)** 2.5.4 — all deployed, pluginval 8.
+  TD-001 story: validation/TD-001-REPORT.md. TD-003/004: CHANGELOG.
+- **NEXT: user ear+eye pass (one session, header 2.5.4)** — no re-scan needed
+  (no param change): (1) +6 dB loudness feels right (iterate the WaveNorm
+  target if not); (2) panel fills+centers at open and every resize; (3)
+  SOLINA FIELDS @44.1 k play+idle 60 s stays clean; panic clears every stage.
 - **TD-002 (mid-loop detune)**: VERIFIED nothing to disable DSP-side (roots
   all 220, pitch = constant ratio) — the drift is baked in the v3 WAVs;
   BLOCKED on dreamer-library-v4.zip (human-arranged python re-bake).

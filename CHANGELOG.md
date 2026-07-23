@@ -3,6 +3,19 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-23 (TD-004: output +6 dB louder) — **RC 2.5.4**. Measured the
+  plugin as quiet (STATE-flagged "~10 dB quieter"): INIT single saw sat at
+  −27.5 dBFS RMS / −21.2 peak — ~15 dB under a commercial soft-synth default,
+  from three stacked conservative attenuations (D11 WaveNorm −14 dBFS target
+  × 0.5 headroom × 0.78 master). User call: **+6 dB via the WaveNorm target**
+  (tools/bake_wave_norm.cpp: −14 → −8 dBFS RMS; re-baked WaveNormTable.h,
+  uniform ×2, max gain 3.37→6.72 < the 8.0 clamp so nothing clamps). Delivered
+  (measured): INIT saw −21.5 RMS / −15.2 peak; 4-saw unison maxed −6.7 peak
+  (OutputStage soft-clip just engaging = intended safety). No param change →
+  reload, no re-scan. Bank bytes untouched (rule 3). New harness section
+  test_gain_staging [loudness]: asserts every non-clamped wave's gain hits the
+  −8 dBFS target (guards against silent revert). dsp 11/11.
+
 - 2026-07-23 (TD-003: GUI fit fills the host window) — **RC 2.5.3** (branch
   `fix/td-003-resize` → main `162b133`; deployed both targets, pluginval 8).
   Bug (user report vs rubber-rhino's instant resize): the plugin opened

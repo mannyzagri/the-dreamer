@@ -6,6 +6,22 @@ validation/.
 
 ---
 
+## 2.5.4 — +6 dB louder (released 2026-07-23, deployed both targets)
+
+### Changed
+- **The instrument is +6 dB louder.** It was running conservatively quiet
+  (a single INIT saw sat ~15 dB below a typical soft-synth). Every wave now
+  plays 6 dB hotter, uniformly — relative wave balance is unchanged, the
+  soft-clip safety still protects dense patches, and the bank data itself is
+  untouched. Master and per-tone levels behave exactly as before.
+
+### Upgrading
+- No parameter change → **reload the instance** (no re-scan). Header stamp
+  must read **2.5.4**. If a patch now feels hot, the MASTER knob has the same
+  range as before.
+
+---
+
 ## 2.5.3 — GUI fills the window (released 2026-07-23, deployed both targets)
 
 ### Fixed
