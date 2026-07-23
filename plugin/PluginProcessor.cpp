@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "Params.h"
+#include "Td007Remap.h"
 #include "BinaryData.h"
 
 using namespace dreamer::params;
@@ -156,6 +157,15 @@ void TheDreamerProcessor::loadFactoryPresets()
 void TheDreamerProcessor::applyParamMap(
     const std::vector<std::pair<juce::String, juce::var>>& values)
 {
+    // TD-007 remap, preset-JSON path (this decoder serves factory AND user
+    // presets): a stored flt1_type/flt2_type index > 3 can only come from a
+    // pre-TD-007 user-preset file (the factory bank is migrated, all <= 3 ->
+    // no-op there), so the unconditional remap is safe -- same reasoning and
+    // same table as setStateInformation (plugin/Td007Remap.h). The neutralize
+    // cut/res overrides are applied AFTER the loop so a stored cut/res entry
+    // later in the map cannot undo them. Message thread only.
+    bool neutralize[2] = { false, false };
+
     for (const auto& [id, value] : values)
     {
         auto* param = apvts.getParameter(id);
@@ -164,10 +174,29 @@ void TheDreamerProcessor::applyParamMap(
         if (dynamic_cast<juce::AudioParameterBool*>(param) != nullptr)
             param->setValueNotifyingHost((bool)value ? 1.0f : 0.0f);
         else if (auto* cp = dynamic_cast<juce::AudioParameterChoice*>(param))
-            param->setValueNotifyingHost(cp->convertTo0to1((float)(int)value));
+        {
+            int idx = (int)value;
+            const int slot = (id == kFlt1Type) ? 0 : (id == kFlt2Type) ? 1 : -1;
+            if (slot >= 0)
+            {
+                bool tr = false;
+                idx = dreamer::td007::remapGlobalFilterType(idx, tr);
+                neutralize[slot] = neutralize[slot] || tr;
+            }
+            param->setValueNotifyingHost(cp->convertTo0to1((float)idx));
+        }
         else
             param->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, (float)(double)value));
     }
+
+    static constexpr const char* remapCutIds[2] = { kFlt1Cut, kFlt2Cut };
+    static constexpr const char* remapResIds[2] = { kFlt1Res, kFlt2Res };
+    for (int s = 0; s < 2; ++s)
+        if (neutralize[s])
+        {
+            if (auto* p = apvts.getParameter(remapCutIds[s])) p->setValueNotifyingHost(1.0f);
+            if (auto* p = apvts.getParameter(remapResIds[s])) p->setValueNotifyingHost(0.0f);
+        }
 }
 
 void TheDreamerProcessor::applyPreset(int index)
@@ -554,7 +583,7 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         }
     }
 
-    const int   routing = (int)pFltRoute->load();
+    const int   routing = pFltRoute->load() > 0.5f ? 1 : 0;   // Bool: house > 0.5f read (0=SER, 1=PAR)
     const int   f1t     = (int)pFlt1Type->load();
     const int   f2t     = (int)pFlt2Type->load();
     const float f1Env   = pFlt1Env->load();
@@ -1143,16 +1172,11 @@ void TheDreamerProcessor::setStateInformation(const void* data, int sizeInBytes)
             auto tree = juce::ValueTree::fromXml(*paramsXml);
 
             // --- TD-007 global-filter-type remap (pre-TD-007 saved states) ---
-            // flt1_type/flt2_type shrank choice-14 -> choice-4, so any stored
-            // index > 3 can ONLY come from a pre-TD-007 state -- the remap is
-            // safe unconditionally, no version tag needed. Mapping:
-            //   0-3            keep                      (same first four types)
-            //   4,5,6,13       -> 0 LP24                 (Rhino LPs / DreamPln)
-            //   10 N+LP        -> 0 LP24                 (lowpass-ish, keep cut)
-            //   11 Formant     -> 2 BP                   (bandpass-ish)
-            //   7,8,9,12       -> 0 LP24 + cut=1.0 res=0 (notch/comb/allpass:
-            //                     near-transparent; LP24 at the STORED cutoff
-            //                     would gut the top end)
+            // Any stored flt1_type/flt2_type index > 3 can ONLY come from a
+            // pre-TD-007 state -- the remap is safe unconditionally, no
+            // version tag needed. The mapping table itself lives in
+            // plugin/Td007Remap.h (single source of truth, shared with
+            // applyParamMap's preset-JSON path).
             // tvf_type old 0-3 is a subset of the new 0-13: nothing to do.
             {
                 auto paramChild = [&tree](const juce::String& id) {
@@ -1167,15 +1191,8 @@ void TheDreamerProcessor::setStateInformation(const void* data, int sizeInBytes)
                     if (! tp.isValid()) continue;
                     const int old = juce::roundToInt((double)tp.getProperty("value", 0.0));
                     if (old <= 3) continue;                       // TD-007-native
-                    int nu = 0;                                   // default LP24
                     bool transparent = false;
-                    switch (old) {
-                        case 10: nu = 0; break;                   // N+LP -> LP24
-                        case 11: nu = 2; break;                   // Formant -> BP
-                        case 7: case 8: case 9: case 12:          // notch/comb/allpass
-                            nu = 0; transparent = true; break;
-                        default: nu = 0; break;                   // 4,5,6,13 -> LP24
-                    }
+                    const int nu = dreamer::td007::remapGlobalFilterType(old, transparent);
                     tp.setProperty("value", (double)nu, nullptr);
                     if (transparent)
                     {

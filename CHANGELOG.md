@@ -3,6 +3,30 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-23 (AUDIT PHASE 1: preset boilerplate purge + latent fixes) —
+  **RC 2.7.1**. Follow-up to the four-agent full-code audit (GUI↔param parity,
+  preset data, DSP plumbing, GUI display truth — findings in the session
+  report; face-side items deferred to Phase 2 + the GUI-Claude defect sheet).
+  Preset data (same exact-match method as TD-008): **tvf_env boilerplate 0.5
+  zeroed on 79 slots** (30 presets; 17 presets' hand-set values kept — ear-pass
+  judges), velo 0.4→0.5 ×188 (engine default), lfo1_rate 0.4→0.5 ×187 +
+  lfo2_dest/rate mock config → defaults ×188 (defuses the raise-the-depth
+  boilerplate trap; STATIC BLOOM's deliberate vibrato untouched), AUX env tier
+  → APVTS defaults ×180 slots (45 presets; RE-ENTRY + DEEP SPACE 9 keep their
+  deliberate pitch-fall), flt_route re-encoded int→bool per the applyParamMap
+  contract, note-field mojibake actually fixed (explicit UTF-8 §). C++ latents
+  (cpp-pro): flt_route read (int)truncation → house >0.5f (audible routing
+  switch, host-automation edge); **TD-007 remap now covers the preset-JSON
+  path** — NEW plugin/Td007Remap.h single-source table shared by
+  setStateInformation AND applyParamMap (old user presets with exotic global
+  filters now land near-transparent LP24/BP instead of clamping to HP); NEW
+  tests/test_td007_remap.cpp in validator. GUI wiring-law: sync-division
+  labels floor(v*12) → engine's round(v*11) (tone LFOs + delay; boundary
+  values no longer lie). Tooling: tools/check_presets.sh APVTS mirror
+  regenerated 281→**329** ids (was stale since v2.2 — would false-fail future
+  presets using semi/loop_rate/g_octave etc.), bank counter fixed; stale 281
+  figures corrected in STATE. No param-list change → reload.
+
 - 2026-07-23 (TD-007 FILTER-BANK SWAP + preset boilerplate-vibrato fix) —
   **RC 2.7.0**. Two user reports actioned:
   (1) **"LFO on detune/unison" on every preset, surviving wave changes** —
