@@ -673,7 +673,11 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // DreamVoice (GAIN_STAGING s1: 1/sqrt(nEnabledTones) tone-sum trim), so this
     // is no longer the anti-clip crutch it once was -- just headroom that leaves
     // room for polyphony ahead of the output soft-clip/ceiling (s5).
-    constexpr float kVoiceHeadroom = 0.5f;
+    // 2.7.4 loudness pass (measured, user-approved): 0.5 -> 0.7 (+2.9 dB).
+    // Measured before the change: INIT chord -16.8 dBFS RMS / -6.0 peak; the
+    // factory bank sat 8-25 dB below INIT. The s5 tanh soft-clip + -0.1 dBFS
+    // ceiling absorb the raised peaks. Ear-tunable single constant.
+    constexpr float kVoiceHeadroom = 0.7f;
 
     auto* left  = buffer.getWritePointer(0);
     auto* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : nullptr;

@@ -3,6 +3,36 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-24 (TD-012 LOUDNESS: measured normalization + brightening) —
+  **RC 2.7.4**. User report: plugin very quiet, especially factory presets
+  (e.g. P019). MEASURED with a new per-preset loudness probe (held C3/E3/G3,
+  5 s, sustained-window RMS @48k; derivative of vst3-probe): INIT −16.8 dBFS
+  RMS / −6.0 peak, factory bank median ≈ −24.5, worst −41 (P019: −32.1) —
+  the bank sat 8-25 dB under INIT. Cause attribution (verified against the
+  engine gain laws): authored tone levels 0.4-0.7 (linear gain, ≈ −4 dB),
+  boilerplate Dream Vector intensity 0.6 (avg −3 dB; pure static loss on the
+  ~31 orbit-off presets), dark TVF cutoffs 0.5-0.7 (1-2.4 kHz, −2..−4 dB),
+  plus fixed staging (headroom 0.5, master 0.78). **A/B exonerated the 2.7.1
+  tvf_env purge** (restoring all 79 values changed ≤1 dB — attack character,
+  not level). User-approved package:
+  (1) kVoiceHeadroom 0.5 → **0.7** (+2.9 dB global; s5 tanh + ceiling absorb
+  the peaks; single ear-tunable constant, commented with the measurements);
+  (2) measured per-preset bake, TWO iterations to convergence: tone levels ×
+  up to 2.1 + stored master → 1.0 (both linear laws), targets −18 dBFS
+  sustained RMS with a peak ceiling (−8 then −4); ORGAN NEBULA trimmed −3;
+  (3) BRIGHTENING (user-ordered): tvf_cut +0.1 (clamp 0.8) on 158 slots in
+  the 0.3-0.72 band (≈ ×1.7 in Hz), and the 2.7.1-purged tvf_env values
+  RESTORED (79 slots — original authored attack movement back);
+  (4) vint 0.6 → 0 on 106 slots where orbit AND P-env are off (boilerplate
+  static attenuation with zero movement benefit; orbit-on presets keep it).
+  RESULT (final sweep): all sustained presets −17.3..−20.4 RMS (peaks
+  −4..−7); bells/keys keep −5-ish attacks with naturally quiet tails
+  (−23..−29 sustained); INIT −13.9/−3.3; P019 −18.6 (**+13.5 dB**).
+  Probe source in the session scratchpad (loudness-probe/, vst3-probe
+  derivative) — promoted to code-bank/tools. No param-list change → reload.
+  ⚠ Ear-pass: overall bank level vs other instruments, the brightened
+  cutoffs (+0.1) not harsh, orbit-on pads still breathe, bells' attacks.
+
 - 2026-07-23 (TD-009/010/011: cycle stretch + user-patch persistence + stepper)
   — **RC 2.7.3**. Three user reports:
   (TD-009) STRETCH/P.TRIM greyed for cycle waves — engine's Cycle+STRETCH was
