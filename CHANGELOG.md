@@ -3,6 +3,31 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-24 (TWIN BANK: new dual-wave factory presets) — **RC 2.8.1**.
+  User order: rebuild the factory bank around the v18 twin-wave engine. The
+  migrated legacy bank (v3-authored, vector-era) is REPLACED by **47 new
+  "TWIN" presets** (same category/bank structure: PAD 12/SPLIT 2/BELL 5/
+  STR 4/VOX 5/BASS 4/LEAD 4/KEY 3/SFX 4/AIR 4 — program count unchanged).
+  Every patch is built on a curated WAVE 1+WAVE 2 pairing from the 218-wave
+  ROM (cycle+loop hybrids, cross-family morphs); 9 patches modulate BALANCE
+  (slow-sine wave-morph pads via LFO2, velocity/env morphs via AUX→BALANCE);
+  the full 14-type tone-filter list is exercised INCLUDING DreamPlane (5
+  presets ride Tone Morph via matrix G-LFO2/G-AUX routings — factory content
+  for the Z-plane at last); unison on leads/basses; 3 global-env showcase
+  patches (SLOW ORBIT, FIRST CONTACT, NORTH WIND: ovr=false, designed
+  gamp/gflt tiers). Authored from APVTS defaults per the presets-are-code
+  doctrine; UNIFORM coverage of 345 ids (widest ever — the whole v18 tier
+  set explicitly; zero preset-to-preset leakage). Loudness: measured loop
+  (loudness-probe), 2 bake iterations + targeted design passes → sustained
+  presets ≈ −18 dBFS RMS (peak ceiling −4); plucks/bells by attack peak
+  (−4.4..−8.6); soft-character outliers accepted and listed (CELLO GHOST,
+  SIBYL, COLLAPSE ~−25..−30 sustained by design). Legacy bank preserved in
+  git (2.8.0 tree) — recoverable as a user bank on request. No param-list
+  change vs 2.8.0 → reload (re-scan advisory: moduleinfo). ⚠ Ear-pass: the
+  whole bank is un-auditioned new content — the v18 engine checks (balance
+  crossfade, ghost underlays, unison write-through, global env follow) can
+  ride the same session.
+
 - 2026-07-24 (v18 RENOVATION: vector purged, twin wave layers, global env
   tier, new face) — **RC 2.8.0**. Design markdown file4.zip handoff +
   user-ordered extensions; architect-gated, cpp-pro + frontend-developer
