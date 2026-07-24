@@ -153,7 +153,12 @@ private:
     std::atomic<int> midiLearnTarget { -1 };
     std::vector<juce::RangedAudioParameter*> paramByIndex;   // flat index -> param
     int  paramIndexForId(const juce::String& id) const;      // -1 if not found
-    void applyParamMap(const std::vector<std::pair<juce::String, juce::var>>& values);
+    // v18: preV18Hint marks a source whose "vec_phase" marker was consumed
+    // upstream (loadFactoryPresets skips unknown ids before this decoder sees
+    // them); the decoder ALSO self-detects vec_phase in the value list (user
+    // preset / raw map path). Either way -> V18Remap + amt neutralize + ovr force.
+    void applyParamMap(const std::vector<std::pair<juce::String, juce::var>>& values,
+                       bool preV18Hint = false);
     juce::DynamicObject::Ptr captureParamMap() const;        // current APVTS -> JSON map
     juce::File userPresetDir() const;                        // ~/The Dreamer/Presets
 
@@ -166,6 +171,7 @@ private:
     struct Preset {
         juce::String name, category;
         std::vector<std::pair<juce::String, juce::var>> values;
+        bool preV18 = false;   // v18: source carried a vec_phase marker
     };
     std::vector<Preset> presets;
     int  currentProgram = 0;
@@ -223,7 +229,10 @@ private:
     struct TonePtrs {
         std::atomic<float> *wave, *on, *level, *oct, *semi, *fine, *start, *startRandom,
                            *velo, *pan, *shape, *shapeDepth, *noise, *noiseColor,
-                           *dir, *vint,
+                           // v18 second wave layer + balance + override flags
+                           *wave2, *oct2, *semi2, *fine2, *start2, *start2Random,
+                           *velo2, *voicing2, *dreamySpread2, *waveBalance,
+                           *ampOvr, *fltOvr, *auxOvr,
                            *detuneVoices, *detuneAmount,          // D9
                            *voicing, *dreamySpread, *loopMode,     // s11/s12
                            *hitPlay, *hitStretch, *hitPitchTrim,   // s13
@@ -238,9 +247,11 @@ private:
     TonePtrs pTone[4] {};
 
     std::atomic<float> *pMaster,
-                       *pVecPhase, *pVecOrbitOn, *pVecOrbitRate, *pVecOrbitShape,
-                       *pVecOrbitVoice, *pVecPenvOn, *pVecPenvStart, *pVecPenvEnd,
-                       *pVecPenvTime, *pVecPenvLoop,
+                       // v18 global env tier (gamp = buildPatch indirection
+                       // value source; gflt/gaux feed the synth instances)
+                       *pGampA, *pGampD, *pGampS, *pGampR,
+                       *pGfltA, *pGfltD, *pGfltS, *pGfltR,
+                       *pGauxA, *pGauxD, *pGauxS, *pGauxR,
                        *pFltRoute, *pFltBal,
                        *pFlt1Type, *pFlt1Cut, *pFlt1Res, *pFlt1Env,
                        *pFlt2Type, *pFlt2Cut, *pFlt2Res, *pFlt2Morph,

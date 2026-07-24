@@ -14,20 +14,21 @@ cd "$(dirname "$0")/.."
 PRESETS_JSON="plugin/presets.json"
 
 # ---- APVTS id set: mirror of plugin/Params.h createParameterLayout() ---------
-# Regenerated 2026-07-23 (2.7.1): 57 per-tone stems x4 + 101 globals = 329 ids.
-# The previous mirror was stale at 281 (missing the v2.2+/v2.3/v2.4 additions)
-# and would FALSE-FAIL any preset using e.g. semi_a / loop_rate_b / g_octave.
+# Regenerated 2026-07-24 (v18): 68 per-tone stems x4 + 103 globals = 375 ids.
+# v18: vec tier + dir/vint DELETED; layer-2 (wave2/oct2/semi2/fine2/start2/
+# start2_random/velo2/voicing2/dreamy_spread2/wave_balance) + ovr flags ADDED;
+# global env tier gamp/gflt/gaux_env_* ADDED.
 pertone="wave on level oct semi fine start start_random velo pan shape shape_depth \
-noise noise_color dir vint voicing dreamy_spread detune_voices detune_amount \
+wave2 oct2 semi2 fine2 start2 start2_random velo2 voicing2 dreamy_spread2 wave_balance \
+amp_ovr flt_ovr aux_ovr \
+noise noise_color voicing dreamy_spread detune_voices detune_amount \
 loop_mode hit_play hit_stretch hit_pitchtrim \
 loop_rate loop_rate_sync loop_rate_beats loop_varispeed \
 lfo1_rate lfo1_depth lfo1_sync lfo1_dest lfo1_shape lfo2_rate \
 lfo2_depth lfo2_sync lfo2_dest lfo2_shape aux_dest aux_amt tvf_type tvf_cut \
 tvf_res tvf_env tvf_kf tvf_a tvf_d tvf_s tvf_r tva_a tva_d tva_s tva_r aux_a \
 aux_d aux_s aux_r"
-global="master vec_phase vec_orbit_on vec_orbit_rate vec_orbit_shape \
-vec_orbit_voice vec_penv_on vec_penv_start vec_penv_end vec_penv_time \
-vec_penv_loop flt_route flt_bal flt1_type flt1_cut flt1_res flt1_env flt2_type \
+global="master flt_route flt_bal flt1_type flt1_cut flt1_res flt1_env flt2_type \
 flt2_cut flt2_res flt2_env flt2_morph lfo_rate lfo_shape lfo_sync \
 lfo2_rate lfo2_shape lfo2_sync mtx1_src mtx1_dst mtx1_amt \
 mtx2_src mtx2_dst mtx2_amt mtx3_src mtx3_dst mtx3_amt modfx_type modfx_rate \
@@ -38,6 +39,8 @@ rev_pfocus lofi_on lofi_bits lofi_srate lofi_compand lofi_alias lofi_param lofi_
 width_on width width_haas width_bassmono talk_on talk_va talk_vb talk_morph talk_sens \
 talk_param talk_pfocus fx_prepost \
 g_env_a g_env_d g_env_s g_env_r g_cutoff g_res g_octave limiter_on \
+gamp_env_a gamp_env_d gamp_env_s gamp_env_r gflt_env_a gflt_env_d gflt_env_s gflt_env_r \
+gaux_env_a gaux_env_d gaux_env_s gaux_env_r \
 drift interp engine"
 
 apvts=$(mktemp); preset=$(mktemp); trap 'rm -f "$apvts" "$preset"' EXIT

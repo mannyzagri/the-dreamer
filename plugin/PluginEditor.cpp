@@ -21,7 +21,10 @@ juce::StringArray makeSliderIds() {
     juce::StringArray ids;
     for (const char* sx : { "_a", "_b", "_c", "_d" })
         for (const char* s : { "level", "oct", "semi", "fine", "start", "velo", "pan",
-                               "shape_depth", "noise", "noise_color", "dir", "vint",
+                               "shape_depth", "noise", "noise_color",
+                               // v18 second wave layer + balance
+                               "oct2", "semi2", "fine2", "start2", "velo2",
+                               "wave_balance",
                                "aux_amt", "hit_stretch", "hit_pitchtrim",
                                "loop_rate", "detune_amount",
                                "lfo1_rate", "lfo1_depth", "lfo2_rate", "lfo2_depth",
@@ -30,8 +33,11 @@ juce::StringArray makeSliderIds() {
                                "tva_a", "tva_d", "tva_s", "tva_r",
                                "aux_a", "aux_d", "aux_s", "aux_r" })
             ids.add(juce::String(s) + sx);
-    for (const char* s : { "master", "vec_phase", "vec_orbit_rate",
-                           "vec_penv_start", "vec_penv_end", "vec_penv_time",
+    for (const char* s : { "master",
+                           // v18 global env tier (12 sliders)
+                           "gamp_env_a", "gamp_env_d", "gamp_env_s", "gamp_env_r",
+                           "gflt_env_a", "gflt_env_d", "gflt_env_s", "gflt_env_r",
+                           "gaux_env_a", "gaux_env_d", "gaux_env_s", "gaux_env_r",
                            "lfo_rate", "lfo2_rate",   // v16: global LFO 1 + 2
                            "mtx1_amt", "mtx2_amt", "mtx3_amt",
                            "flt1_cut", "flt1_res", "flt1_env",
@@ -55,11 +61,11 @@ juce::StringArray makeToggleIds() {
     juce::StringArray ids;
     for (const char* sx : { "_a", "_b", "_c", "_d" })
         for (const char* s : { "on", "start_random", "lfo1_sync", "lfo2_sync",
-                               "loop_rate_sync", "loop_varispeed" })
+                               "loop_rate_sync", "loop_varispeed",
+                               // v18: layer-2 start random + 3 override flags
+                               "start2_random", "amp_ovr", "flt_ovr", "aux_ovr" })
             ids.add(juce::String(s) + sx);
     for (const char* s : { "flt_route", "fx_prepost",              // v15: now Bool
-                           "vec_orbit_on", "vec_orbit_voice",
-                           "vec_penv_on", "vec_penv_loop",
                            "lfo_sync", "lfo2_sync",   // v16 global LFO 1 + 2 sync
                            "modfx_on", "dly_on", "dly_sync", "rev_on",
                            "lofi_on", "width_on", "width_bassmono", "talk_on",
@@ -75,9 +81,10 @@ juce::StringArray makeComboIds() {
                                "aux_dest", "lfo1_dest", "lfo2_dest",
                                "lfo1_shape", "lfo2_shape",
                                "voicing", "dreamy_spread", "loop_mode", "hit_play",
-                               "loop_rate_beats", "detune_voices" })  // v15: now Choice
+                               "loop_rate_beats", "detune_voices",   // v15: now Choice
+                               "wave2", "voicing2", "dreamy_spread2" })  // v18 layer 2
             ids.add(juce::String(s) + sx);
-    for (const char* s : { "vec_orbit_shape", "lfo_shape", "lfo2_shape",  // v16 G-LFO 1 + 2
+    for (const char* s : { "lfo_shape", "lfo2_shape",  // v16 G-LFO 1 + 2
                            "mtx1_src", "mtx2_src", "mtx3_src",
                            "mtx1_dst", "mtx2_dst", "mtx3_dst",
                            "flt1_type", "flt2_type",

@@ -13,14 +13,17 @@
 //             BP kills both ends
 //   [chord]   24-voice x 4-tone chord: finite, zero allocations, tail silence
 //   [steal]   oldest-note stealing survives the v2 rebuild
-//   [vector]  v4 law: int=0 static; int=1 aligned = full, orthogonal/opposed
-//             = silent; compass recovery
 //   [aux]     AUX env -> PITCH (+12 st at amt 0.5) doubles frequency
 //   [glfo]    depth-0 taps are a bit-exact no-op (hermetic synths)
 //   [matrix]  WHEEL -> PITCH doubles frequency; G-LFO -> CUT1 swings the
-//             exported octave offset; VEC PHS self-route is clamped
+//             exported octave offset
 //   [pan]     hard-left tone leaves the right bus silent
-//   [render]  4-tone vector pad demo renders finite (wav on request)
+//   [render]  4-tone pad demo renders finite (wav on request)
+//
+// v18 NOTE: the [vector]/[orbit]/[compass] sections and the VEC PHS matrix
+// subtest were REMOVED with the Dream Vector purge (architect-gated v18
+// contract 2026-07-24); their bit-exactness successor lives in
+// tests/test_v18_engine.cpp ([vec_purge] golden vs the 2.7.4 engine).
 
 #include <immintrin.h>
 #include <cstdio>
@@ -260,32 +263,6 @@ int main(int argc, char** argv) {
         CHECK(hasNote(99), "new note sounding");
     }
 
-    // ---- [vector] -------------------------------------------------------
-    std::printf("[vector]\n");
-    {
-        auto rms = [&](const std::vector<float>& v) {
-            double s = 0; for (size_t i = SR / 5; i < v.size(); ++i) s += (double)v[i] * v[i];
-            return std::sqrt(s / (double)(v.size() - SR / 5));
-        };
-        dreamer::DreamPatch p0 = sinePatch();     // int=0: static regardless of phase
-        p0.vec.phase = 0.5;
-        dreamer::DreamPatch p1 = sinePatch();
-        p1.tone[0].vecInt = 1.0;                  // int=1, dir=0
-        p1.vec.phase = 0.0;                       // aligned -> full
-        dreamer::DreamPatch p2 = p1;
-        p2.vec.phase = 0.25;                      // orthogonal -> silent
-        dreamer::DreamPatch p3 = p1;
-        p3.vec.phase = 0.5;                       // opposed -> silent
-        const double r0 = rms(render1s(p0)), r1 = rms(render1s(p1)),
-                     r2 = rms(render1s(p2)), r3 = rms(render1s(p3));
-        std::printf("  rms int0=%.4f aligned=%.4f ortho=%.6f opposed=%.6f\n", r0, r1, r2, r3);
-        CHECK(r0 > 0.1, "int=0 tone is a static drone");
-        CHECK(r1 > 0.1, "aligned scanned tone at full gain");
-        CHECK(std::fabs(r1 - r0) < 0.05 * r0, "aligned gain equals static level");
-        CHECK(r2 < 0.001, "orthogonal scanned tone silent");
-        CHECK(r3 < 0.001, "opposed scanned tone silent");
-    }
-
     // ---- [aux] ----------------------------------------------------------
     std::printf("[aux]\n");
     {
@@ -388,13 +365,6 @@ int main(int argc, char** argv) {
         std::printf("  cut1 offset range: %.2f .. %.2f oct\n", mn, mx);
         CHECK(mn < -1.5f && mx > 1.5f, "G-LFO->CUT1 swings +/-2 oct");
         CHECK(mn >= -2.01f && mx <= 2.01f, "CUT1 offset bounded");
-
-        // VEC PHS -> VEC PHS self-route clamped: render identical to no slot
-        dreamer::DreamPatch q = sinePatch();
-        q.tone[0].vecInt = 1.0; q.vec.phase = 0.1;
-        dreamer::DreamPatch q2 = q;
-        q2.slot[0] = { dreamer::mtx::srcVecPhs, dreamer::mtx::dstVecPhs, 1.0 };
-        CHECK(render1s(q) == render1s(q2), "VEC PHS self-route clamped");
     }
 
     // ---- [pan] ----------------------------------------------------------
@@ -486,70 +456,6 @@ int main(int argc, char** argv) {
               "requant12 passes grained values unchanged");
     }
 
-    // ---- [orbit] (phase 13) ----------------------------------------------
-    std::printf("[orbit]\n");
-    {
-        bool bounded = true;
-        for (int shape = 0; shape <= 4; ++shape)
-            for (int i = 0; i <= 100; ++i) {
-                const float v = dreamer::DreamSynth::orbitShapeFn(shape, i / 100.0f, 0.37f);
-                if (v < 0.0f || v > 1.0f) bounded = false;
-            }
-        CHECK(bounded, "orbit shapes bounded 0..1");
-        CHECK(dreamer::DreamSynth::orbitShapeFn(0, 0.3f, 0) == 0.3f, "SAW is the raw ramp");
-        CHECK(dreamer::DreamSynth::orbitShapeFn(3, 0.3f, 0) == 0.0f
-              && dreamer::DreamSynth::orbitShapeFn(3, 0.7f, 0) == 0.5f, "SQR jumps at half");
-        const double lo = dreamer::DreamSynth::orbitRateHz(0.0);
-        const double hi = dreamer::DreamSynth::orbitRateHz(1.0);
-        std::printf("  orbit rate map: %.3f .. %.2f Hz\n", lo, hi);
-        CHECK(std::fabs(lo - 0.02) < 1e-6 && std::fabs(hi - 8.0) < 1e-6,
-              "orbit rate 0.02..8 Hz");
-    }
-
-    // ---- [compass] (DSP_BUILD phase-13 acceptance) -----------------------
-    std::printf("[compass]\n");
-    {
-        // DIRs 0/.25/.5/.75, INT=1: measured solo-tone gains reproduce the
-        // 4-corner VS law within 1e-3 after normalizing out the chain gain.
-        double gm[4], ge[4];
-        for (double phase : { 0.0, 0.125, 0.4 }) {
-            for (int t = 0; t < 4; ++t) {
-                auto s = std::make_unique<dreamer::DreamSynth>();
-                s->prepare(SR);
-                auto& p = s->patch();
-                p = sinePatch();
-                p.tone[0].enabled = false;
-                p.tone[t] = sinePatch().tone[0];
-                p.tone[t].enabled = true;
-                p.tone[t].level = 1.0;
-                p.tone[t].velSens = 0.0;
-                p.tone[t].vecInt = 1.0;
-                p.tone[t].dir = 0.25 * t;
-                p.tone[t].pan = -1.0;
-                p.vec.phase = phase;
-                s->updateLive();
-                s->noteOn(69, 1.0f);
-                double peak = 0.0;
-                for (int i = 0; i < SR; ++i) {
-                    float l = 0, r = 0;
-                    s->process(l, r);
-                    if (i > SR / 2) peak = std::fmax(peak, std::fabs((double)l));
-                }
-                const double c = std::cos(2.0 * M_PI * (phase - 0.25 * t));
-                gm[t] = peak;
-                ge[t] = c > 0.0 ? c * c : 0.0;
-            }
-            double kM = 0, kE = 0;
-            for (int t = 0; t < 4; ++t) { kM = std::fmax(kM, gm[t]); kE = std::fmax(kE, ge[t]); }
-            bool ok = kM > 0 && kE > 0;
-            for (int t = 0; ok && t < 4; ++t)
-                if (std::fabs(gm[t] / kM - ge[t] / kE) > 1e-3) ok = false;
-            std::printf("  phase %.3f measured: %.4f %.4f %.4f %.4f\n", phase,
-                        gm[0] / kM, gm[1] / kM, gm[2] / kM, gm[3] / kM);
-            CHECK(ok, "compass gains reproduce the VS law within 1e-3");
-        }
-    }
-
     // ---- [startrand] ------------------------------------------------------
     std::printf("[startrand]\n");
     {
@@ -586,18 +492,17 @@ int main(int argc, char** argv) {
         s->prepare(SR);
         auto& p = s->patch();
         p = dreamer::DreamPatch{};
-        const struct { const char* cat; const char* name; double dir; int coarse; } tset[4] = {
-            { "Pad",    "Hollow 3",     0.00,   0 },
-            { "String", "StringBox 3",  0.25,   0 },
-            { "Vox",    "Voice 1",      0.50,  12 },
-            { "Bell",   "FM Bell 4",    0.75,  12 },
+        const struct { const char* cat; const char* name; int coarse; } tset[4] = {
+            { "Pad",    "Hollow 3",      0 },
+            { "String", "StringBox 3",   0 },
+            { "Vox",    "Voice 1",      12 },
+            { "Bell",   "FM Bell 4",    12 },
         };
         for (int i = 0; i < 4; ++i) {
             auto& t = p.tone[i];
             t.enabled = true;
             t.waveIndex = findWave(tset[i].cat, tset[i].name);
             t.coarse = tset[i].coarse;
-            t.dir = tset[i].dir; t.vecInt = 0.85;
             t.level = 0.5; t.pan = (i % 2 ? 0.4 : -0.4) * (i > 1 ? -1.0 : 1.0);
             t.cutoffHz = 3000; t.tvfEnvAmount = 1500;
             t.tvfA = 0.6; t.tvfS = 0.7; t.tvfR = 0.8;
@@ -605,7 +510,6 @@ int main(int argc, char** argv) {
             t.shapeMode = (i == 3) ? 3 : 0; t.shapeDepth = 0.3;
             t.lfo1 = { 0.45, 0.12, false, 0 };
         }
-        p.vec.orbitOn = true; p.vec.orbitRate01 = 18.0;
         p.glfoShape01 = 1; p.glfoRate01 = 42.0;
         s->updateLive();
         for (int n : {45, 52, 57, 61, 64}) s->noteOn(n, 0.7f);
