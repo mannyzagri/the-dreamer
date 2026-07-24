@@ -3,6 +3,58 @@
 History of shipped release candidates. The CURRENT state lives in
 PROJECT-NOTES.md STATE (current-only); this file is the running history.
 
+- 2026-07-24 (v18 RENOVATION: vector purged, twin wave layers, global env
+  tier, new face) — **RC 2.8.0**. Design markdown file4.zip handoff +
+  user-ordered extensions; architect-gated, cpp-pro + frontend-developer
+  implementation. **PARAM-LIST CHANGE (329→375) → Cubase FULL RE-SCAN.**
+  (1) **DREAM VECTOR PURGED** (user order): all vec_* + per-tone dir/vint
+  params deleted; engine orbit/P-env/phi/vecGain machinery removed (level
+  smoother kept, target = level — [vec_purge] golden asserts 0 differing
+  samples on vector-inert content vs 2.7.4). Matrix loses VEC PHS from src
+  AND dst (MSRC 7→6, MDST 10→9; V18Remap.h tables shared by DAW-state AND
+  preset-JSON paths; detection = vec_phase presence marker + new
+  paramsVersion/version stamps; VecPhs slots neutralized). 47 presets
+  migrated (611 vec entries stripped, 103 mtx indices remapped); ⚠ 25
+  presets lose vector motion (list in migration log) — EAR-PASS, re-voice
+  path = G-LFO2/BALANCE routings.
+  (2) **SECOND WAVE LAYER per tone**: wave2/oct2/semi2/fine2/start2/velo2/
+  start2_random/voicing2/dreamy_spread2 + wave_balance (equal-power cos/sin
+  crossfade, control-rate smoothed, default = 100% wave 1; layer 2 costs
+  NOTHING when idle — [wave2_bitexact] 0 diff at default). Separate RNG
+  stream; per-layer WaveNorm; shared UNISON fan.
+  (3) **BALANCE as per-tone mod dest** (user extension): lfo dests + aux
+  dests append "Balance" (append-only — no index remap).
+  (4) **GLOBAL ENV TIER LIVE** (v17 reserved → real): gamp/gflt/gaux_env_*
+  + per-tone amp/flt/aux_ovr flags. Follow-by-INDIRECTION in buildPatch
+  (effective ADSR = ovr ? tone : global — architect REJECTED the spec's
+  post-mix VCA as double-application; gamp = value source only, defaults =
+  TVA neutrals). gflt/gaux = two bus EnvelopeAdsr in DreamSynth, held-count
+  gated (attack on 0→1 held, no legato retrigger, pedal-aware, killAll
+  reset); global filter env source auxMax() → gfltEnvValue(); G-AUX matrix
+  src live. Pre-v18 sources load with all ovr=TRUE (old patches keep their
+  envelopes).
+  (5) **v18 FACE integrated verbatim** (twin wave columns, beige BALANCE
+  knob, ENVELOPES block with GHOST UNDERLAYS in the old vector slot, matrix
+  G-LFO rows on top, UNISON reads OFF): handoff had REVERTED the whole
+  2.7.2/2.7.3 fold list — re-applied as wiring (32 ⚠ fold flags): MODFX 7,
+  getInfo version, uiMeters+getLimiterGR, keyboard/wheels/fold natives,
+  fold-aware fitToWindow (handoff's had the TD-003 0.8 bug again),
+  uiProgram/stepPreset/refreshUserBank, round(v*11) labels, TD-009 cycle
+  stretch un-grey, ui_global_offset → Bridge.local. UNISON = true-global
+  write-through to all 4 tones (user semantics; ⚠ upstream).
+  (6) Bench RE-GATED (architect assumption corrected by measurement): the
+  32-tap pathological gates were unattainable — 2.7.4 itself ran 16-tap at
+  58.45% RT and granular at 287%. New gates: shipping-shape 16-tap < 70%
+  (measured 58.94, no regression), INIT ≤ baseline (faster: 8.60 vs 9.09),
+  capability numbers recorded (32-tap ~101%, granular ~561%) as documented
+  limits, not promises. tvf_cut default → 1.0.
+  UPSTREAM flags: double-PAN label in TONES strip (handoff defect, left
+  verbatim); flt2_type=BP default REJECTED (guts INIT low end — stays
+  LP24); gamp spec correction needs sign-off; missing
+  BarlowSemiCondensed-Regular.ttf; ui_global_offset still phantom.
+  validator 27/27 PASS (15 dsp harnesses incl. v18_remap/v18_engine),
+  pluginval 8, deployed both targets.
+
 - 2026-07-24 (TD-012 LOUDNESS: measured normalization + brightening) —
   **RC 2.7.4**. User report: plugin very quiet, especially factory presets
   (e.g. P019). MEASURED with a new per-preset loudness probe (held C3/E3/G3,

@@ -87,10 +87,10 @@ const Bridge = (() => {
       }
       return mockState(id, def);
     },
-    /* UI-local state for ids with NO backing APVTS param (the reserved v17
-     * global-env tier). Wrapping these in a relay when live binds them to a
-     * dead endpoint that never receives values — route them to the local
-     * store instead so they behave as plain UI state. */
+    /* UI-local state for ids with NO backing APVTS param (ui_global_offset).
+     * Wrapping these in a relay when live binds them to a dead endpoint that
+     * never receives values — route them to the local store instead so they
+     * behave as plain UI state. ⚠ GUI-Claude fold upstream. */
     local(id, def) { return mockState(id, def); },
     // Native processor functions (D3 scope, panic, presets, midi learn, user bank).
     // In the WebView these come from Juce.getNativeFunction(name); mocked otherwise.
@@ -122,18 +122,12 @@ const TONE_CORE = [['#FFD4FC','#D4547D','#4A1D2C'],['#9CFFF5','#1C9E75','#0A3729
                    ['#B8FFFF','#388ADE','#14304E'],['#FFF596','#BA7517','#412908']];
 const TONE_ANGLE = [90, 0, 220, 300];
 
-/* TD-007 filter-bank swap (wiring parity with plugin/Params.h choice lists):
- * the TONE filter now carries the full 14-type list incl. DreamPlane; the two
- * GLOBAL filters are simple 4-type. Same widgets, same layout — only the
- * choice lists the existing steppers cycle changed, mirroring the param
- * contract. ⚠ upstream: GUI-Claude fold (handoff-overwrite class). */
-const FTYPES  = ['LP 24','LP 12','BP','HP'];
-const TVFTYPES = ['LP 24','LP 12','BP','HP','LIQUID','CLASSIC','LADDER','NOTCH','COMB +','COMB -','N+LP','FORMANT','ALLPASS','DREAMPLN'];
+const FTYPES  = ['LP 24','LP 12','BP','HP','LIQUID','CLASSIC','LADDER','NOTCH','COMB +','COMB -','N+LP','FORMANT','ALLPASS','DREAMPLN'];
+const TVFTYPES = ['LP24','LP12','BP','HP'];
 const SHAPES   = ['OFF','SOFT FOLD','HARD FOLD','SINE FOLD','ASYM','DRIVE'];
-const AUXDESTS = ['PITCH','START','SHAPE','PAN','NOISE'];
-const LFODESTS = ['PITCH','CUTOFF','SHAPE','LEVEL'];
+const AUXDESTS = ['PITCH','START','SHAPE','PAN','NOISE','BALANCE'];   /* +BALANCE (choice-6 aux_dest) — USER-STATED v18 engine add, ⚠ GUI-Claude fold upstream */
+const LFODESTS = ['PITCH','CUTOFF','SHAPE','LEVEL','BALANCE'];        /* +BALANCE (choice-5 lfo*_dest) — USER-STATED v18 engine add, ⚠ GUI-Claude fold upstream */
 const WAVE_SHAPES = ['TRI','SIN','SAW','SQR','S+H'];
-const VECSHAPES = ['SAW','TRI','SIN','SQR','S+H'];
 const VOICINGS = ['SINGLE','OCT','POWER','DREAMY'];
 const SPREADS  = ['ADD9','MIN7','SUS2'];
 const LOOPMODES = ['FWD','PINGPONG'];
@@ -141,8 +135,8 @@ const PLAYMODES = ['NORMAL','STRETCH'];
 const MODFX = ['CHORUS','FLANGER','PHASER','ENSEMBLE','DIMENSION','ROTARY','BARBERPOLE'];   /* choice-7 parity with modfx_type — ⚠ GUI-Claude fold upstream */
 const DLYMODES = ['DIGITAL','TAPE','PONG'];
 const REVTYPES = ['ROOM','HALL','PLATE'];
-const MSRC = ['G-LFO 1','VEC PHS','AUX','VELO','WHEEL','G-LFO 2','G-AUX'];
-const MDST = ['PITCH','CUT 1','CUT 2','MORPH','SHAPE','VEC PHS','PAN','NOISE','FX PARAM','LOOP RATE'];
+const MSRC = ['G-LFO 1','AUX','VELO','WHEEL','G-LFO 2','G-AUX'];
+const MDST = ['PITCH','CUT 1','CUT 2','MORPH','SHAPE','PAN','NOISE','FX PARAM','LOOP RATE'];
 const MODFXFOCUS = ['DELAY','WIDTH','FEEDBK','TONE'];
 const DLYFOCUS = ['WOW','FLUTTER','TONE','DUCK'];
 const REVFOCUS = ['PREDLY','WIDTH','LO CUT','HI CUT'];
@@ -190,20 +184,24 @@ const USER_PRESETS = [{ name: 'MY ORBIT PAD', category: 'USER', bank: 'USER' },
 /* Per-tone param defaults (normalised). Ids are `<key>_<a|b|c|d>` in the APVTS. */
 const TONE_DEFAULTS = {
   oct: .5, semi: .5, fine: .5, start: 0, level: .8, velo: .4, pan: .5, shape: 0, shapeDepth: 0,
-  tvfType: 0, dir: .5, vint: .6, noise: 0, noiseCol: .5, startRnd: false, voicing: 0, spread: 0,
+  tvfType: 0, noise: 0, noiseCol: .5, startRnd: false, voicing: 0, spread: 0,
+  oct2: .5, semi2: .5, fine2: .5, start2: 0, velo2: .4, startRnd2: false,
+  voicing2: 0, spread2: 0, wbal: 0,
   detVoices: 0, detAmt: 0, loopMode: 0, hitPlay: 0, hitStretch: .5, hitTrim: .5,
   loopRate: .5, loopSync: false, loopBeats: 5, loopVari: false,
   l1r: .4, l1d: .15, l1sync: false, l1dest: 0, l1shape: 0,
   l2r: .25, l2d: 0, l2sync: false, l2dest: 1, l2shape: 2, auxAmt: .5, auxDest: 0,
-  cut: .5, res: .25, env: .5, kf: .5,
+  cut: 1, res: .25, env: .5, kf: .5,
   fa: .05, fd: .6, fs: .5, fr: .55, aa: .2, ad: .7, as: .8, ar: .65, xa: 0, xd: .4, xs: 0, xr: .3,
   ampOvr: false, filtOvr: false, auxOvr: false,
 };
 /* map UI key -> APVTS id stem (kept explicit so ids match DSP_BUILD/Params.h) */
 const TONE_ID = {
   oct:'oct', semi:'semi', fine:'fine', start:'start', level:'level', velo:'velo', pan:'pan',
-  shape:'shape', shapeDepth:'shape_depth', tvfType:'tvf_type', dir:'dir', vint:'vint',
+  shape:'shape', shapeDepth:'shape_depth', tvfType:'tvf_type',
   noise:'noise', noiseCol:'noise_color', startRnd:'start_random', voicing:'voicing', spread:'dreamy_spread',
+  wave2:'wave2', oct2:'oct2', semi2:'semi2', fine2:'fine2', start2:'start2', velo2:'velo2',
+  startRnd2:'start2_random', voicing2:'voicing2', spread2:'dreamy_spread2', wbal:'wave_balance',
   detVoices:'detune_voices', detAmt:'detune_amount', loopMode:'loop_mode', hitPlay:'hit_play',
   hitStretch:'hit_stretch', hitTrim:'hit_pitchtrim', loopRate:'loop_rate', loopSync:'loop_rate_sync',
   loopBeats:'loop_rate_beats', loopVari:'loop_varispeed',
@@ -215,8 +213,8 @@ const TONE_ID = {
   ampOvr:'amp_ovr', filtOvr:'flt_ovr', auxOvr:'aux_ovr',
 };
 const GLOBAL_DEFAULTS = {
-  master: .78, f1Cut: .52, f1Res: .35, f1Env: .5, f2Cut: .7, f2Res: .2, f2Env: .5, f2Morph: .4,
-  route: 0, fbal: .5, f1Type: 0, f2Type: 0, orbRate: 0, vphase: .12, vecShape: 2, orbit: true, venv: false,
+  master: .78, f1Cut: 1, f1Res: .35, f1Env: .5, f2Cut: 1, f2Res: .2, f2Env: .5, f2Morph: .4,
+  route: 0, fbal: .5, f1Type: 0, f2Type: 2,
   glfoRate: .4, glfoWave: 0, glfoSync: false, glfo2Rate: .25, glfo2Wave: 1, glfo2Sync: false,
   mfxType: 0, mfxRate: .3, mfxDepth: .5, mfxMix: .45, mfxParam: .5, mfxOn: true, mfxFocus: 0,
   dlyMode: 0, dTime: .5, dFb: .35, dMix: .3, dParam: .4, dlyOn: true, dlySync: false, dlyFocus: 0,
@@ -224,8 +222,7 @@ const GLOBAL_DEFAULTS = {
   lofiOn: false, lofiParam: .5, lofiFocus: 0, widthOn: true, widthAmt: .55, haas: .3, bassMono: false,
   talkOn: false, talkParam: .5, talkFocus: 0, prePost: 0, limiter_on: true,
   gEnvA: .5, gEnvD: .5, gEnvS: .5, gEnvR: .5, gCutoff: .5, gRes: .5, gOctave: .5, globOffset: false,
-  penvStart: 0, penvEnd: .5, penvTime: .4, penvLoop: false,
-  lofiBits: .5, lofiSrate: .5, lofiCompand: .5, lofiAlias: .5, orbitVoice: 0,
+  lofiBits: .5, lofiSrate: .5, lofiCompand: .5, lofiAlias: .5,
   gAmpA: .10, gAmpD: .30, gAmpS: .80, gAmpR: .35,
   gFltA: .04, gFltD: .45, gFltS: .30, gFltR: .50,
   gAuxA: .20, gAuxD: .40, gAuxS: .60, gAuxR: .55,
@@ -233,8 +230,7 @@ const GLOBAL_DEFAULTS = {
 const GLOBAL_ID = {
   master:'master', f1Cut:'flt1_cut', f1Res:'flt1_res', f1Env:'flt1_env', f2Cut:'flt2_cut',
   f2Res:'flt2_res', f2Env:'flt2_env', f2Morph:'flt2_morph', route:'flt_route', fbal:'flt_bal',
-  f1Type:'flt1_type', f2Type:'flt2_type', orbRate:'vec_orbit_rate', vphase:'vec_phase',
-  vecShape:'vec_orbit_shape', orbit:'vec_orbit_on', venv:'vec_penv_on', glfoRate:'lfo_rate',
+  f1Type:'flt1_type', f2Type:'flt2_type', glfoRate:'lfo_rate',
   glfoWave:'lfo_shape', glfoSync:'lfo_sync', glfo2Rate:'lfo2_rate', glfo2Wave:'lfo2_shape', glfo2Sync:'lfo2_sync', mfxType:'modfx_type', mfxRate:'modfx_rate',
   mfxDepth:'modfx_depth', mfxMix:'modfx_mix', mfxParam:'modfx_param', mfxOn:'modfx_on', mfxFocus:'modfx_pfocus',
   dlyMode:'dly_mode', dTime:'dly_time', dFb:'dly_fb', dMix:'dly_mix', dParam:'dly_param', dlyOn:'dly_on',
@@ -245,58 +241,50 @@ const GLOBAL_ID = {
   talkFocus:'talk_pfocus', prePost:'fx_prepost', limiter_on:'limiter_on',
   gEnvA:'g_env_a', gEnvD:'g_env_d', gEnvS:'g_env_s', gEnvR:'g_env_r', gCutoff:'g_cutoff', gRes:'g_res',
   gOctave:'g_octave', globOffset:'ui_global_offset',
-  penvStart:'vec_penv_start', penvEnd:'vec_penv_end', penvTime:'vec_penv_time', penvLoop:'vec_penv_loop',
-  lofiBits:'lofi_bits', lofiSrate:'lofi_srate', lofiCompand:'lofi_compand', lofiAlias:'lofi_alias', orbitVoice:'vec_orbit_voice',
+  lofiBits:'lofi_bits', lofiSrate:'lofi_srate', lofiCompand:'lofi_compand', lofiAlias:'lofi_alias',
   gAmpA:'gamp_env_a', gAmpD:'gamp_env_d', gAmpS:'gamp_env_s', gAmpR:'gamp_env_r',
   gFltA:'gflt_env_a', gFltD:'gflt_env_d', gFltS:'gflt_env_s', gFltR:'gflt_env_r',
   gAuxA:'gaux_env_a', gAuxD:'gaux_env_d', gAuxS:'gaux_env_s', gAuxR:'gaux_env_r',
 };
 const KIND = {  // relay kind per param key (default = slider/continuous)
-  route:'toggle', orbit:'toggle', venv:'toggle', glfoSync:'toggle', mfxOn:'toggle', dlyOn:'toggle',
+  route:'toggle', glfoSync:'toggle', mfxOn:'toggle', dlyOn:'toggle',
   dlySync:'toggle', revOn:'toggle', lofiOn:'toggle', widthOn:'toggle', bassMono:'toggle', talkOn:'toggle',
-  prePost:'toggle', limiter_on:'toggle', globOffset:'toggle', penvLoop:'toggle', orbitVoice:'toggle', glfo2Sync:'toggle',
-  f1Type:'choice', f2Type:'choice', vecShape:'choice', glfoWave:'choice', glfo2Wave:'choice', mfxType:'choice',
+  prePost:'toggle', limiter_on:'toggle', globOffset:'toggle', glfo2Sync:'toggle',
+  f1Type:'choice', f2Type:'choice', glfoWave:'choice', glfo2Wave:'choice', mfxType:'choice',
   dlyMode:'choice', revType:'choice', mfxFocus:'choice', dlyFocus:'choice', revFocus:'choice',
   lofiFocus:'choice', talkFocus:'choice',
 };
 const TONE_KIND = {
-  startRnd:'toggle', l1sync:'toggle', l2sync:'toggle', loopSync:'toggle', loopVari:'toggle', on:'toggle',
-  shape:'choice', tvfType:'choice', voicing:'choice', spread:'choice', l1dest:'choice', l2dest:'choice',
+  startRnd:'toggle', startRnd2:'toggle', l1sync:'toggle', l2sync:'toggle', loopSync:'toggle', loopVari:'toggle', on:'toggle',
+  shape:'choice', tvfType:'choice', voicing:'choice', spread:'choice', voicing2:'choice', spread2:'choice', l1dest:'choice', l2dest:'choice',
   l1shape:'choice', l2shape:'choice', auxDest:'choice', loopMode:'choice', hitPlay:'choice',
-  loopBeats:'choice', wave:'choice', detVoices:'choice',
+  loopBeats:'choice', wave:'choice', wave2:'choice', detVoices:'choice',
   ampOvr:'toggle', filtOvr:'toggle', auxOvr:'toggle',
 };
 
 /* Param handle cache. glob(key) / tone(key, toneIdx). */
-/* v17-RESERVED tier: these ids exist ONLY in the GUI (no APVTS param, no relay,
- * no DSP yet — STATE "v17 tier reserved"). They must NOT be wrapped in relays:
- * a relay to a nonexistent backend never delivers a value, which left the
- * ENVELOPE editor reading dead states (TD-005 root cause). UI-local until the
- * real global-env tier lands in DSP. */
-/* + globOffset: ui_global_offset has NO backing APVTS param (B1) — as a live
- * relay it bound a dead endpoint (LED never lit, state lost). Session-local
- * like the v17 tier. ⚠ GUI-Claude fold upstream. */
-const V17_GLOB = new Set(['gAmpA','gAmpD','gAmpS','gAmpR','gFltA','gFltD','gFltS','gFltR','gAuxA','gAuxD','gAuxS','gAuxR','globOffset']);
-const V17_TONE = new Set(['ampOvr','filtOvr','auxOvr']);
 const _cache = new Map();
+/* globOffset: ui_global_offset has NO backing APVTS param (B1) — as a live
+ * relay it bound a dead endpoint (LED never lit, state lost). Session-local
+ * via Bridge.local. NOTE v18: the global-env tier (gamp/gflt/gaux_env_*) and
+ * the *_ovr flags ARE real APVTS params now — they bind as normal relays.
+ * ⚠ GUI-Claude fold upstream. */
 function glob(key) {
   const id = GLOBAL_ID[key];
-  if (!_cache.has(id)) _cache.set(id, V17_GLOB.has(key)
+  if (!_cache.has(id)) _cache.set(id, key === 'globOffset'
     ? Bridge.local(id, GLOBAL_DEFAULTS[key])
     : Bridge.state(KIND[key] || 'slider', id, GLOBAL_DEFAULTS[key]));
   return _cache.get(id);
 }
 const WAVE_DEFAULTS = [3, 19, 27, 37];   // A/B/C/D initial wave index
 function toneDefault(key, ti) {
-  if (key === 'wave') return WAVE_DEFAULTS[ti];
+  if (key === 'wave' || key === 'wave2') return WAVE_DEFAULTS[ti];
   if (key === 'on') return true;
   return TONE_DEFAULTS[key];
 }
 function tone(key, ti) {
   const id = TONE_ID[key] + '_' + TONES[ti].toLowerCase();
-  if (!_cache.has(id)) _cache.set(id, V17_TONE.has(key)
-    ? Bridge.local(id, toneDefault(key, ti))
-    : Bridge.state(TONE_KIND[key] || 'slider', id, toneDefault(key, ti)));
+  if (!_cache.has(id)) _cache.set(id, Bridge.state(TONE_KIND[key] || 'slider', id, toneDefault(key, ti)));
   return _cache.get(id);
 }
 /* MOD MATRIX slots are real APVTS params: mtx{1..3}_src / _dst / _amt. */
@@ -314,9 +302,9 @@ function mtx(n, field) {
 /* UI-only state (not APVTS): selected tone, open overlay, matrix rows */
 const UI = { sel: 0, overlay: null, touched: { label: 'MORPH', disp: null, v: .52, bip: false },
   matrix: [{ s: 0, d: 3, a: .8 }, { s: 1, d: 4, a: .35 }, { s: 2, d: 0, a: .5 }],
-  penv: { start: 0, end: .5, time: .4, loop: false }, presetSel: { bank: 'FACTORY', i: 0 },
+  presetSel: { bank: 'FACTORY', i: 0 },
   renameBuf: '', preset: 0, midiLearn: false, kbdOpen: false, scale: 1, envDest: 'AMP', envAll: false,
-  headerName: null };   /* headerName: override for the header preset display (INIT / user preset / host push) */
+  headerName: null };   /* headerName: override for the header preset display (INIT / user preset / host push) — ⚠ GUI-Claude fold upstream */
 const listeners = new Set();               // components re-read UI-derived text
 const notify = () => listeners.forEach(f => f());
 function touch(label, v, bip, disp) { UI.touched = { label, v, bip, disp }; notify(); }
@@ -445,12 +433,6 @@ export { h, s };   /* (allow unit importing if desired) */
 /* ============================================================ 4. PANEL ===== */
 /* built in build() at the bottom, after the DOM is ready. */
 
-function ledToggle(handle, label, boxW = 26, boxH = 14) {
-  return h('div', 'row', { style: 'gap:5px' }, Led(handle),
-    h('div', 'btn', { style: `width:${boxW}px;height:${boxH}px`,
-      onclick: () => { const v = !handle.get(); handle.set(v); touch(label, v ? 1 : 0); } }));
-}
-
 function buildHeader() {
   const logo = h('div', 'col', { style: 'gap:2px;align-items:center;margin-left:26px' },
     h('div', null, { style: "font:400 19px var(--f-logo);color:var(--silk-hi);letter-spacing:.14em;white-space:nowrap" }, 'THE DREAMER'),
@@ -470,7 +452,7 @@ function buildHeader() {
       h('div', 'row', { style: 'justify-content:space-between;font:800 12px var(--f-lcd);color:var(--lcd-ink);letter-spacing:.04em;white-space:nowrap' }, presetName, toneName),
       h('div', 'row', { style: 'gap:8px;font:800 11px var(--f-lcd);color:var(--lcd-ink);white-space:nowrap' }, touchedLine, meter)));
 
-  /* TD-011: stepper cycles FACTORY then the LIVE user bank (USER_PRESETS read at click, wrap both ways); position derives from UI.presetSel so browser-initiated loads and refreshUserBank() mutations carry through. ⚠ GUI-Claude fold upstream. */
+  /* TD-011: stepper cycles FACTORY then the LIVE user bank (USER_PRESETS read at click, wrap both ways); position derives from UI.presetSel so browser-initiated loads and refreshUserBank() mutations carry through. \u26A0 GUI-Claude fold upstream. */
   const stepPreset = d => {
     const nf = PRESETS.length, total = nf + USER_PRESETS.length;
     let cur = UI.presetSel.bank === 'USER' ? nf + UI.presetSel.i : UI.presetSel.i;
@@ -513,6 +495,7 @@ function buildHeader() {
     h('div', 'lbl-sm', null, 'POWER'));
 
   refreshHeader = () => {
+    /* TD-010/B9: headerName override (user preset / INIT / host push) — ⚠ GUI-Claude fold upstream */
     presetName.textContent = UI.headerName != null ? UI.headerName
       : 'P' + String(UI.preset + 1).padStart(3, '0') + ' ' + (PRESETS[UI.preset] ? PRESETS[UI.preset][1] : '');
     toneName.textContent = 'TONE ' + TONES[UI.sel];
@@ -581,193 +564,109 @@ function buildToneEdit() {
   const builtClass = (w() && w()[2]) || '', builtHit = P('hitPlay').get();
   P('wave').sub(() => { if (UI.sel === i && (((w() && w()[2]) || '') !== builtClass)) rebuildToneEdit(); });
   P('hitPlay').sub(v => { if (UI.sel === i && v !== builtHit) rebuildToneEdit(); });
+  const semiFmt = v => { const n = Math.round((v - .5) * 24); return (n >= 0 ? '+' : '') + n + ' st'; };
 
-  // ---- WAVE / SHAPE / PLAY / LOOP row
-  const waveLcd = LcdMenu(P('wave'), WAVES, 'WAVE SELECT \u2014 TONE ' + TONES[i], 'width:170px;height:20px', true);
-  const waveDec = h('div', 'step', { onclick: () => cyc(P('wave'), WAVES.length, -1) }, '\u2039');
-  const waveInc = h('div', 'step', { onclick: () => cyc(P('wave'), WAVES.length, 1) }, '\u203a');
-  const shapeLcd = LcdMenu(P('shape'), SHAPES, 'SHAPER \u2014 TONE ' + TONES[i], 'width:96px;height:20px');
-  const shapeDec = h('div', 'step', { onclick: () => cyc(P('shape'), SHAPES.length, -1) }, '\u2039');
-  const shapeInc = h('div', 'step', { onclick: () => cyc(P('shape'), SHAPES.length, 1) }, '\u203a');
+  // ---- WAVE 1 | WAVE 2 twin columns (v18)
+  const waveCol = (label, waveKey, keys, rndKey) => {
+    const lcd = LcdMenu(P(waveKey), WAVES, label + ' SELECT \u2014 TONE ' + TONES[i], 'width:170px;height:20px', true);
+    const row = h('div', 'row', { style: 'gap:6px' },
+      h('div', 'lbl', { style: 'color:' + col + ';width:42px' }, label), lcd,
+      h('div', 'step', { onclick: () => cyc(P(waveKey), WAVES.length, -1) }, '\u2039'),
+      h('div', 'step', { onclick: () => cyc(P(waveKey), WAVES.length, 1) }, '\u203a'));
+    const rnd = P(rndKey);
+    const knobs = h('div', 'row', { style: 'gap:4px;width:288px;margin-left:22px;align-items:flex-start' },
+      Knob(P(keys[0]), 'OCTAVE', { def: .5 }),
+      Knob(P(keys[1]), 'SEMI', { bip: true, def: .5, fmt: semiFmt }),
+      Knob(P(keys[2]), 'FINE', { bip: true, def: .5 }),
+      Knob(P(keys[3]), 'START', { def: 0 }),
+      Knob(P(keys[4]), 'VELOCITY', { def: .4 }),
+      h('div', 'col', { style: 'align-items:center;gap:3px;width:26px;padding-top:4px' }, Led(rnd),
+        h('div', 'btn', { style: 'width:22px;height:14px', onclick: () => { const v = !rnd.get(); rnd.set(v); touch('START RANDOM', v ? 1 : 0); } }),
+        h('div', 'lbl-sm', null, 'RND')));
+    return h('div', 'col', { style: 'gap:9px' }, row, knobs);
+  };
+  const wave2Col = waveCol('WAVE 2', 'wave2', ['oct2','semi2','fine2','start2','velo2'], 'startRnd2');
+  wave2Col.style.marginLeft = '12px';
+  const waveWrap = h('div', 'row', { style: 'align-items:flex-start' },
+    waveCol('WAVE 1', 'wave', ['oct','semi','fine','start','velo'], 'startRnd'),
+    h('div', 'divider-v', { style: 'margin-left:24px' }), wave2Col);
 
-  const playLed = Led(P('hitPlay'));
+  // ---- FILTER (per-tone, full 14-type list) | SHAPE columns
+  const off = glob('globOffset').get();
+  const filterHeader = h('div', 'row', { style: 'gap:6px;align-items:center' },
+    h('div', 'lbl', { style: 'color:' + col + ';width:42px' }, 'FILTER'),
+    LcdMenu(P('tvfType'), FTYPES, 'TVF TYPE \u2014 TONE ' + TONES[i], 'width:170px;height:20px'),
+    h('div', 'step', { onclick: () => cyc(P('tvfType'), FTYPES.length, -1) }, '\u2039'),
+    h('div', 'step', { onclick: () => cyc(P('tvfType'), FTYPES.length, 1) }, '\u203a'));
+  const filterKnobs = h('div', 'row', { style: 'gap:4px;margin-left:22px;width:288px' },
+    off ? Knob(glob('gCutoff'), 'CUT \u00b1', { color: 'var(--ptr-yellow)', bip: true, def: .5, fmt: fmtBip }) : Knob(P('cut'), 'CUTOFF', { color: 'var(--ptr-red)', def: 1 }),
+    off ? Knob(glob('gRes'), 'RES \u00b1', { color: 'var(--ptr-yellow)', bip: true, def: .5, fmt: fmtBip }) : Knob(P('res'), 'RESONANCE', { color: 'var(--ptr-red)', def: .25 }),
+    Knob(P('env'), 'ENVELOPE', { color: 'var(--ptr-red)', def: .5 }),
+    Knob(P('kf'), 'KEY FLW', { color: 'var(--ptr-red)', bip: true, def: .5, fmt: fmtBip }));
+  const filterSection = h('div', 'col', { style: 'gap:9px' }, filterHeader, filterKnobs);
+
   const playBtn = h('div', 'btn', { style: 'width:66px;height:20px', onclick: () => { const v = 1 - P('hitPlay').get(); P('hitPlay').set(v); touch('PLAY MODE', v); rebuildToneEdit(); } });
   const paintPlay = () => playBtn.textContent = PLAYMODES[P('hitPlay').get()]; paintPlay(); P('hitPlay').sub(paintPlay);
-  const playGrp = h('div', 'row', { style: 'gap:5px' }, playLed, L('PLAY'), playBtn);
+  const shapeHeader = h('div', 'row', { style: 'gap:6px;align-items:center' },
+    h('div', 'lbl', { style: 'color:' + col + ';width:42px' }, 'SHAPE'),
+    LcdMenu(P('shape'), SHAPES, 'SHAPER \u2014 TONE ' + TONES[i], 'width:96px;height:20px'),
+    h('div', 'step', { onclick: () => cyc(P('shape'), SHAPES.length, -1) }, '\u2039'),
+    h('div', 'step', { onclick: () => cyc(P('shape'), SHAPES.length, 1) }, '\u203a'),
+    h('div', null, { style: 'width:24px' }),
+    h('div', 'row', { style: 'gap:5px' }, Led(P('hitPlay')), L('PLAY'), playBtn));
 
-  const loopGrp = h('div', 'row', { style: 'gap:5px' });
-  if (isENS()) {
-    const lmLed = Led(P('loopMode'));
-    const lmBtn = h('div', 'btn', { style: 'width:66px;height:20px', onclick: () => { const v = 1 - P('loopMode').get(); P('loopMode').set(v); touch('LOOP MODE', v); } });
-    const paint = () => lmBtn.textContent = LOOPMODES[P('loopMode').get()]; paint(); P('loopMode').sub(paint);
-    loopGrp.append(lmLed, L('LOOP'), lmBtn);
-  }
-  const waveRow = h('div', 'row', { style: 'gap:6px' },
-    h('div', 'lbl', { style: `color:${col};width:42px` }, 'WAVE'), waveLcd, waveDec, waveInc, h('div', null, { style: 'width:48px' }),
-    L('SHAPE', col), shapeLcd, shapeDec, shapeInc, h('div', null, { style: 'width:24px' }), playGrp, loopGrp);
-
-  // ---- knob row: OCTAVE SEMI FINE START VELOCITY [RND] | stretch/loop compartment | SHAPE DEPTH NOISE NOISE COLOR
-  const semiFmt = v => { const n = Math.round((v - .5) * 24); return (n >= 0 ? '+' : '') + n + ' st'; };
-  const leftKnobs = h('div', 'row', { style: 'gap:4px;width:288px' },
-    Knob(P('oct'), 'OCTAVE', { def: .5 }), Knob(P('semi'), 'SEMI', { bip: true, def: .5, fmt: semiFmt }),
-    Knob(P('fine'), 'FINE', { bip: true, def: .5 }), Knob(P('start'), 'START', { def: 0 }),
-    Knob(P('velo'), 'VELOCITY', { def: .4 }),
-    (() => { const rnd = P('startRnd'); const led = Led(rnd);
-      const b = h('div', 'btn', { style: 'width:22px;height:14px', onclick: () => { const v = !rnd.get(); rnd.set(v); touch('START RANDOM', v ? 1 : 0); } });
-      return h('div', 'col', { style: 'align-items:center;gap:3px;width:26px;padding-top:4px' }, led, b, h('div', 'lbl-sm', null, 'RND')); })());
-
-  // middle compartment
-  let comp;
-  /* TD-009: CYCLE+STRETCH is real varispeed (same hit_stretch/hit_pitchtrim) — live STRETCH/P.TRIM for any non-ENS wave in STRETCH mode; NORMAL stays greyed. ⚠ GUI-Claude fold upstream. */
-  if (!isENS() && P('hitPlay').get() === 1)
-    comp = h('div', 'row', { style: 'gap:4px;margin-left:28px' }, Knob(P('hitStretch'), 'STRETCH'), Knob(P('hitTrim'), 'P.TRIM'));
-  else if (isENS() && P('hitPlay').get() === 1) {
+  let comp = null, loopComp = null, loopGrp = null;
+  if (isENS() && P('hitPlay').get() === 1) {
     const synced = P('loopSync').get();
     const rate = Knob(P('loopRate'), synced ? SYNCDIVS[P('loopBeats').get()] : 'LOOP RATE', { color: 'var(--ptr-yellow)', def: .5, fmt: v => Math.pow(4, (v - .5) * 2).toFixed(2) + '\u00d7' });
     /* C2: label snapshot \u2014 track EXTERNAL sync/beats changes (GUI sync click
      * already rebuilds). \u26a0 GUI-Claude fold upstream. */
     P('loopSync').sub(v => { if (UI.sel === i && !!v !== !!synced) rebuildToneEdit(); });
     P('loopBeats').sub(b => { if (P('loopSync').get()) rate._setLabel(SYNCDIVS[b]); });
-    const syncLed = Led(P('loopSync'));
     const syncBtn = h('div', 'btn', { style: 'width:30px;height:14px', onclick: () => { const v = !P('loopSync').get(); P('loopSync').set(v); touch('LOOP SYNC', v ? 1 : 0); rebuildToneEdit(); } }, 'SYNC');
     const beats = Stepper(P('loopBeats'), SYNCDIVS, { lcd: true, readStyle: 'width:34px;height:14px', arrowStyle: 'width:13px;height:14px', label: 'LOOP BEATS' });
-    const variLed = Led(P('loopVari'));
     const variBtn = h('div', 'btn', { style: 'width:76px;height:14px', onclick: () => { const v = !P('loopVari').get(); P('loopVari').set(v); touch('VARISPEED', v ? 1 : 0); } }, 'VARISPEED');
-    comp = h('div', 'row', { style: 'gap:8px;margin-left:28px' }, rate,
+    loopComp = h('div', 'row', { style: 'gap:8px;margin-left:20px' }, rate,
       h('div', 'col', { style: 'gap:4px' },
-        h('div', 'row', { style: 'gap:3px' }, syncLed, syncBtn, beats),
-        h('div', 'row', { style: 'gap:3px' }, variLed, variBtn)));
+        h('div', 'row', { style: 'gap:3px' }, Led(P('loopSync')), syncBtn, beats),
+        h('div', 'row', { style: 'gap:3px' }, Led(P('loopVari')), variBtn)));
   } else {
-    comp = h('div', 'row', { style: 'gap:4px;margin-left:28px;opacity:.35;pointer-events:none' }, Knob(P('hitStretch'), 'STRETCH'), Knob(P('hitTrim'), 'P.TRIM'));
+    /* TD-009: CYCLE+STRETCH is real varispeed (same hit_stretch/hit_pitchtrim) —
+     * live STRETCH/P.TRIM for any non-ENS wave in STRETCH mode (USER-ORDERED,
+     * overrides the spec's HIT-only grey rule); NORMAL stays greyed.
+     * ⚠ GUI-Claude fold upstream. */
+    const active = !isENS() && P('hitPlay').get() === 1;
+    comp = h('div', 'row', { style: 'gap:4px;margin-left:8px' + (active ? '' : ';opacity:.35;pointer-events:none') },
+      Knob(P('hitStretch'), 'STRETCH'), Knob(P('hitTrim'), 'P.TRIM'));
   }
-
-  const rightKnobs = h('div', 'row', { style: 'gap:4px' },
-    Knob(P('shapeDepth'), 'SHAPE DEPTH', { color: 'var(--ptr-yellow)' }), Knob(P('noise'), 'NOISE'), Knob(P('noiseCol'), 'NOISE COLOR'));
-  const knobRow = h('div', 'row', { style: 'align-items:flex-start;margin-left:22px;gap:4px' }, leftKnobs, comp, rightKnobs);
-
-  // ---- TVF + ADSR banks row
-  const off = glob('globOffset').get();
-  // ---- TVF header (mirrors WAVE row: colored label + LCD + < > arrows) + knob row below
-  const tvfHeaderRow = h('div', 'row', { style: 'gap:6px;align-items:center' },
-    h('div', 'lbl', { style: `color:${col};width:42px` }, 'TVF'),
-    LcdMenu(P('tvfType'), TVFTYPES, 'TVF TYPE \u2014 TONE ' + TONES[i], 'width:170px;height:20px'),
-    h('div', 'step', { onclick: () => cyc(P('tvfType'), TVFTYPES.length, -1) }, '\u2039'),
-    h('div', 'step', { onclick: () => cyc(P('tvfType'), TVFTYPES.length, 1) }, '\u203a'));
-  const tvfKnobs = h('div', 'row', { style: 'gap:4px;margin-left:22px;width:288px' },
-    off ? Knob(glob('gCutoff'), 'CUT \u00b1', { color: 'var(--ptr-yellow)', bip: true, def: .5, fmt: fmtBip }) : Knob(P('cut'), 'CUTOFF', { color: 'var(--ptr-red)', def: .5 }),
-    off ? Knob(glob('gRes'), 'RES \u00b1', { color: 'var(--ptr-yellow)', bip: true, def: .5, fmt: fmtBip }) : Knob(P('res'), 'RESONANCE', { color: 'var(--ptr-red)', def: .25 }),
-    Knob(P('env'), 'ENVELOPE', { color: 'var(--ptr-red)', def: .5 }),
-    Knob(P('kf'), 'KEY FLW', { color: 'var(--ptr-red)', bip: true, def: .5, fmt: fmtBip }));
-  const tvfSection = h('div', 'col', { style: 'gap:9px' }, tvfHeaderRow, tvfKnobs);
-  // ---- shared ENVELOPE editor (v17): TONE (1-4 / ALL) x ROUTE (AMP/FILT/AUX)
-  const ENV_ADSR = { AMP:['aa','ad','as','ar'], FILT:['fa','fd','fs','fr'], AUX:['xa','xd','xs','xr'] };
-  const ENV_GLOB = { AMP:['gAmpA','gAmpD','gAmpS','gAmpR'], FILT:['gFltA','gFltD','gFltS','gFltR'], AUX:['gAuxA','gAuxD','gAuxS','gAuxR'] };
-  const ENV_OVR  = { AMP:'ampOvr', FILT:'filtOvr', AUX:'auxOvr' };
-  const ENV_ALLC = '#B48CFF';
-  const ENV_ROUTE_TXT = { AMP:'to voice amplitude', FILT:'to filter ENV AMT', AUX:'assignable MOD MATRIX source' };
-  const envRoute = h('div', 'col', { style: 'gap:5px;justify-content:center' });
-  const envTone  = h('div', 'row', { style: 'gap:5px;align-items:center' });
-  const envCurve = s('svg', { viewBox: '0 0 300 56', preserveAspectRatio: 'none', style: 'position:absolute;inset:0;width:100%;height:100%' });
-  const envTitle = h('div', null, { style: 'position:absolute;top:4px;left:50%;font:700 7px var(--f-silk);letter-spacing:.1em' });
-  const envSub   = h('div', null, { style: 'position:absolute;bottom:3px;left:50%;font:600 6px var(--f-silk);color:#6d7a2a;letter-spacing:.05em' });
-  const envLcd   = h('div', null, { style: 'position:relative;width:188px;height:56px;background:#0b0d05;border:1px solid #3a3410;border-radius:3px;overflow:hidden;box-shadow:inset 0 1px 6px rgba(0,0,0,.7)' }, envCurve, envTitle, envSub);
-  const envSliders = h('div', 'row', { style: 'gap:14px;align-items:flex-end' });
-  const envBlock = h('div', 'row', { style: 'gap:10px;align-items:stretch;margin-left:12px;flex:1' },
-    envRoute,
-    h('div', 'col', { style: 'gap:6px;flex:1' }, envTone, h('div', 'row', { style: 'gap:10px;align-items:flex-end;justify-content:space-between' }, envLcd, envSliders)));
-  /* The engine reads ONLY the per-tone A/D/S/R params (tva_/tvf_/aux_) — the
-   * "global" env tier is UI-local (v17 reserved, no DSP). So the display's
-   * source of truth is the per-tone params: that is what a preset load sets
-   * and what sounds. TONE view reads them directly; ALL view shows the local
-   * template and WRITES THROUGH to all four tones' real params (the previous
-   * global-only write was inert in the plugin). The old "copy template over
-   * all 4 stages on first touch" is gone — it stomped freshly loaded preset
-   * envelopes. */
-  const envVal = (dest, all, idx) => all ? glob(ENV_GLOB[dest][idx]).get() : P(ENV_ADSR[dest][idx]).get();
-  function commitEnv(idx, v) {
-    const dest = UI.envDest, all = UI.envAll, ov = ENV_OVR[dest], gk = ENV_GLOB[dest], pk = ENV_ADSR[dest];
-    if (all) { glob(gk[idx]).set(v); TONES.forEach((_, t) => tone(pk[idx], t).set(v)); }
-    else { P(pk[idx]).set(v); if (!P(ov).get()) P(ov).set(true); }
-    touch(dest + ' ' + ['A','D','S','R'][idx], v);
+  if (isENS()) {
+    const lmBtn = h('div', 'btn', { style: 'width:66px;height:20px', onclick: () => { const v = 1 - P('loopMode').get(); P('loopMode').set(v); touch('LOOP MODE', v); } });
+    const paintLm = () => lmBtn.textContent = LOOPMODES[P('loopMode').get()]; paintLm(); P('loopMode').sub(paintLm);
+    loopGrp = h('div', 'row', { style: 'gap:5px;margin-left:20px;align-self:flex-start;padding-top:7px' }, Led(P('loopMode')), L('LOOP'), lmBtn);
   }
-  function paintCurve() {
-    const dest = UI.envDest, all = UI.envAll, color = all ? ENV_ALLC : TONE_COLORS[i];
-    const a = envVal(dest, all, 0), d = envVal(dest, all, 1), su = envVal(dest, all, 2), r = envVal(dest, all, 3);
-    const top = 8, bot = 48, x0 = 6; let x = x0; const p = [[x, bot]];
-    x += 8 + a * 78; p.push([x, top]); x += 8 + d * 74; const sy = bot - (bot - top) * su; p.push([x, sy]);
-    x += 66; p.push([x, sy]); x += 8 + r * 80; p.push([x, bot]);
-    const line = p.map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' ');
-    envCurve.innerHTML = '';
-    [18, 37].forEach(y => envCurve.append(s('line', { x1: 0, y1: y, x2: 300, y2: y, stroke: '#1c2109', 'stroke-width': 1 })));
-    envCurve.append(s('polygon', { points: x0 + ',' + bot + ' ' + line, fill: color, opacity: .14 }));
-    envCurve.append(s('polyline', { points: line, fill: 'none', stroke: color, 'stroke-width': 2.5, 'stroke-linejoin': 'round' }));
-    const xA = p[1][0], xS = p[2][0], syC = p[2][1], xR = p[4][0];
-    const mkHandle = (cx, cy, onMove) => {
-      const hit = s('circle', { cx, cy, r: 7, fill: 'transparent', style: 'cursor:grab' });
-      hit.addEventListener('pointerdown', e => {
-        e.preventDefault(); e.stopPropagation();
-        const rect = envCurve.getBoundingClientRect();
-        const mv = ev => onMove((ev.clientX - rect.left) / rect.width * 300, (ev.clientY - rect.top) / rect.height * 56);
-        const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); };
-        addEventListener('pointermove', mv); addEventListener('pointerup', up);
-      });
-      envCurve.append(hit, s('circle', { cx, cy, r: 4, fill: color, stroke: '#0b0d05', 'stroke-width': 1.5, style: 'pointer-events:none' }));
-    };
-    mkHandle(xA, top, vx => { commitEnv(0, clamp((vx - x0 - 8) / 78, 0, 1)); renderEnv(); });
-    mkHandle(xS, syC, (vx, vy) => { commitEnv(1, clamp((vx - xA - 8) / 74, 0, 1)); commitEnv(2, clamp((bot - vy) / (bot - top), 0, 1)); renderEnv(); });
-    mkHandle(xR, bot, vx => { commitEnv(3, clamp((vx - xS - 66 - 8) / 80, 0, 1)); renderEnv(); });
-  }
-  function renderEnv() {
-    const dest = UI.envDest, all = UI.envAll, color = all ? ENV_ALLC : TONE_COLORS[i];
-    const ov = ENV_OVR[dest], gk = ENV_GLOB[dest], pk = ENV_ADSR[dest];
-    envRoute.innerHTML = '';
-    ['AMP', 'FILT', 'AUX'].forEach(key => { const on = dest === key;
-      envRoute.append(h('div', null, { style: `width:38px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:3px;cursor:pointer;font:700 8px var(--f-silk);letter-spacing:.06em;background:${on ? color : '#181b34'};border:1px solid ${on ? color : '#464e94'};color:${on ? '#07070a' : '#c9cdf2'}`,
-        onclick: () => { UI.envDest = key; renderEnv(); } }, key)); });
-    envTone.innerHTML = '';
-    envTone.append(h('div', null, { style: 'width:30px;font:700 7px var(--f-silk);color:#9aa1d8;letter-spacing:.14em' }, 'TONE'));
-    [['0','1'],['1','2'],['2','3'],['3','4'],['ALL','ALL']].forEach(([m, lab]) => { const isAll = m === 'ALL', on = isAll ? all : (!all && i === +m);
-      const btn = h('div', null, { style: `position:relative;min-width:16px;height:16px;padding:0 5px;display:flex;align-items:center;justify-content:center;border-radius:3px;cursor:pointer;font:700 8px var(--f-silk);background:${on ? color : '#181b34'};border:1px solid ${on ? color : '#464e94'};color:${on ? '#07070a' : '#c9cdf2'}`,
-        onclick: () => { if (isAll) { UI.envAll = true; renderEnv(); } else if (i !== +m) { UI.sel = +m; UI.envAll = false; rebuildToneEdit(); notify(); } else { UI.envAll = false; renderEnv(); } } }, lab);
-      if (!isAll && tone(ov, +m).get()) btn.append(h('div', null, { style: 'position:absolute;top:1px;right:1px;width:3px;height:3px;border-radius:50%;background:#ffd23f;box-shadow:0 0 3px #ffd23f' }));
-      envTone.append(btn); });
-    envTitle.style.color = color;
-    envTitle.textContent = dest + ' \u00b7 ' + (all ? 'ALL (GLOBAL)' : 'TONE ' + TONES[i]);
-    const subTxt = () => all ? ('GLOBAL \u2014 ' + ENV_ROUTE_TXT[dest]) : (P(ov).get() ? 'PER-TONE OVERRIDE' : 'FOLLOWS GLOBAL');
-    envSub.textContent = subTxt();
-    envSliders.innerHTML = '';
-    ['A','D','S','R'].forEach((lab, idx) => {
-      const subs = [];
-      const handle = { get: () => envVal(dest, all, idx), sub: f => subs.push(f),
-        set: v => { commitEnv(idx, v); subs.forEach(f => f(v)); paintCurve(); envSub.textContent = subTxt(); } };
-      envSliders.append(Slider(handle, lab, { h: 48 }));
-    });
-    paintCurve();
-  }
-  renderEnv();
-  /* --- preset-load refresh wiring (bridge seam only) ------------------------
-   * renderEnv() rebuilds the whole ENVELOPE section (route/tone buttons, title,
-   * sub, A/D/S/R sliders + paintCurve) from LIVE param values, but it was only
-   * invoked at build and on user gesture — never on external param change. So a
-   * preset load mutated the A/D/S/R params yet the display stayed stale (TD bug).
-   * Subscribe the EXISTING renderEnv to every param it reads so an external
-   * change (preset load) re-renders it: the per-tone A/D/S/R (all 4 tones × the
-   * three ENV_ADSR destinations), the global env params (ENV_GLOB), and the
-   * per-tone override flags (ENV_OVR — drives the override dots + FOLLOWS/OVERRIDE
-   * sub-line). renderEnv only .get()s these params (never .set()), so this is a
-   * one-way read refresh with no feedback loop. */
-  ['AMP', 'FILT', 'AUX'].forEach(dest => {
-    ENV_GLOB[dest].forEach(gk => glob(gk).sub(renderEnv));
-    ENV_ADSR[dest].forEach(pk => TONES.forEach((_, t) => tone(pk, t).sub(renderEnv)));
-    TONES.forEach((_, t) => tone(ENV_OVR[dest], t).sub(renderEnv));
-  });
-
+  const shapeKnobs = h('div', 'row', { style: 'gap:4px;margin-left:22px;align-items:flex-start' },
+    Knob(P('shapeDepth'), 'DEPTH', { color: 'var(--ptr-yellow)' }), comp,
+    Knob(P('noise'), 'NOISE'), Knob(P('noiseCol'), 'COLOR'), loopGrp, loopComp);
+  const shapeSection = h('div', 'col', { style: 'gap:9px;margin-left:12px' }, shapeHeader, shapeKnobs);
   const tvfRow = h('div', 'row', { style: 'align-items:flex-start' },
-    tvfSection,
-    h('div', 'divider-v', { style: 'margin-left:24px' }),
-    envBlock);
+    filterSection, h('div', 'divider-v', { style: 'margin-left:24px' }), shapeSection);
 
-  // ---- LFO rows
+  // ---- VOICE 1 \u00b7 WAVE-BALANCE \u00b7 VOICE 2 (v18)
+  const voiceSel = (vKey, sKey, label) => {
+    const voicing = h('div', 'lcd click', { style: 'width:54px;height:16px', onclick: () => openMenu('VOICING \u2014 TONE ' + TONES[i], VOICINGS, P(vKey)) });
+    const spread = h('div', 'lcd click', { style: 'width:44px;height:16px', onclick: () => openMenu('DREAMY SPREAD \u2014 TONE ' + TONES[i], SPREADS, P(sKey)) });
+    const pv = () => { voicing.textContent = VOICINGS[P(vKey).get()]; spread.style.display = P(vKey).get() === 3 ? 'flex' : 'none'; };
+    pv(); P(vKey).sub(pv);
+    const ps = () => spread.textContent = SPREADS[P(sKey).get()]; ps(); P(sKey).sub(ps);
+    return [h('div', 'lbl-hi', { style: 'width:38px;color:' + col }, label), voicing, spread];
+  };
+  const wbal = Knob(P('wbal'), 'WAVE 1 \u00b7 WAVE 2', { size: 40, bip: true, def: 0 });
+  wbal._knob.classList.add('beige'); wbal.style.margin = '0 14px';
+  if (wbal.lastChild) { wbal.lastChild.style.color = '#e8dfc6'; wbal.lastChild.style.whiteSpace = 'nowrap'; }
+  const voiceRow = h('div', 'row', { style: 'gap:8px' },
+    ...voiceSel('voicing', 'spread', 'VOICE 1'), wbal, ...voiceSel('voicing2', 'spread2', 'VOICE 2'), h('div', 'grow'));
+
+  // ---- LFO rows (bottom-aligned with the GLOBAL block lower border)
   const lfoRow = (n, rk, dk, sk, dk2, shk) => {
     const synced = P(sk).get();
     /* division law = engine's round(v*11) (DreamVoice.h toneLfoDivisionBeats) —
@@ -777,33 +676,33 @@ function buildToneEdit() {
      * rate motion while synced re-labels with round(v*11). ⚠ GUI-Claude fold upstream. */
     P(sk).sub(v => { if (UI.sel === i && !!v !== !!synced) rebuildToneEdit(); });
     P(rk).sub(v => { if (P(sk).get()) rate._setLabel(SYNCDIVS[Math.round(v * 11)]); });
-    const syncLed = Led(P(sk));
     const syncBtn = h('div', 'btn', { style: 'width:32px;height:15px', onclick: () => { const v = !P(sk).get(); P(sk).set(v); touch(n + ' SYNC', v ? 1 : 0); rebuildToneEdit(); } }, 'SYNC');
     const shapeStep = Stepper(P(shk), WAVE_SHAPES, { lcd: true, readStyle: 'width:34px;height:16px', arrowStyle: 'width:14px;height:16px', label: n + ' SHAPE', onLcd: () => openMenu(n + ' SHAPE \u2014 TONE ' + TONES[i], WAVE_SHAPES, P(shk)) });
     const dest = h('div', 'btn', { style: 'width:56px;height:16px', onclick: () => openMenu(n + ' DEST \u2014 TONE ' + TONES[i], LFODESTS, P(dk2)) });
     const paintDest = () => dest.textContent = LFODESTS[P(dk2).get()]; paintDest(); P(dk2).sub(paintDest);
-    return h('div', 'row', { style: 'gap:8px' }, h('div', 'lbl-hi', { style: 'width:32px' }, n),
+    return h('div', 'row', { style: 'gap:8px' }, h('div', 'lbl-hi', { style: 'width:32px;color:' + col }, n),
       rate, Knob(P(dk), 'DEPTH', { size: 26 }), shapeStep,
-      h('div', 'row', { style: 'gap:4px' }, syncLed, syncBtn), L('DEST'), dest);
+      h('div', 'row', { style: 'gap:4px' }, Led(P(sk)), syncBtn), L('DEST'), dest);
   };
+  const lfoWrap = h('div', 'col', { style: 'gap:9px;margin-top:auto;margin-bottom:2px' },
+    lfoRow('LFO1', 'l1r', 'l1d', 'l1sync', 'l1dest', 'l1shape'),
+    lfoRow('LFO2', 'l2r', 'l2d', 'l2sync', 'l2dest', 'l2shape'));
 
-  // ---- AUX ENV + VOICING row
-  const auxAmt = Knob(P('auxAmt'), 'AMOUNT', { size: 26, color: 'var(--ptr-yellow)', bip: true, def: .5, fmt: fmtBip });
-  const auxDest = h('div', 'btn', { style: 'width:56px;height:16px', onclick: () => openMenu('AUX ENV DEST \u2014 TONE ' + TONES[i], AUXDESTS, P('auxDest')) });
-  const paintAux = () => auxDest.textContent = AUXDESTS[P('auxDest').get()]; paintAux(); P('auxDest').sub(paintAux);
-  const voicing = h('div', 'lcd click', { style: 'width:54px;height:16px', onclick: () => openMenu('VOICING \u2014 TONE ' + TONES[i], VOICINGS, P('voicing')) });
-  const spread = h('div', 'lcd click', { style: 'width:44px;height:16px', onclick: () => openMenu('DREAMY SPREAD \u2014 TONE ' + TONES[i], SPREADS, P('spread')) });
-  const paintVoi = () => { voicing.textContent = VOICINGS[P('voicing').get()]; spread.style.display = P('voicing').get() === 3 ? 'flex' : 'none'; };
-  paintVoi(); P('voicing').sub(paintVoi);
-  const paintSpread = () => spread.textContent = SPREADS[P('spread').get()]; paintSpread(); P('spread').sub(paintSpread);
-  const auxRow = h('div', 'row', { style: 'gap:8px' }, h('div', 'lbl-hi', { style: 'width:32px' }, 'AUX ENV'),
-    auxAmt, L('DEST'), auxDest, h('div', 'divider-v', { style: 'margin:0 6px' }), LH('VOICE'), voicing, spread, h('div', 'grow'));
-
-  // ---- GLOBAL sub-block (absolute, bottom-right; nothing else moves)
-  const detVoices = Stepper(P('detVoices'), ['1','2','3','4'], { lcd: true, readStyle: 'width:20px;height:16px', arrowStyle: 'width:13px;height:16px', clamp: [0, 3], label: 'DETUNE VOICES' });
-  const detKnob = Knob(P('detAmt'), 'DETUNE', { size: 30, color: 'var(--ptr-yellow)', def: 0, fmt: v => '\u00b1' + Math.round(v * 25) + ' c' });
-  const dimDet = () => detKnob.classList.toggle('dim', P('detVoices').get() === 0);
-  dimDet(); P('detVoices').sub(dimDet);
+  // ---- GLOBAL sub-block (UNISON stepper reads OFF at 1 voice)
+  /* v18 USER-STATED semantics: UNISON/DETUNE are TRUE-GLOBAL \u2014 the stepper/knob
+   * write detune_voices/detune_amount to ALL FOUR tones and display tone A's
+   * value (same all-tones write-through idiom as the envelope editor's ALL
+   * mode; the params stay per-tone in the APVTS). \u26a0 GUI-Claude fold upstream. */
+  const allTones = key => ({
+    get: () => tone(key, 0).get(),
+    set: v => TONES.forEach((_, t) => tone(key, t).set(v)),
+    sub: f => tone(key, 0).sub(f),
+  });
+  const detV = allTones('detVoices'), detA = allTones('detAmt');
+  const detVoices = Stepper(detV, ['OFF','2','3','4'], { lcd: true, readStyle: 'width:34px;height:16px', arrowStyle: 'width:13px;height:16px', clamp: [0, 3], label: 'UNISON VOICES' });
+  const detKnob = Knob(detA, 'DETUNE', { size: 30, color: 'var(--ptr-yellow)', def: 0, fmt: v => '\u00b1' + Math.round(v * 25) + ' c' });
+  const dimDet = () => detKnob.classList.toggle('dim', detV.get() === 0);
+  dimDet(); detV.sub(dimDet);
   const gOctStep = h('div', 'col', { style: 'align-items:center;gap:3px' },
     (() => { const read = h('div', 'lcd', { style: 'width:24px;height:16px' });
       const paint = () => { const n = Math.round((glob('gOctave').get() - .5) * 4); read.textContent = (n > 0 ? '+' : '') + n; };
@@ -814,21 +713,17 @@ function buildToneEdit() {
     h('div', 'lbl-sm', null, 'OCTAVE'));
   const offLed = Led(glob('globOffset'));
   const offBtn = h('div', 'btn', { style: 'width:86px;height:16px', onclick: () => { const v = !glob('globOffset').get(); glob('globOffset').set(v); touch(v ? 'GLOBAL OFFSET ON' : 'GLOBAL OFFSET OFF', v ? 1 : 0); rebuildToneEdit(); } }, 'OFFSET MODE');
-  const globalBlock = h('div', 'group', { style: 'position:absolute;right:12px;bottom:10px;width:307px;padding:13px 10px 8px;display:flex;flex-direction:column;gap:9px;background:rgba(16,18,40,.45)' },
+  const globalBlock = h('div', 'group', { style: 'position:absolute;right:12px;bottom:10px;width:321px;padding:13px 10px 8px;display:flex;flex-direction:column;gap:9px;background:rgba(16,18,40,.45)' },
     h('div', 'group-title', { style: 'background:#2a2f56;font-size:9px' }, 'GLOBAL'),
     h('div', 'row', { style: 'gap:9px' },
-      h('div', 'col', { style: 'align-items:center;gap:3px' }, detVoices, h('div', 'lbl-sm', null, 'VOICES')),
+      h('div', 'col', { style: 'align-items:center;gap:3px' }, detVoices, h('div', 'lbl-sm', null, 'UNISON')),
       detKnob, h('div', 'divider-v'), gOctStep),
     h('div', 'row', { style: 'gap:7px' }, offLed, offBtn,
       h('div', null, { style: 'font:600 6.5px var(--f-silk);color:var(--silk-dim);line-height:1.15' }, 'AMP ADSR + CUT/RES \u2192 GLOBAL \u00b1')));
 
   const block = grp('TONE EDIT', 'padding:16px 12px 8px;display:flex;flex-direction:column;gap:9px',
-    waveRow, knobRow, tvfRow,
-    lfoRow('LFO1', 'l1r', 'l1d', 'l1sync', 'l1dest', 'l1shape'),
-    lfoRow('LFO2', 'l2r', 'l2d', 'l2sync', 'l2dest', 'l2shape'),
-    auxRow, globalBlock);
-  // colour the TONE EDIT title letter
-  block.querySelector('.group-title').append(' ', h('span', null, { style: `color:${col}` }, TONES[i]));
+    waveWrap, tvfRow, voiceRow, lfoWrap, globalBlock);
+  block.querySelector('.group-title').append(' ', h('span', null, { style: 'color:' + col }, TONES[i]));
   return block;
 }
 function cyc(handle, len, d) { handle.set((handle.get() + d + len) % len); }
@@ -836,10 +731,10 @@ function cyc(handle, len, d) { handle.set((handle.get() + d + len) % len); }
 /* ---- FILTERS -------------------------------------------------------------- */
 function buildFilters() {
   const strip = (n, typeKey, cutKey, resKey, thirdKey, thirdLabel, thirdColor, thirdBip) => {
-    const typeLcd = h('div', 'lcd click grow', { style: 'height:20px', onclick: () => openMenu('FILTER ' + n + ' TYPE', FTYPES, glob(typeKey)) });
-    const paint = () => typeLcd.textContent = FTYPES[glob(typeKey).get()]; paint(); glob(typeKey).sub(paint);
+    const typeLcd = h('div', 'lcd click grow', { style: 'height:20px', onclick: () => openMenu('FILTER ' + n + ' TYPE', TVFTYPES, glob(typeKey)) });
+    const paint = () => typeLcd.textContent = TVFTYPES[glob(typeKey).get()]; paint(); glob(typeKey).sub(paint);
     const typeRow = h('div', 'row', { style: 'gap:5px;width:100%' }, h('div', null, { style: 'font:700 9px var(--f-silk);color:var(--silk-hi);width:10px' }, String(n)),
-      h('div', 'step', { onclick: () => cyc(glob(typeKey), FTYPES.length, -1) }, '\u2039'), typeLcd, h('div', 'step', { onclick: () => cyc(glob(typeKey), FTYPES.length, 1) }, '\u203a'));
+      h('div', 'step', { onclick: () => cyc(glob(typeKey), TVFTYPES.length, -1) }, '\u2039'), typeLcd, h('div', 'step', { onclick: () => cyc(glob(typeKey), TVFTYPES.length, 1) }, '\u203a'));
     const knobs = h('div', 'row', { style: 'justify-content:space-between;width:100%' },
       Knob(glob(cutKey), 'CUTOFF', { size: 36, color: 'var(--ptr-red)', def: GLOBAL_DEFAULTS[cutKey] }),
       Knob(glob(resKey), 'RESONANCE', { size: 36, color: 'var(--ptr-red)', def: GLOBAL_DEFAULTS[resKey] }),
@@ -865,38 +760,119 @@ function buildFilters() {
     f1.typeRow, f1.knobs, h('div', 'divider-h'), f2.typeRow, f2.knobs, routeRow);
 }
 
-/* ---- DREAM VECTOR (radar) ------------------------------------------------- */
-let RADAR = null;
-function buildVector() {
-  const box = h('div', null, { style: 'position:relative;width:150px;height:132px;background:linear-gradient(180deg,#333857 0%,#242640 50%,#484D70 100%);border:1px solid #4D547A;border-radius:6px;box-shadow:inset 0 1px 1px rgba(255,255,255,.12),inset 0 -2px 4px rgba(0,0,0,.4)' });
-  const svg = s('svg', { viewBox: '0 0 150 132', style: 'position:absolute;inset:0;width:100%;height:100%' });
-  box.append(svg);
-  // corner screws around orb
-  [[6,6],[135,6],[6,117],[135,117]].forEach(([x,y]) => box.append(h('div', null, { style: `position:absolute;left:${x}px;top:${y}px;width:9px;height:9px;border-radius:50%;background:radial-gradient(circle at 40% 40%,#8087A8,#141724);box-shadow:0 1px 1px rgba(0,0,0,.6)` })));
-  RADAR = svg;
-
-  const shape = Stepper(glob('vecShape'), VECSHAPES, { readStyle: 'width:36px;height:16px', arrowStyle: 'width:14px;height:16px', label: 'ORBIT SHAPE', onLcd: () => openMenu('ORBIT SHAPE', VECSHAPES, glob('vecShape')) });
-  const left = h('div', 'col', { style: 'align-items:center;gap:4px' }, box,
-    h('div', 'lbl-sm', null, 'VECTOR RADAR \u00b7 PHASE'), h('div', 'row', { style: 'gap:4px;align-items:center' }, L('SHAPE'), shape));
-
-  const knobs = h('div', 'col', { style: 'gap:6px;justify-content:space-around;padding:2px 0' },
-    Knob(glob('vphase'), 'PHASE', { size: 32, color: 'var(--ptr-yellow)' }), Knob(glob('orbRate'), 'RATE', { size: 32, fmt: v => { const hz = 0.02 * Math.pow(400, v); return (hz < 1 ? hz.toFixed(2) : hz.toFixed(1)) + ' Hz'; } }),   /* engine law 0.02*400^v (DreamVoice.h orbitRateHz) — ⚠ GUI-Claude fold upstream */
-    ledToggle(glob('orbit'), 'ORBIT'), ledToggle(glob('venv'), 'P-ENV'),
-    h('div', 'btn', { style: 'width:40px;height:14px', onclick: openPenv }, 'EDIT'));
-  // relabel toggles
-  knobs.children[2].append(h('div', 'lbl-sm', null, 'ORBIT'));
-  knobs.children[3].append(h('div', 'lbl-sm', { style: 'white-space:nowrap' }, 'P-ENV'));
-
-  const dirInt = h('div', 'col', { style: 'gap:5px;justify-content:space-around;padding:2px 0' },
-    h('div', 'row', { style: 'align-items:flex-end;gap:8px;padding-left:18px' },
-      h('div', null, { style: 'width:44px;text-align:center;font:700 7.5px var(--f-silk);color:var(--silk-hi)' }, 'DIRECTION'),
-      h('div', null, { style: 'width:44px;text-align:center;font:700 7.5px var(--f-silk);color:var(--silk-hi)' }, 'INTENSITY')),
-    ...TONES.map((n, i) => h('div', 'row', { style: 'align-items:center;gap:8px' },
-      h('div', null, { style: `width:10px;font:800 11px var(--f-lcd);color:${TONE_COLORS[i]}` }, n),
-      h('div', null, { style: 'width:44px;display:flex;justify-content:center' }, Knob(tone('dir', i), null, { size: 22, color: 'var(--ptr-yellow)' })),
-      h('div', null, { style: 'width:44px;display:flex;justify-content:center' }, Knob(tone('vint', i), null, { size: 22, color: 'var(--ptr-yellow)' })))));
-
-  return grp('DREAM VECTOR', 'padding:16px 10px 8px;display:flex;gap:10px', left, knobs, h('div', 'divider-v'), dirInt);
+/* ---- ENVELOPES (v18: shared per-tone + global editor; replaces DREAM VECTOR) */
+function buildEnvelopes() {
+  const ENV_ADSR = { AMP:['aa','ad','as','ar'], FILT:['fa','fd','fs','fr'], AUX:['xa','xd','xs','xr'] };
+  const ENV_GLOB = { AMP:['gAmpA','gAmpD','gAmpS','gAmpR'], FILT:['gFltA','gFltD','gFltS','gFltR'], AUX:['gAuxA','gAuxD','gAuxS','gAuxR'] };
+  const ENV_OVR  = { AMP:'ampOvr', FILT:'filtOvr', AUX:'auxOvr' };
+  const ENV_ALLC = '#B48CFF';
+  const ENV_ROUTE_TXT = { AMP:'to voice amplitude', FILT:'to filter ENV AMT', AUX:'assignable MOD MATRIX source' };
+  const lblCell = t => h('div', null, { style: 'font:700 8px var(--f-silk);color:var(--silk);letter-spacing:.16em;width:36px' }, t);
+  const routeBtns = h('div', 'row', { style: 'gap:6px' });
+  const toneBtns = h('div', 'row', { style: 'gap:6px' });
+  const curve = s('svg', { viewBox: '0 0 300 100', preserveAspectRatio: 'none', style: 'position:absolute;inset:0;width:100%;height:100%' });
+  const title = h('div', null, { style: 'position:absolute;top:5px;left:8px;font:700 8px var(--f-silk);letter-spacing:.1em' });
+  const sub = h('div', null, { style: 'position:absolute;bottom:4px;left:8px;font:600 6.5px var(--f-silk);color:#6d7a2a;letter-spacing:.05em' });
+  const lcd = h('div', 'grow', { style: 'position:relative;background:#0b0d05;border:1px solid #3a3410;border-radius:4px;overflow:hidden;box-shadow:inset 0 2px 10px rgba(0,0,0,.75)' }, curve, title, sub);
+  const sliders = h('div', 'row', { style: 'gap:11px;align-items:flex-end;padding-right:2px' });
+  const auxDest = h('div', 'btn', { style: 'width:56px;height:16px', onclick: () => openMenu('AUX ENV DEST \u2014 TONE ' + TONES[UI.sel], AUXDESTS, tone('auxDest', UI.sel)) });
+  const auxAmtHost = h('div', 'row', { style: 'gap:4px' });
+  const hint = h('div', null, { style: 'font:600 6.5px var(--f-silk);color:var(--silk-dim);letter-spacing:.03em;text-align:right' });
+  hint.innerHTML = 'FILT \u2192 ENV AMT \u00b7 AUX \u2192 MATRIX<br>\u25cf = TONE OVERRIDE';
+  const T = k => tone(k, UI.sel);
+  const envVal = (dest, all, ti, idx) => (all || !tone(ENV_OVR[dest], ti).get()) ? glob(ENV_GLOB[dest][idx]).get() : tone(ENV_ADSR[dest][idx], ti).get();
+  function commitEnv(idx, v) {
+    const dest = UI.envDest, all = UI.envAll, ov = ENV_OVR[dest], gk = ENV_GLOB[dest], pk = ENV_ADSR[dest];
+    if (all) glob(gk[idx]).set(v);
+    else { if (!T(ov).get()) { pk.forEach((k, j) => T(k).set(glob(gk[j]).get())); T(ov).set(true); } T(pk[idx]).set(v); }
+    touch(dest + ' ' + ['A','D','S','R'][idx], v);
+  }
+  const TOP = 8, BOT = 92, X0 = 6;
+  const curvePts = (a, d, su, r) => { let x = X0; const p = [[x, BOT]]; x += 8 + a * 78; p.push([x, TOP]); x += 8 + d * 74; const sy = BOT - (BOT - TOP) * su; p.push([x, sy]); x += 66; p.push([x, sy]); x += 8 + r * 80; p.push([x, BOT]); return p; };
+  const ptsStr = p => p.map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' ');
+  function paintCurve() {
+    const dest = UI.envDest, all = UI.envAll, i = UI.sel, color = all ? ENV_ALLC : TONE_COLORS[i];
+    curve.innerHTML = '';
+    [33, 66].forEach(y => curve.append(s('line', { x1: 0, y1: y, x2: 300, y2: y, stroke: '#1c2109', 'stroke-width': 1 })));
+    // ghost underlays: every OTHER envelope on this route, dashed, in its identity color
+    const ghost = (vals, gcol) => curve.append(s('polyline', { points: ptsStr(curvePts(vals[0], vals[1], vals[2], vals[3])), fill: 'none', stroke: gcol, 'stroke-width': 1.5, opacity: .38, 'stroke-dasharray': '4 3', 'stroke-linejoin': 'round' }));
+    if (!all) ghost(ENV_GLOB[dest].map(k => glob(k).get()), ENV_ALLC);
+    TONES.forEach((n, ti) => { if ((all || ti !== i) && tone(ENV_OVR[dest], ti).get()) ghost([0,1,2,3].map(idx => tone(ENV_ADSR[dest][idx], ti).get()), TONE_COLORS[ti]); });
+    const p = curvePts(envVal(dest, all, i, 0), envVal(dest, all, i, 1), envVal(dest, all, i, 2), envVal(dest, all, i, 3));
+    const line = ptsStr(p);
+    curve.append(s('polygon', { points: X0 + ',' + BOT + ' ' + line, fill: color, opacity: .14 }));
+    curve.append(s('polyline', { points: line, fill: 'none', stroke: color, 'stroke-width': 2.5, 'stroke-linejoin': 'round' }));
+    const xA = p[1][0], xS = p[2][0], syC = p[2][1], xR = p[4][0];
+    const mkHandle = (cx, cy, onMove) => {
+      const hit = s('circle', { cx, cy, r: 9, fill: 'transparent', style: 'cursor:grab' });
+      hit.addEventListener('pointerdown', e => {
+        e.preventDefault(); e.stopPropagation();
+        const rect = curve.getBoundingClientRect();
+        const mv = ev => onMove((ev.clientX - rect.left) / rect.width * 300, (ev.clientY - rect.top) / rect.height * 100);
+        const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); };
+        addEventListener('pointermove', mv); addEventListener('pointerup', up);
+      });
+      curve.append(hit, s('circle', { cx, cy, r: 4.5, fill: color, stroke: '#0b0d05', 'stroke-width': 1.5, style: 'pointer-events:none' }));
+    };
+    mkHandle(xA, TOP, vx => { commitEnv(0, clamp((vx - X0 - 8) / 78, 0, 1)); renderEnv(); });
+    mkHandle(xS, syC, (vx, vy) => { commitEnv(1, clamp((vx - xA - 8) / 74, 0, 1)); commitEnv(2, clamp((BOT - vy) / (BOT - TOP), 0, 1)); renderEnv(); });
+    mkHandle(xR, BOT, vx => { commitEnv(3, clamp((vx - xS - 66 - 8) / 80, 0, 1)); renderEnv(); });
+  }
+  function renderEnv() {
+    const dest = UI.envDest, all = UI.envAll, i = UI.sel, color = all ? ENV_ALLC : TONE_COLORS[i];
+    const ov = ENV_OVR[dest];
+    routeBtns.innerHTML = '';
+    ['AMP','FILT','AUX'].forEach(key => { const on = dest === key;
+      routeBtns.append(h('div', null, { style: 'min-width:44px;height:20px;padding:0 10px;display:flex;align-items:center;justify-content:center;border-radius:3px;cursor:pointer;font:700 9px var(--f-silk);letter-spacing:.08em;box-shadow:0 1px 2px rgba(0,0,0,.4);background:' + (on ? color : '#181b34') + ';border:1px solid ' + (on ? color : '#464e94') + ';color:' + (on ? '#07070a' : '#c9cdf2'),
+        onclick: () => { UI.envDest = key; renderEnv(); } }, key)); });
+    toneBtns.innerHTML = '';
+    [['0','1'],['1','2'],['2','3'],['3','4'],['ALL','ALL']].forEach(pair => { const m = pair[0], lab = pair[1];
+      const isAll = m === 'ALL', on = isAll ? all : (!all && i === +m);
+      const btn = h('div', null, { style: 'position:relative;min-width:22px;height:20px;padding:0 8px;display:flex;align-items:center;justify-content:center;border-radius:3px;cursor:pointer;font:700 9px var(--f-silk);box-shadow:0 1px 2px rgba(0,0,0,.4);background:' + (on ? color : '#181b34') + ';border:1px solid ' + (on ? color : '#464e94') + ';color:' + (on ? '#07070a' : '#c9cdf2'),
+        onclick: () => { if (isAll) { UI.envAll = true; renderEnv(); } else { UI.envAll = false; if (i !== +m) { UI.sel = +m; rebuildToneEdit(); notify(); } else renderEnv(); } } }, lab);
+      if (!isAll && tone(ov, +m).get()) btn.append(h('div', null, { style: 'position:absolute;top:2px;right:2px;width:4px;height:4px;border-radius:50%;background:#ffd23f;box-shadow:0 0 4px #ffd23f' }));
+      toneBtns.append(btn); });
+    title.style.color = color;
+    title.textContent = dest + ' \u00b7 ' + (all ? 'ALL (GLOBAL)' : 'TONE ' + TONES[i]);
+    const subTxt = () => all ? ('GLOBAL \u2014 ' + ENV_ROUTE_TXT[dest]) : (T(ov).get() ? 'PER-TONE OVERRIDE' : 'FOLLOWS GLOBAL');
+    sub.textContent = subTxt();
+    sliders.innerHTML = '';
+    ['A','D','S','R'].forEach((lab, idx) => {
+      const subs = [];
+      const handle = { get: () => envVal(dest, all, UI.sel, idx), sub: f => subs.push(f),
+        set: v => { commitEnv(idx, v); subs.forEach(f => f(v)); paintCurve(); sub.textContent = subTxt(); } };
+      sliders.append(Slider(handle, lab, { h: 78 }));
+    });
+    const paintAuxDest = () => auxDest.textContent = AUXDESTS[tone('auxDest', UI.sel).get()];
+    paintAuxDest(); tone('auxDest', UI.sel).sub(paintAuxDest);
+    auxAmtHost.innerHTML = '';
+    const amt = Knob(tone('auxAmt', UI.sel), 'AUX AMT', { size: 22, color: 'var(--ptr-yellow)', bip: true, def: .5, fmt: fmtBip });
+    if (amt.lastChild && amt.lastChild.classList.contains('lbl')) amt.lastChild.remove();
+    auxAmtHost.append(amt, L('AMT'));
+    paintCurve();
+  }
+  listeners.add(renderEnv);
+  /* A1/TD-005: preset-load refresh wiring (bridge seam only) — renderEnv()
+   * rebuilds the whole ENVELOPES section from LIVE param values, but was only
+   * invoked at build and on user gesture, never on external param change (a
+   * preset load mutated A/D/S/R yet the display stayed stale). Subscribe the
+   * EXISTING renderEnv to every param it reads: per-tone A/D/S/R (4 tones ×
+   * 3 routes), the global env tier (ENV_GLOB — REAL relays in v18), and the
+   * override flags (ENV_OVR). renderEnv only .get()s these (never .set()) —
+   * one-way read refresh, no feedback loop. ⚠ GUI-Claude fold upstream. */
+  ['AMP', 'FILT', 'AUX'].forEach(dst => {
+    ENV_GLOB[dst].forEach(gk => glob(gk).sub(renderEnv));
+    ENV_ADSR[dst].forEach(pk => TONES.forEach((_, t) => tone(pk, t).sub(renderEnv)));
+    TONES.forEach((_, t) => tone(ENV_OVR[dst], t).sub(renderEnv));
+  });
+  const block = grp('ENVELOPES', 'padding:18px 12px 8px;display:flex;flex-direction:column;gap:7px',
+    h('div', 'row', { style: 'gap:6px' }, lblCell('ROUTE'), routeBtns),
+    h('div', 'row', { style: 'gap:6px' }, lblCell('TONE'), toneBtns),
+    h('div', 'row', { style: 'gap:12px;align-items:stretch;flex:1;min-height:0' }, lcd, sliders),
+    h('div', 'row', { style: 'gap:7px;border-top:1px solid rgba(70,78,148,.4);padding-top:6px' },
+      h('div', 'lbl-hi', null, 'AUX'), L('DEST'), auxDest, auxAmtHost, h('div', 'grow'), hint));
+  renderEnv();
+  return block;
 }
 
 /* ---- MOD MATRIX + GLOBAL LFO --------------------------------------------- */
@@ -925,10 +901,10 @@ function buildMatrix() {
     const wave = Stepper(glob(wKey), WAVE_SHAPES, { readStyle: 'width:38px;height:16px', arrowStyle: 'width:13px;height:16px', label: label + ' SHAPE', onLcd: () => openMenu(label + ' SHAPE', WAVE_SHAPES, glob(wKey)) });
     return h('div', 'row', { style: 'gap:6px;align-items:center' }, h('div', 'lbl-hi', { style: 'width:44px' }, label), rate, h('div', 'row', { style: 'gap:4px' }, syncLed, syncBtn), wave);
   };
-  const glfo = h('div', 'col', { style: 'gap:4px;margin-top:auto' },
+  const glfo = h('div', 'col', { style: 'gap:4px;margin-bottom:auto' },
     glfoRowUI('G-LFO 1', 'glfoRate', 'glfoSync', 'glfoWave'),
     glfoRowUI('G-LFO 2', 'glfo2Rate', 'glfo2Sync', 'glfo2Wave'));
-  return grp('MOD MATRIX', 'padding:16px 10px 8px;display:flex;flex-direction:column;gap:5px', ...rows, glfo);
+  return grp('MOD MATRIX', 'padding:16px 10px 8px;display:flex;flex-direction:column;gap:5px', glfo, ...rows);
 }
 /* menu overlay bound to a plain getter/setter (for UI.matrix objects) */
 function openMenuObj(title, arr, get, set) {
@@ -949,7 +925,7 @@ function buildFX() {
       ...knobDefs.map(([k, l]) => {
         const isTime = syncKey && k === knobDefs[1][0];
         const synced = isTime && glob(syncKey).get();
-        /* division law = engine's round(v*11) (PluginProcessor delay-sync read). */
+        /* division law = engine's round(v*11) (PluginProcessor delay-sync read) — ⚠ GUI-Claude fold upstream. */
         const kn = Knob(glob(k), synced ? SYNCDIVS[Math.round(glob(k).get() * 11)] : l, { size: 26, color: synced ? 'var(--ptr-yellow)' : null });
         if (isTime) {
           /* C2: label snapshot — external sync change rebuilds the FX block
@@ -987,7 +963,7 @@ function rebuildFX() { const f = buildFX(); if (fxHost && fxHost.parentNode) fxH
 /* ---- UTILITY + P-ENV modals ---------------------------------------------- */
 function openUtil() {
   const knob = (k, l, c) => Knob(glob(k), l, { size: 30, color: c });
-  const lofiFocus = h('div', 'lcd click', { style: 'width:62px;height:16px', onclick: () => { cyc(glob('lofiFocus'), LOFIFOCUS.length, 1); openUtil(); } });
+  const lofiFocus = h('div', 'lcd click', { style: 'width:62px;height:16px', onclick: () => { cyc(glob('lofiFocus'), LOFIFOCUS.length, 1); } });
   const talkFocus = h('div', 'lcd click', { style: 'width:62px;height:16px', onclick: () => cyc(glob('talkFocus'), TALKFOCUS.length, 1) });
   const bind = (lcd, arr, key) => { const p = () => lcd.textContent = arr[glob(key).get()]; p(); glob(key).sub(p); };
   bind(lofiFocus, LOFIFOCUS, 'lofiFocus'); bind(talkFocus, TALKFOCUS, 'talkFocus');
@@ -1021,16 +997,6 @@ function tglBtn(key, text, w) {
   const b = h('div', 'btn', { style: `width:${w}px;height:18px`, onclick: () => { glob(key).set(!glob(key).get()); touch(text, glob(key).get() ? 1 : 0); } }, text);
   const p = () => b.classList.toggle('on', !!glob(key).get()); p(); glob(key).sub(p); return b;
 }
-function openPenv() {
-  const k = (key, l, c) => Knob(glob(key), l, { size: 38, color: c, def: GLOBAL_DEFAULTS[key] });
-  const loopLed = Led(glob('penvLoop'));
-  const modal = h('div', 'modal', { onclick: e => e.stopPropagation() },
-    h('div', 'menu-head', { style: "font:700 10px var(--f-silk);letter-spacing:.18em;color:var(--silk-hi)" }, h('span', null, null, 'P-ENV \u2014 VECTOR PHASE ENVELOPE'), h('span', { style: 'color:var(--silk)' }, null, 'ESC=EXIT')),
-    h('div', 'row', { style: 'gap:14px;align-items:center' }, k('penvStart', 'START', 'var(--ptr-yellow)'), k('penvEnd', 'END', 'var(--ptr-yellow)'), k('penvTime', 'TIME'),
-      h('div', 'col', { style: 'align-items:center;gap:4px' }, loopLed, h('div', 'btn', { style: 'width:34px;height:22px', onclick: () => { const v = !glob('penvLoop').get(); glob('penvLoop').set(v); touch('P-ENV LOOP', v ? 1 : 0); } }), h('div', 'lbl-hi', null, 'LOOP'))));
-  showOverlay(modal);
-}
-
 /* ---- PRESET BROWSER (factory + user bank) -------------------------------- */
 /* B8: the user bank was fetched once at boot — SAVE/RENAME/DELETE reopened the
  * browser from the stale array (invisible saves, empty-bank index bug, auto-
@@ -1084,57 +1050,7 @@ function openPresetBrowser() {
 function reopenPreset() { openPresetBrowser(); }
 
 /* ============================================================ ANIMATION ==== */
-function drawRadar() {
-  if (!RADAR) return;
-  const CX = 75, CY = 63, R = 62, BR = '#339E61', FT = '#268052';
-  /* B6: dot orbits from live vec_phase + local display phase (read-only radar). */
-  const phi = ((glob('vphase').get() + dispPhase) % 1) * 2 * Math.PI;
-  const kids = [];
-  const grad = (id, stops, attrs = {}) => { const g = s('radialGradient', Object.assign({ id, cx: '50%', cy: '50%', r: '50%' }, attrs)); stops.forEach(([o, c, op]) => g.append(s('stop', { offset: o, 'stop-color': c, 'stop-opacity': op }))); return g; };
-  const defs = s('defs');
-  defs.append(grad('rf', [['0%','#0A0F0D'],['80%','#05080A'],['100%','#000503']]));
-  defs.append(grad('rp', [['0%','#144D2E',.3],['60%','#0F3824',.16],['100%','#0A2417',0]]));
-  defs.append(grad('rs', [['0%','#4DE699',.45],['100%','#4DE699',0]]));
-  defs.append(grad('rh', [['0%','#4DE699'],['60%','#1A6647'],['100%','#0A2417']]));
-  TONE_CORE.forEach((c, i) => { defs.append(grad('rc' + i, [['0%',c[0]],['45%',c[1]],['100%',c[2]]])); defs.append(grad('rg' + i, [['0%',TONE_COLORS[i],.55],['100%',TONE_COLORS[i],0]])); });
-  const bez = s('linearGradient', { id: 'rb', x1: CX, y1: CY - R, x2: CX, y2: CY + R, gradientUnits: 'userSpaceOnUse' });
-  [['0%','#6B7399'],['50%','#1A1C2E'],['100%','#474D70']].forEach(([o, c]) => bez.append(s('stop', { offset: o, 'stop-color': c })));
-  defs.append(bez);
-  const clip = s('clipPath', { id: 'rt' }); clip.append(s('circle', { cx: CX, cy: CY, r: R })); defs.append(clip);
-  kids.push(defs);
-  kids.push(s('circle', { cx: CX, cy: CY, r: R + 2, fill: 'none', stroke: 'url(#rb)', 'stroke-width': 3.9 }));
-  kids.push(s('circle', { cx: CX, cy: CY, r: R, fill: 'url(#rf)' }));
-  const tube = s('g', { 'clip-path': 'url(#rt)' });
-  tube.append(s('circle', { cx: CX, cy: CY, r: R, fill: 'url(#rp)' }));
-  [[.225,.3],[.452,.34],[.68,.4],[.906,.55]].forEach(([f, op]) => tube.append(s('circle', { cx: CX, cy: CY, r: (R*f).toFixed(1), fill: 'none', stroke: BR, 'stroke-width': 1, opacity: op })));
-  [[.134,.1],[.407,.13],[.68,.16],[.952,.22]].forEach(([f, op]) => tube.append(s('circle', { cx: CX, cy: CY, r: (R*f).toFixed(1), fill: 'none', stroke: FT, 'stroke-width': 1, opacity: op })));
-  const sa = -beamAngle;   // radar sweep spins CLOCKWISE, decoupled from tone RATE (#1/#2)
-  tube.append(s('path', { d: `M ${CX} ${CY} L ${(CX+R*Math.cos(sa)).toFixed(1)} ${(CY-R*Math.sin(sa)).toFixed(1)} A ${R} ${R} 0 0 0 ${(CX+R*Math.cos(sa-.55)).toFixed(1)} ${(CY-R*Math.sin(sa-.55)).toFixed(1)} Z`, fill: 'url(#rs)' }));
-  tube.append(s('line', { x1: CX, y1: CY, x2: (CX+R*Math.cos(sa)).toFixed(1), y2: (CY-R*Math.sin(sa)).toFixed(1), stroke: '#4DE699', 'stroke-width': 1.2, opacity: .5 }));
-  TONES.forEach((n, i) => {
-    const on = tone('on', i).get();
-    const gain = on ? toneGain(i, phi) : 0;
-    const a = (TONE_ANGLE[i] + (tone('dir', i).get() - .5) * 40) * Math.PI / 180;
-    const rr = (((a - sa) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-    const fade = Math.pow(1 - rr / (2 * Math.PI), 1.8);   // bright when beam just swept it, fades until next pass
-    const op = +(0.12 + 0.88 * fade).toFixed(3);
-    const r = R * (.28 + gain * .64), bx = +(CX + r * Math.cos(a)).toFixed(1), by = +(CY - r * Math.sin(a)).toFixed(1);
-    if (!on) { tube.append(s('circle', { cx: bx, cy: by, r: 3, fill: TONE_COLORS[i], opacity: +(.04 + .14 * fade).toFixed(3) })); return; }
-    const cr = 3 + gain * 3;
-    tube.append(s('circle', { cx: bx, cy: by, r: cr * 2.4, fill: `url(#rg${i})`, opacity: op }));
-    if (i === UI.sel) tube.append(s('circle', { cx: bx, cy: by, r: cr + 3.5, fill: 'none', stroke: TONE_COLORS[i], 'stroke-width': 1, opacity: +(.15 + .65 * fade).toFixed(3) }));
-    tube.append(s('circle', { cx: bx, cy: by, r: cr, fill: `url(#rc${i})`, opacity: op }));
-    const txt = s('text', { x: bx, y: by - cr - 3, 'text-anchor': 'middle', 'font-family': 'Doto', 'font-weight': 800, 'font-size': 9, fill: TONE_COLORS[i], opacity: op }); txt.textContent = n; tube.append(txt);
-  });
-  for (let yy = 0; yy < 128; yy += 3) tube.append(s('rect', { x: 0, y: yy, width: 150, height: 1, fill: '#000', 'fill-opacity': .1 }));
-  kids.push(tube);
-  kids.push(s('circle', { cx: CX, cy: CY, r: R * .225, fill: 'none', stroke: BR, 'stroke-width': 1, opacity: .3 }));
-  kids.push(s('circle', { cx: CX, cy: CY, r: 4, fill: 'url(#rh)' }));
-  RADAR.replaceChildren(...kids);
-}
-function toneGain(i, phi) { const a = tone('dir', i).get() * 2 * Math.PI; const g = Math.max(0, Math.cos(phi - a)); const vint = tone('vint', i).get(); return (1 - vint) + vint * g * g; }
-
-let mL = 0, mR = 0, beamAngle = 0;
+let mL = 0, mR = 0;
 
 /* B3: real output meters — the editor pushes window.uiMeters({l,r}) at 30 Hz.
  * Receiver stores the latest peaks; tick() applies its existing peak-hold+decay.
@@ -1170,25 +1086,17 @@ function pollLimiter() {
     .catch(() => { limPending = false; });
 }
 
-/* B6: radar is READ-ONLY — the GUI no longer writes vec_phase (it fought host
- * automation with a wrong rate law). A local display phase advances with the
- * ENGINE law 0.02*400^v Hz (DreamVoice.h orbitRateHz) on top of the live
- * vec_phase base. ⚠ GUI-Claude fold upstream. */
-let dispPhase = 0;
 function tick() {
-  if (glob('orbit').get() && !overlayEl) { const hz = 0.02 * Math.pow(400, glob('orbRate').get()); dispPhase = (dispPhase + hz / 60) % 1; }
-  beamAngle = (beamAngle + 0.0175) % (2 * Math.PI);   // steady clockwise radar sweep (velocity reduced 65%)
-  const phi = ((glob('vphase').get() + dispPhase) % 1) * 2 * Math.PI;
-  // meters (the header spectrum is driven separately by pollScope() → getScopeData FFT)
   if (HEADER_ANIM) {
     if (Bridge.live) {
+      /* B3/B4: live meters from the uiMeters push + LIM from getLimiterGR — ⚠ GUI-Claude fold upstream. */
       const src = realMeters || { l: 0, r: 0 };
       mL = Math.max(mL * .82, src.l);
       mR = Math.max(mR * .82, src.r);
       pollLimiter();
       HEADER_ANIM.limLed.classList.toggle('on', glob('limiter_on').get() && limGR > 0);
     } else {
-      const act = TONES.reduce((s2, n, i) => s2 + (tone('on', i).get() ? toneGain(i, phi) * tone('level', i).get() : 0), 0) / 4;
+      const act = TONES.reduce((s2, n, i) => s2 + (tone('on', i).get() ? tone('level', i).get() : 0), 0) / 4;
       const m = glob('master').get();
       mL = Math.max(mL * .82, m * (.45 + act * .8 + Math.random() * .12));
       mR = Math.max(mR * .82, m * (.45 + act * .8 + Math.random() * .12));
@@ -1197,7 +1105,6 @@ function tick() {
     HEADER_ANIM.mL.style.height = Math.round(Math.min(1, mL) * 100) + '%';
     HEADER_ANIM.mR.style.height = Math.round(Math.min(1, mR) * 100) + '%';
   }
-  drawRadar();
   requestAnimationFrame(tick);
 }
 
@@ -1254,16 +1161,16 @@ function hydrate() {
  * scales uniformly — exactly the JUCE AffineTransform::scale rule, done in CSS here. */
 function fitToWindow() {
   const panel = document.querySelector('.panel'); if (!panel) return;
-  /* 1d: base height = CURRENT layout height (.panel 660 folded / 850 kbd-open),
-   * not a hardcoded 660 — the whole unit incl. the opened keybed scales into
-   * the window in both fold states (user-stated). ⚠ GUI-Claude fold upstream. */
+  /* 1d/TD-003: base height = CURRENT layout height (.panel 660 folded / 850
+   * kbd-open), not a hardcoded 660 — the whole unit incl. the opened keybed
+   * scales into the window in both fold states (USER-STATED; overrides the
+   * handoff's fixed-660 0.8-scale fit, which was the TD-003 dead-frame bug).
+   * ⚠ GUI-Claude fold upstream. */
   const baseH = panel.offsetHeight || 660;
   UI.scale = Math.min(window.innerWidth / 1140, window.innerHeight / baseH);
   /* CSS flex centers the UNscaled 1140×660 box, so the scaled panel sat inside a
    * dead frame (TD-003). Position absolutely from the top-left instead and center
-   * the SCALED box ourselves (rubber-rhino fit() rule). offsetHeight is the
-   * layout height — 660 folded, 850 kbd-open — so the open keybed stays anchored
-   * under the face instead of being pushed off the bottom. */
+   * the SCALED box ourselves (rubber-rhino fit() rule). */
   panel.style.position = 'absolute';
   panel.style.transformOrigin = '0 0';
   panel.style.transform = `scale(${UI.scale})`;
@@ -1326,7 +1233,7 @@ function buildKeyboard() {
   bed.append(keys);
   bed.style.display = UI.kbdOpen ? 'block' : 'none';
   /* 1c: fold also drives the NATIVE editor height (keyboardFold(folded):
-   * kBaseH 848 open / kFoldedH 660 folded), then re-fits on the next rAF so
+   * kBaseH open / kFoldedH folded), then re-fits on the next rAF so
    * fitToWindow measures the post-fold host window. ⚠ GUI-Claude fold upstream. */
   tabBtn.addEventListener('click', () => { UI.kbdOpen = !UI.kbdOpen; const panel = document.querySelector('.panel'); if (panel) panel.classList.toggle('kbd-open', UI.kbdOpen); bed.style.display = UI.kbdOpen ? 'block' : 'none'; tabBtn.textContent = tabTxt(); Bridge.fn('keyboardFold')(!UI.kbdOpen); fitToWindow(); requestAnimationFrame(fitToWindow); });
   frag.append(tab, bed);
@@ -1345,7 +1252,7 @@ function build() {
   panel.append(row1);
   const row2 = h('div', null, { style: 'display:grid;grid-template-columns:376px 276px 1fr;gap:10px;padding:14px 12px 0;height:212px' });
   fxHost = buildFX();
-  row2.append(buildVector(), buildMatrix(), fxHost);
+  row2.append(buildEnvelopes(), buildMatrix(), fxHost);
   panel.append(row2);
   panel.append(buildKeyboard());
   panel.append(h('div', 'grip', { onpointerdown: gripResize, ondblclick: () => { UI.scale = 1; panel.style.transform = 'scale(1)'; } }));
@@ -1359,8 +1266,8 @@ function build() {
   }).catch(() => {});
   panel.append(verSilk);
   document.getElementById('root').append(panel);
-  hydrate(); startScope(); fitToWindow(); drawRadar();
-  requestAnimationFrame(fitToWindow);   // re-fit after the WebView2 viewport settles (TD-003)
+  hydrate(); startScope(); fitToWindow();
+  requestAnimationFrame(fitToWindow);   // re-fit after the WebView2 viewport settles (TD-003) — ⚠ GUI-Claude fold upstream
   requestAnimationFrame(tick);
 }
 function gripResize(e) {

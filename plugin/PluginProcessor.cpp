@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include "Params.h"
 #include "Td007Remap.h"
+#include "V18Remap.h"
 #include "BinaryData.h"
 
 using namespace dreamer::params;
@@ -12,7 +13,6 @@ inline double cutHz(double v)   { return 60.0 * std::pow(200.0, v); }        // 
 inline double envHz(double v)   { return v * 9600.0; }                       // unipolar (s9)
 inline double adsrSec(double v) { return dreamer::lawv::envTimeSec(v); }     // D1: log 1ms..10s
 inline double dlyMs(double v)   { return std::pow(1000.0, v); }              // 1..1000
-inline double penvSec(double v) { return dreamer::lawv::penvTimeSec(v); }    // 0.02..10 (D1 display)
 }
 
 //==============================================================================
@@ -25,12 +25,10 @@ TheDreamerProcessor::TheDreamerProcessor()
 
     auto p = [this](const juce::String& id) { return apvts.getRawParameterValue(id); };
     pMaster = p(kMaster);
-    pVecPhase = p(kVecPhase); pVecOrbitOn = p(kVecOrbitOn);
-    pVecOrbitRate = p(kVecOrbitRate); pVecOrbitShape = p(kVecOrbitShape);
-    pVecOrbitVoice = p(kVecOrbitVoice);
-    pVecPenvOn = p(kVecPenvOn); pVecPenvStart = p(kVecPenvStart);
-    pVecPenvEnd = p(kVecPenvEnd); pVecPenvTime = p(kVecPenvTime);
-    pVecPenvLoop = p(kVecPenvLoop);
+    // v18 global env tier
+    pGampA = p(kGampA); pGampD = p(kGampD); pGampS = p(kGampS); pGampR = p(kGampR);
+    pGfltA = p(kGfltA); pGfltD = p(kGfltD); pGfltS = p(kGfltS); pGfltR = p(kGfltR);
+    pGauxA = p(kGauxA); pGauxD = p(kGauxD); pGauxS = p(kGauxS); pGauxR = p(kGauxR);
     pFltRoute = p(kFltRoute); pFltBal = p(kFltBal);
     pFlt1Type = p(kFlt1Type); pFlt1Cut = p(kFlt1Cut);
     pFlt1Res = p(kFlt1Res); pFlt1Env = p(kFlt1Env);
@@ -115,13 +113,26 @@ void TheDreamerProcessor::loadFactoryPresets()
             for (const auto& kv : paramObj->getProperties())
             {
                 const juce::String id = kv.name.toString();
+                // v18: a vec_phase entry marks a pre-v18 preset (V18Remap.h).
+                // The id itself no longer exists in the APVTS, so latch the
+                // marker HERE -- the unknown-id skip below would otherwise
+                // hide it from applyParamMap's own detection.
+                if (id == "vec_phase") preset.preV18 = true;
                 if (apvts.getParameter(id) == nullptr)
                 {
-                    ++unknownCount;
-                    DBG("[presets] UNKNOWN param id '" << id << "' in preset '"
-                        << preset.name << "' -- skipped");
-                    jassertfalse;   // preset/param drift bug: make it loud
-                    continue;       // release: skip unknown id, keep the count
+                    // v18: ids deleted by the renovation (vec_*/dir_/vint_)
+                    // are EXPECTED in a not-yet-migrated bank -- skip quietly,
+                    // don't count them as drift.
+                    const bool v18Deleted = id.startsWith("vec_")
+                        || id.startsWith("dir_") || id.startsWith("vint_");
+                    if (! v18Deleted)
+                    {
+                        ++unknownCount;
+                        DBG("[presets] UNKNOWN param id '" << id << "' in preset '"
+                            << preset.name << "' -- skipped");
+                        jassertfalse;   // preset/param drift bug: make it loud
+                    }
+                    continue;       // release: skip unknown id
                 }
                 preset.values.emplace_back(id, kv.value);
             }
@@ -155,7 +166,7 @@ void TheDreamerProcessor::loadFactoryPresets()
 // choice -> integer index; Float/Int -> the normalized 0..1 value straight
 // through. Message thread only (setValueNotifyingHost).
 void TheDreamerProcessor::applyParamMap(
-    const std::vector<std::pair<juce::String, juce::var>>& values)
+    const std::vector<std::pair<juce::String, juce::var>>& values, bool preV18Hint)
 {
     // TD-007 remap, preset-JSON path (this decoder serves factory AND user
     // presets): a stored flt1_type/flt2_type index > 3 can only come from a
@@ -165,6 +176,17 @@ void TheDreamerProcessor::applyParamMap(
     // cut/res overrides are applied AFTER the loop so a stored cut/res entry
     // later in the map cannot undo them. Message thread only.
     bool neutralize[2] = { false, false };
+
+    // v18 remap (plugin/V18Remap.h): a pre-v18 source is marked by the
+    // presence of a vec_phase entry (hint = the factory path, which strips
+    // unknown ids upstream; self-detection = the user-preset/raw-map path).
+    // mtx*_src/mtx*_dst indices shift, a Vec Phs slot's amt is neutralized to
+    // bipolar center AFTER the loop (Td007 idiom), and all 12 *_ovr_[t] flags
+    // are forced TRUE so old patches keep their per-tone envelopes.
+    bool preV18 = preV18Hint;
+    for (const auto& [id, value] : values)
+        if (id == "vec_phase") { preV18 = true; break; }
+    bool mtxAmtNeutralize[3] = { false, false, false };
 
     for (const auto& [id, value] : values)
     {
@@ -183,6 +205,21 @@ void TheDreamerProcessor::applyParamMap(
                 idx = dreamer::td007::remapGlobalFilterType(idx, tr);
                 neutralize[slot] = neutralize[slot] || tr;
             }
+            if (preV18 && id.startsWith("mtx") && id.length() == 8)
+            {
+                const int m = id[3] - '1';                 // mtx1..mtx3
+                if (m >= 0 && m < 3)
+                {
+                    bool tr = false;
+                    if (id.endsWith("_src")) {
+                        idx = dreamer::v18::remapMtxSrc(idx, tr);
+                        mtxAmtNeutralize[m] = mtxAmtNeutralize[m] || tr;
+                    } else if (id.endsWith("_dst")) {
+                        idx = dreamer::v18::remapMtxDst(idx, tr);
+                        mtxAmtNeutralize[m] = mtxAmtNeutralize[m] || tr;
+                    }
+                }
+            }
             param->setValueNotifyingHost(cp->convertTo0to1((float)idx));
         }
         else
@@ -197,13 +234,25 @@ void TheDreamerProcessor::applyParamMap(
             if (auto* p = apvts.getParameter(remapCutIds[s])) p->setValueNotifyingHost(1.0f);
             if (auto* p = apvts.getParameter(remapResIds[s])) p->setValueNotifyingHost(0.0f);
         }
+    // v18 overrides AFTER the loop: amt -> bipolar center (normalized 0.5 =
+    // real 0), then the pre-v18 ovr force-true (12 flags).
+    for (int s = 0; s < 3; ++s)
+        if (mtxAmtNeutralize[s])
+            if (auto* p = apvts.getParameter("mtx" + juce::String(s + 1) + "_amt"))
+                p->setValueNotifyingHost(0.5f);
+    if (preV18)
+        for (const char* base : { "amp_ovr", "flt_ovr", "aux_ovr" })
+            for (int t = 0; t < 4; ++t)
+                if (auto* p = apvts.getParameter(tid(base, t)))
+                    p->setValueNotifyingHost(1.0f);
 }
 
 void TheDreamerProcessor::applyPreset(int index)
 {
     if (index < 0 || index >= (int)presets.size())
         return;
-    applyParamMap(presets[(size_t)index].values);
+    applyParamMap(presets[(size_t)index].values,
+                  presets[(size_t)index].preV18);   // v18 marker (factory path)
     currentProgram = index + 1;             // D4: host program 0 is INIT
     loadedUserPresetName.clear();           // TD-010: factory load overrides user name
 }
@@ -340,7 +389,13 @@ void TheDreamerProcessor::cacheTonePtrs(TonePtrs& dst, int t)
     dst.velo = p("velo"); dst.pan = p("pan");
     dst.shape = p("shape"); dst.shapeDepth = p("shape_depth");
     dst.noise = p("noise"); dst.noiseColor = p("noise_color");
-    dst.dir = p("dir"); dst.vint = p("vint");
+    // v18 second wave layer + balance + override flags
+    dst.wave2 = p("wave2"); dst.oct2 = p("oct2"); dst.semi2 = p("semi2");
+    dst.fine2 = p("fine2"); dst.start2 = p("start2");
+    dst.start2Random = p("start2_random"); dst.velo2 = p("velo2");
+    dst.voicing2 = p("voicing2"); dst.dreamySpread2 = p("dreamy_spread2");
+    dst.waveBalance = p("wave_balance");
+    dst.ampOvr = p("amp_ovr"); dst.fltOvr = p("flt_ovr"); dst.auxOvr = p("aux_ovr");
     dst.detuneVoices = p("detune_voices"); dst.detuneAmount = p("detune_amount");
     dst.voicing = p("voicing"); dst.dreamySpread = p("dreamy_spread");
     dst.loopMode = p("loop_mode"); dst.hitPlay = p("hit_play");
@@ -443,8 +498,16 @@ void TheDreamerProcessor::buildPatch(dreamer::DreamPatch& patch) const
         d.pan          = s.pan->load();
         d.noise        = s.noise->load();
         d.noiseColor   = s.noiseColor->load();
-        d.dir          = s.dir->load();
-        d.vecInt       = s.vint->load();
+        // v18 second wave layer (mirrors the layer-1 maps; detune is shared)
+        d.waveIndex2    = (int)s.wave2->load();
+        d.coarse2       = ((int)s.oct2->load() + gOct) * 12 + (int)s.semi2->load();
+        d.fineCents2    = s.fine2->load();
+        d.start201      = s.start2->load();
+        d.startRandom2  = s.start2Random->load() > 0.5f;
+        d.velSens2      = s.velo2->load();
+        d.voicing2      = (int)s.voicing2->load();
+        d.dreamySpread2 = (int)s.dreamySpread2->load();
+        d.waveBalance   = s.waveBalance->load();
         d.voicing      = (int)s.voicing->load();        // s11
         d.dreamySpread = (int)s.dreamySpread->load();   // s11
         d.detuneVoices = (int)s.detuneVoices->load() + 1;   // D9 choice idx 0..3 -> 1..4
@@ -465,13 +528,36 @@ void TheDreamerProcessor::buildPatch(dreamer::DreamPatch& patch) const
         d.resonance    = off01(s.tvfRes->load(), gRes);
         d.tvfEnvAmount = envHz(s.tvfEnv->load());
         d.tvfKeyFollow = s.tvfKf->load();               // D10 bipolar -1..+1
-        d.tvfA = adsrSec(s.tvfA->load()); d.tvfD = adsrSec(s.tvfD->load());
-        d.tvfS = s.tvfS->load();          d.tvfR = adsrSec(s.tvfR->load());
+        // v18 OVERRIDE INDIRECTION (parameter indirection ONLY -- no copying
+        // into other params, no extra envelope stage; the architect REJECTED
+        // a bus VCA as double-application): a tone whose ovr flag is FALSE
+        // reads its ADSR normalized values from the matching GLOBAL tier
+        // (AMP -> gamp_env_* into the tva slots, FILT -> gflt_env_* into the
+        // tvf ADSR slots, AUX -> gaux_env_* into the aux slots). The D5
+        // g_env_* offsets keep applying to the TVA values whichever side the
+        // indirection reads (documented interpretation).
+        const bool ampOvr = s.ampOvr->load() > 0.5f;
+        const bool fltOvr = s.fltOvr->load() > 0.5f;
+        const bool auxOvr = s.auxOvr->load() > 0.5f;
+        const float tvfAv = fltOvr ? s.tvfA->load() : pGfltA->load();
+        const float tvfDv = fltOvr ? s.tvfD->load() : pGfltD->load();
+        const float tvfSv = fltOvr ? s.tvfS->load() : pGfltS->load();
+        const float tvfRv = fltOvr ? s.tvfR->load() : pGfltR->load();
+        const float tvaAv = ampOvr ? s.tvaA->load() : pGampA->load();
+        const float tvaDv = ampOvr ? s.tvaD->load() : pGampD->load();
+        const float tvaSv = ampOvr ? s.tvaS->load() : pGampS->load();
+        const float tvaRv = ampOvr ? s.tvaR->load() : pGampR->load();
+        const float auxAv = auxOvr ? s.auxA->load() : pGauxA->load();
+        const float auxDv = auxOvr ? s.auxD->load() : pGauxD->load();
+        const float auxSv = auxOvr ? s.auxS->load() : pGauxS->load();
+        const float auxRv = auxOvr ? s.auxR->load() : pGauxR->load();
+        d.tvfA = adsrSec(tvfAv); d.tvfD = adsrSec(tvfDv);
+        d.tvfS = tvfSv;          d.tvfR = adsrSec(tvfRv);
         // D5 g_env_* offset the TVA envelope of every tone (normalized-space).
-        d.tvaA = adsrSec(off01(s.tvaA->load(), gEnvA)); d.tvaD = adsrSec(off01(s.tvaD->load(), gEnvD));
-        d.tvaS = off01(s.tvaS->load(), gEnvS);          d.tvaR = adsrSec(off01(s.tvaR->load(), gEnvR));
-        d.auxA = adsrSec(s.auxA->load()); d.auxD = adsrSec(s.auxD->load());
-        d.auxS = s.auxS->load();          d.auxR = adsrSec(s.auxR->load());
+        d.tvaA = adsrSec(off01(tvaAv, gEnvA)); d.tvaD = adsrSec(off01(tvaDv, gEnvD));
+        d.tvaS = off01(tvaSv, gEnvS);          d.tvaR = adsrSec(off01(tvaRv, gEnvR));
+        d.auxA = adsrSec(auxAv); d.auxD = adsrSec(auxDv);
+        d.auxS = auxSv;          d.auxR = adsrSec(auxRv);
         d.auxDest = (int)s.auxDest->load();
         d.auxAmt  = s.auxAmt->load();
         auto fillLfo = [](dreamer::ToneParams::ToneLfo& o, const LfoPtrs& q) {
@@ -486,16 +572,13 @@ void TheDreamerProcessor::buildPatch(dreamer::DreamPatch& patch) const
     }
     patch.interp = (int)pInterp->load();
 
-    patch.vec.phase        = pVecPhase->load();
-    patch.vec.orbitOn      = pVecOrbitOn->load() > 0.5f;
-    patch.vec.orbitRate01  = pVecOrbitRate->load();
-    patch.vec.orbitShape   = (int)pVecOrbitShape->load();
-    patch.vec.orbitPerVoice = pVecOrbitVoice->load() > 0.5f;
-    patch.vec.penvOn       = pVecPenvOn->load() > 0.5f;
-    patch.vec.penvLoop     = pVecPenvLoop->load() > 0.5f;
-    patch.vec.penvStart    = pVecPenvStart->load();
-    patch.vec.penvEnd      = pVecPenvEnd->load();
-    patch.vec.penvTime     = penvSec(pVecPenvTime->load());
+    // v18 global env tier ADSR: straight from gflt_env_*/gaux_env_* (NOT via
+    // any tone). gamp has no synth instance -- its values feed the per-tone
+    // indirection above only.
+    patch.gfltA = adsrSec(pGfltA->load()); patch.gfltD = adsrSec(pGfltD->load());
+    patch.gfltS = pGfltS->load();          patch.gfltR = adsrSec(pGfltR->load());
+    patch.gauxA = adsrSec(pGauxA->load()); patch.gauxD = adsrSec(pGauxD->load());
+    patch.gauxS = pGauxS->load();          patch.gauxR = adsrSec(pGauxR->load());
 
     patch.glfoShape01 = (int)pLfoShape->load();
     patch.glfoRate01  = pLfoRate->load() * 100.0;          // 0..1 -> Lfo map
@@ -719,12 +802,15 @@ void TheDreamerProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
         if (gfCtrl-- <= 0) {
             gfCtrl = 15;
+            // v18: the global filter env source is the dedicated gflt tier
+            // envelope (held-count gated in DreamSynth), no longer the tones'
+            // aux-max. Same gfCtrl cadence, same x2.0 octave scale.
             double h1 = cutHz(pFlt1Cut->load())
                       * std::pow(2.0, (double)synth.matrixCut1Oct()
-                                    + (double)f1Env * 2.0 * (double)synth.auxMax());
+                                    + (double)f1Env * 2.0 * (double)synth.gfltEnvValue());
             double h2 = cutHz(pFlt2Cut->load())
                       * std::pow(2.0, (double)synth.matrixCut2Oct()
-                                    + (double)f2Env * 2.0 * (double)synth.auxMax());
+                                    + (double)f2Env * 2.0 * (double)synth.gfltEnvValue());
             h1 = juce::jlimit(20.0, 18000.0, h1);
             h2 = juce::jlimit(20.0, 18000.0, h2);
             for (int ch = 0; ch < 2; ++ch) {
@@ -1064,6 +1150,7 @@ bool TheDreamerProcessor::saveUserPreset(const juce::String& name)
     root->setProperty("name", name);
     root->setProperty("category", "USER");
     root->setProperty("bank", "USER");
+    root->setProperty("version", 18);   // v18 param-list generation stamp
     root->setProperty("params", juce::var(captureParamMap().get()));
     return dir.getChildFile(safe + ".json").replaceWithText(juce::JSON::toString(juce::var(root.get())));
 }
@@ -1138,6 +1225,9 @@ void TheDreamerProcessor::getStateInformation(juce::MemoryBlock& destData)
     // attributes on the wrapper element (legacy states simply lack them).
     root.setAttribute("program", currentProgram);
     root.setAttribute("userPreset", loadedUserPresetName);
+    // v18: stamp the param-list generation (informational; the DECISIVE
+    // pre-v18 marker on load is the presence of a vec_phase entry).
+    root.setAttribute("paramsVersion", "18");
     if (auto params = apvts.copyState().createXml())
         root.addChildElement(params.release());       // owned by root now
     auto* ml = root.createNewChildElement(kMidiLearnTag);
@@ -1224,7 +1314,57 @@ void TheDreamerProcessor::setStateInformation(const void* data, int sizeInBytes)
                 }
             }
 
+            // --- v18 remap (pre-v18 saved states; plugin/V18Remap.h) ---------
+            // isPreV18 = the tree still carries a vec_phase child (that param
+            // no longer exists). Remap the mtx*_src/mtx*_dst choice indices in
+            // the tree; a Vec Phs slot's amt is neutralized to the bipolar
+            // center (real 0.0) AFTER the per-slot decision (Td007 idiom: the
+            // override always wins over the stored amt). The 12 *_ovr_[t]
+            // force-true runs after replaceState (the ovr params are NEW --
+            // an old tree has no children for them to edit).
+            const bool preV18 = tree.getChildWithProperty("id", "vec_phase").isValid();
+            if (preV18)
+            {
+                auto paramChild = [&tree](const juce::String& id) {
+                    return tree.getChildWithProperty("id", id);
+                };
+                for (int slot = 1; slot <= 3; ++slot)
+                {
+                    const juce::String n(slot);
+                    bool neutralizeAmt = false;
+                    if (auto sp = paramChild("mtx" + n + "_src"); sp.isValid())
+                    {
+                        bool tr = false;
+                        const int nu = dreamer::v18::remapMtxSrc(
+                            juce::roundToInt((double)sp.getProperty("value", 0.0)), tr);
+                        sp.setProperty("value", (double)nu, nullptr);
+                        neutralizeAmt = neutralizeAmt || tr;
+                    }
+                    if (auto dp = paramChild("mtx" + n + "_dst"); dp.isValid())
+                    {
+                        bool tr = false;
+                        const int nu = dreamer::v18::remapMtxDst(
+                            juce::roundToInt((double)dp.getProperty("value", 0.0)), tr);
+                        dp.setProperty("value", (double)nu, nullptr);
+                        neutralizeAmt = neutralizeAmt || tr;
+                    }
+                    if (neutralizeAmt)
+                        if (auto ap = paramChild("mtx" + n + "_amt"); ap.isValid())
+                            ap.setProperty("value", 0.0, nullptr);   // bip center
+                }
+            }
+
             apvts.replaceState(tree);
+
+            // v18: pre-v18 sources force ALL 12 *_ovr_[t] TRUE so old patches
+            // keep their per-tone envelopes (the new tier defaults would
+            // otherwise hijack them). Message thread, post-replaceState (the
+            // bool-snap loop below then re-quantizes them cleanly).
+            if (preV18)
+                for (const char* base : { "amp_ovr", "flt_ovr", "aux_ovr" })
+                    for (int t = 0; t < 4; ++t)
+                        if (auto* p = apvts.getParameter(tid(base, t)))
+                            p->setValueNotifyingHost(1.0f);
 
             // --- pluginval strictness-8 "Plugin state restoration" fix --------
             // Snap every AudioParameterBool to a clean 0.0/1.0 after a state load.

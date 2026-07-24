@@ -1,25 +1,39 @@
-// DreamVoice v3 -- The Dreamer's 4-tone voice engine.
-// v2 (FEATURES.md CORE) extended per DSP_BUILD.md (2026-07-18, which WINS
-// over FEATURES.md where they conflict):
+// DreamVoice v18 -- The Dreamer's 4-tone voice engine.
+// v3 (DSP_BUILD.md) renovated per the architect-gated v18 contract
+// (2026-07-24):
 //
 //   * bank v3 playback via PcmOsc3 (Cycle/Loop/OneShot, START as 0..1
 //     fraction, START RANDOM per-tone flag)
 //   * per-tone NOISE source (level + color one-pole, 12-bit quantized,
 //     mixed PRE-shaper; AUX dest 4 = NOISE, matrix dest NOISE)
-//   * tone chain (section 5): osc (+start/random) -> +noise -> waveshaper
-//     -> re-quantize 12-bit (ALWAYS) -> ToneFilter TVF (TD-007: full 14-type
-//     list, bit-exact ToneSvf for types 0-3) -> TVA -> vector gain
-//     -> pan -> stereo tone sum
+//   * tone chain (section 5): osc layer 1 (+start/random) [x-fade osc
+//     layer 2] -> +noise -> waveshaper -> re-quantize 12-bit (ALWAYS) ->
+//     ToneFilter TVF (TD-007: full 14-type list, bit-exact ToneSvf for
+//     types 0-3) -> TVA -> level gain -> pan -> stereo tone sum
 //   * per-voice humanization drift (section 3): S&H random walk ~0.2 Hz,
 //     global DRIFT depth 0..1 -> 0..+/-3 cents, one-pole slewed, applied
 //     coherently to all tones of the voice
-//   * vector ORBIT SHAPE (section 6): SAW/TRI/SIN/SQR/S+H shaping of the
-//     raw phase ramp; ORBIT RATE 0.02..8 Hz; optional per-voice free-run
-//     (random phase offset per noteOn)
-//   * mod matrix dest list grows: PITCH/CUT1/CUT2/MORPH/SHAPE/VECPHS/PAN/
-//     NOISE; src list unchanged (GLFO/VECPHS/AUX/VELO/WHEEL)
+//   * v18 VECTOR PURGE: the Dream Vector (per-tone dir/int, manual phase,
+//     orbit, P-env) is DELETED. The tone gain target is params_.level with
+//     the SAME one-pole smoother coefficient and noteOn zero-init the vector
+//     gain used (vecGain_ renamed levelSm_) -- a vint==0/orbit-off patch is
+//     bit-identical (the old expression evaluated level*1.0 exactly).
+//   * v18 SECOND WAVE LAYER per tone: osc2 taps (same voicing/detune tap
+//     model, SHARED detune params, own start2/start2_random via a SEPARATE
+//     rng2_ stream), equal-power wave_balance crossfade at control rate
+//     (b=0 idle fast path: layer 2 computes NOTHING, layer 1 unchanged).
+//     BALANCE is a live dest on the tone LFOs (idx 4) and AUX (idx 5).
+//   * v18 GLOBAL ENV TIER: DreamSynth owns gflt/gaux EnvelopeAdsr value
+//     sources with held-count gating (attack on 0->1 held only, release at
+//     0 held, sustain pedal honored, killAll resets). Matrix src G-Aux is
+//     LIVE (= gauxEnvValue()); the processor's global filter env reads
+//     gfltEnvValue(). There is NO gamp instance here -- gamp is parameter
+//     indirection only (buildPatch).
+//   * mod matrix lists (v18): src GLFO/AUX/VELO/WHEEL/GLFO2/GAUX; dest
+//     PITCH/CUT1/CUT2/MORPH/SHAPE/PAN/NOISE/FXPARAM/LOOPRATE (Vec Phs
+//     deleted from both; pre-v18 files remapped via plugin/V18Remap.h).
 //
-// Tone params are now native v3 fields (start 0..1 etc.) -- the verified
+// Tone params are native v3 fields (start 0..1 etc.) -- the verified
 // rompler::PartialParams struct no longer fits the v3 start semantics; the
 // verified ADSR (rompler::EnvelopeAdsr) is still reused. Carry-overs from
 // v1/v2 (proven): oldest-note steal via global stamp, kill/killAll (kill
@@ -56,8 +70,17 @@ struct ToneParams {
     double noise        = 0.0;     // 0..1 level
     double noiseColor   = 0.0;     // 0 white .. 1 dark
 
-    double dir          = 0.0;     // vector angle 0..1
-    double vecInt       = 0.0;     // vector intensity 0..1
+    // v18 SECOND WAVE LAYER (mirrors the layer-1 fields; detune_voices /
+    // detune_amount are SHARED between the layers by design).
+    int    waveIndex2   = 0;       // bank3 index for osc layer 2
+    int    coarse2      = 0;       // semitones (processor maps oct2*12+semi2)
+    double fineCents2   = 0.0;
+    double start201     = 0.0;     // 0..1 fraction
+    bool   startRandom2 = false;   // randomize layer-2 start at note-on (rng2_)
+    double velSens2     = 0.5;     // layer-2 velocity sensitivity
+    int    voicing2     = 0;       // layer-2 voicing (same table)
+    int    dreamySpread2 = 0;      // layer-2 DREAMY interval set
+    double waveBalance  = 0.0;     // 0 = 100% layer 1 .. 1 = 100% layer 2
 
     // DSP_BUILD s11/12/13 per-tone features (multi-tap voicing, loop mode,
     // hit varispeed). All default to the inert value so a bare init patch is
@@ -100,24 +123,12 @@ struct ToneParams {
                                    // sync: quantized to division index round(v*11)
         double depth  = 0.0;
         bool   sync   = false;
-        int    dest   = 0;         // 0 PITCH, 1 CUTOFF, 2 SHAPE, 3 LEVEL
+        int    dest   = 0;         // 0 PITCH, 1 CUTOFF, 2 SHAPE, 3 LEVEL,
+                                   // 4 BALANCE (v18 wave-layer crossfade)
         int    shape  = 1;         // v11: panel TRI/SIN/SAW/SQR/S+H; default SIN
                                    //  -> Lfo::sine (bit-neutral vs pre-v11 fixed sine)
     };
     ToneLfo lfo1, lfo2;
-};
-
-struct VectorParams {
-    double phase        = 0.0;     // manual PHASE, 0..1 turns
-    bool   orbitOn      = false;
-    double orbitRate01  = 0.3;     // 0..1 -> 0.02..8 Hz (exp map)
-    int    orbitShape   = 0;       // 0 SAW, 1 TRI, 2 SIN, 3 SQR, 4 S+H
-    bool   orbitPerVoice = false;  // per-voice free-run (non-panel)
-    bool   penvOn       = false;
-    bool   penvLoop     = false;
-    double penvStart    = 0.0;
-    double penvEnd      = 0.5;
-    double penvTime     = 1.0;     // seconds
 };
 
 struct MatrixSlot { int src = 0; int dest = 0; double amt = 0.0; };
@@ -125,7 +136,6 @@ struct MatrixSlot { int src = 0; int dest = 0; double amt = 0.0; };
 struct DreamPatch {
     ToneParams   tone[4];
     int          interp = 1;       // 0 DropSample, 1 Linear
-    VectorParams vec;
     int          glfoShape01 = 0;  // panel order TRI/SIN/SAW/SQR/S+H
     double       glfoRate01  = 50.0;   // 0..100 -> Lfo::rateHzFromParam
     bool         glfoSync    = false;  // v15: tempo-sync (rate01 -> beat division)
@@ -136,15 +146,25 @@ struct DreamPatch {
     double       drift = 0.0;      // global humanize depth 0..1
     double       morph = 0.0;      // TD-007: shared tone-filter MORPH base
                                    // (param flt2_morph, display "Tone Morph")
+    // v18 GLOBAL ENV TIER: ADSR (seconds / sustain 0..1) for the two synth-
+    // owned envelope instances (gflt drives the processor's global filter
+    // env; gaux is the LIVE matrix G-Aux source). Read straight from the
+    // gflt_env_*/gaux_env_* params -- NOT via any tone. Defaults = the
+    // layout-default seconds (envt law of .04/.45/.50 and .20/.40/.55).
+    double gfltA = 0.00145, gfltD = 0.0631, gfltS = 0.30, gfltR = 0.1;
+    double gauxA = 0.00631, gauxD = 0.0398, gauxS = 0.60, gauxR = 0.1585;
 };
 
 namespace mtx {
-    enum Src  : int { srcNone = 0, srcGlfo, srcVecPhs, srcAux, srcVelo, srcWheel,
-                      srcGlfo2, srcGAux };   // v16 (=6 G-LFO 2 live, =7 G-Aux reserved)
+    // v18 renumber: Vec Phs deleted from BOTH lists. The +1 offset convention
+    // vs the param choice lists is preserved (param index + 1 = engine enum):
+    // src Glfo=1 .. GAux=6; dest Pitch=1 .. LoopRate=9.
+    enum Src  : int { srcNone = 0, srcGlfo, srcAux, srcVelo, srcWheel,
+                      srcGlfo2, srcGAux };   // v18: srcGAux LIVE (gaux env)
     enum Dest : int { dstNone = 0, dstPitch, dstCut1, dstCut2, dstMorph,
-                      dstShape, dstVecPhs, dstPan, dstNoise, dstFxParam,
-                      dstLoopRate };   // D15 (=10): loop-rate offset, all tones
-    // dstFxParam (=9) is the "FX PARAM" matrix dest from DSP_BUILD s9 (which
+                      dstShape, dstPan, dstNoise, dstFxParam,
+                      dstLoopRate };
+    // dstFxParam is the "FX PARAM" matrix dest from DSP_BUILD s9 (which
     // WINS): s9 lists FX PARAM -- NOT hit_stretch -- as the new dest. It is
     // RESERVED/inert here (GUI parity only, like dstMorph) until the GUI gives
     // it a slot/focus target; wiring one fixed FX param is the s9-flagged trap.
@@ -155,7 +175,6 @@ struct ModContext {
     float driftSemis     = 0.0f;   // per-voice humanize (filled by DreamVoice)
     float glfoValue      = 0.0f;   // global LFO (matrix source)
     float bpm            = 120.0f; // host tempo (tone-LFO sync divisions)
-    float phi            = 0.0f;   // global phase part, turns
     float morph          = 0.0f;   // TD-007: shared tone-filter MORPH
                                    // (flt2_morph base + matrix Morph dest)
     float mtxPitchSemis  = 0.0f;
@@ -253,6 +272,11 @@ struct GlueRng {
 // ---------------------------------------------------------------- tone
 class Tone {
 public:
+    // v18: the level smoother coefficient, KEPT verbatim from the vector gain
+    // (the [vec_purge] bit-exactness rule pins it; tests assert the value).
+    // Also reused by the wave-balance smoother (same idiom/coefficient class).
+    static constexpr float kLevelSmooth = 0.3f;
+
     // 12-bit re-quantize (low nibble zero), truncate toward zero -- the
     // explicit chain stage from DSP_BUILD s5 (also used by the shaper).
     static float requant12(float x) noexcept {
@@ -264,13 +288,17 @@ public:
 
     void prepare(double sr, uint32_t seedBase) noexcept {
         sr_ = sr;
-        for (auto& o : osc_) o.setSampleRate(sr);      // s11: up to 4 taps
+        for (auto& o : osc_)  o.setSampleRate(sr);     // s11: up to 16 taps
+        for (auto& o : osc2_) o.setSampleRate(sr);     // v18 layer 2
         tvfEnv_.setSampleRate(sr);
         tvaEnv_.setSampleRate(sr);
         auxEnv_.setSampleRate(sr);
         filter_.setSampleRate(sr);
         filter_.setStagger((int)(seedBase & 15u));   // TD-007 R3 recalc stagger
         rng_.seed(0x9E3779B9u * (seedBase + 1u));
+        // v18: layer 2 gets its OWN rng stream (new seed constant) -- it must
+        // never draw from rng_ or the layer-1 START/noise streams would shift.
+        rng2_.seed(0x7F4A7C15u * (seedBase + 1u));
         lfo_[0].prepare(sr, (0xA5A5A5A5u ^ (seedBase * 2u)) | 1u);
         lfo_[1].prepare(sr, (0x5A5A5A5Au ^ (seedBase * 2u + 1u)) | 1u);
     }
@@ -282,7 +310,8 @@ public:
     void setInterpMode(int m) noexcept {
         const auto im = (m == 0 ? PcmOsc3::Interp::DropSample
                                 : PcmOsc3::Interp::Linear);
-        for (auto& o : osc_) o.setInterp(im);          // s11: all taps
+        for (auto& o : osc_)  o.setInterp(im);         // s11: all taps
+        for (auto& o : osc2_) o.setInterp(im);         // v18 layer 2
     }
 
     void noteOn(const ToneParams& p, int midiNote, float velocity01) noexcept {
@@ -301,17 +330,49 @@ public:
         // D11: per-wave loudness gain (equalizes browse level; bank untouched).
         waveNormGain_ = (p.waveIndex >= 0 && p.waveIndex < kWaveNormCount)
                             ? kWaveNormGain[p.waveIndex] : 1.0f;
+        // v18 layer 2: cache the second wave's identity the same way.
+        {
+            const auto& wf2 = rompler::bank3::kWaveforms[
+                (p.waveIndex2 < 0 || p.waveIndex2 >= rompler::bank3::kNumWaveforms)
+                    ? 0 : (size_t)p.waveIndex2];
+            waveType2_ = wf2.type;
+            rootHz2_   = wf2.rootHz > 0.0f ? (double)wf2.rootHz : 220.0;
+            wfLen2_    = wf2.length;
+        }
+        waveNormGain2_ = (p.waveIndex2 >= 0 && p.waveIndex2 < kWaveNormCount)
+                            ? kWaveNormGain[p.waveIndex2] : 1.0f;
         rebuildTaps();                                 // s11 voicing x D9 detune
+        rebuildTaps2();                                // v18 layer 2 (shared detune)
         const bool pingpong = (p.loopMode == 1);
-        for (auto& o : osc_) { o.setWaveform(p.waveIndex); o.setLoopMode(pingpong); }
-        baseSemis_ = midiNote - 69 + p.coarse + p.fineCents / 100.0;
+        for (auto& o : osc_)  { o.setWaveform(p.waveIndex);  o.setLoopMode(pingpong); }
+        for (auto& o : osc2_) { o.setWaveform(p.waveIndex2); o.setLoopMode(pingpong); }
+        baseSemis_  = midiNote - 69 + p.coarse  + p.fineCents  / 100.0;
+        baseSemis2_ = midiNote - 69 + p.coarse2 + p.fineCents2 / 100.0;
         double start = p.start01;
         if (p.startRandom) start = (double)rng_.unipolar();       // section 2
         if (p.auxDest == 1)                                       // AUX->START
             start += p.auxAmt * (double)lastAux_;
         if (start < 0.0) start = 0.0; else if (start > 1.0) start = 1.0;
         for (auto& o : osc_) o.reset(start);           // taps inherit START/RANDOM
-        velGain_ = (float)((1.0 - p.velSens) + p.velSens * velocity01);
+        // v18 layer-2 start: own start2/start2_random on the SEPARATE rng2_
+        // stream; AUX->START applies to BOTH layers' starts (documented
+        // interpretation of the shared AUX dest).
+        double start2 = p.start201;
+        if (p.startRandom2) start2 = (double)rng2_.unipolar();
+        if (p.auxDest == 1)
+            start2 += p.auxAmt * (double)lastAux_;
+        if (start2 < 0.0) start2 = 0.0; else if (start2 > 1.0) start2 = 1.0;
+        for (auto& o : osc2_) o.reset(start2);
+        velGain_  = (float)((1.0 - p.velSens)  + p.velSens  * velocity01);
+        // Layer-2 velocity: the shared tone tail multiplies by velGain_, so the
+        // layer-2 branch pre-scales by velGain2/velGain (ratio trick keeps the
+        // layer-1 sum path textually identical). velGain_==0 mutes the whole
+        // tone downstream anyway, so the guarded ratio value is inaudible.
+        const float velGain2 = (float)((1.0 - p.velSens2) + p.velSens2 * velocity01);
+        velRatio2_ = velGain_ > 1.0e-12f ? velGain2 / velGain_ : 1.0f;
+        // balance smoother snaps to the patch base at note-on (no fade-in).
+        balSm_ = (float)(p.waveBalance < 0.0 ? 0.0
+                        : (p.waveBalance > 1.0 ? 1.0 : p.waveBalance));
         tvfEnv_.set(p.tvfA, p.tvfD, p.tvfS, p.tvfR);
         tvaEnv_.set(p.tvaA, p.tvaD, p.tvaS, p.tvaR);
         auxEnv_.set(p.auxA, p.auxD, p.auxS, p.auxR);
@@ -323,7 +384,7 @@ public:
         filter_.setType(p.tvfMode);
         filter_.reset();
         noiseLp_ = 0.0f;
-        vecGain_ = 0.0f;
+        levelSm_ = 0.0f;               // v18: same zero-init the vector gain had
         levelMul_ = 1.0f;
         shapeEff_ = (float)p.shapeDepth;
         noiseEff_ = (float)p.noise;
@@ -339,8 +400,6 @@ public:
         params_.enabled      = p.enabled;
         params_.level        = p.level;
         params_.pan          = p.pan;
-        params_.dir          = p.dir;
-        params_.vecInt       = p.vecInt;
         params_.shapeMode    = p.shapeMode;
         params_.shapeDepth   = p.shapeDepth;
         params_.noise        = p.noise;
@@ -362,6 +421,16 @@ public:
         params_.dreamySpread = p.dreamySpread;
         params_.detuneVoices = p.detuneVoices;   // D9
         params_.detuneAmount = p.detuneAmount;   // D9
+        // v18 layer 2 live params (wave2/oct2/semi2/fine2 pitch + voicing +
+        // balance; waveIndex2/start2 are note-on-only like their layer-1 kin).
+        params_.coarse2       = p.coarse2;
+        params_.fineCents2    = p.fineCents2;
+        params_.startRandom2  = p.startRandom2;
+        params_.velSens2      = p.velSens2;
+        params_.voicing2      = p.voicing2;
+        params_.dreamySpread2 = p.dreamySpread2;
+        params_.waveBalance   = p.waveBalance;
+        baseSemis2_ = note_ - 69 + p.coarse2 + p.fineCents2 / 100.0;
         params_.hitPlay      = p.hitPlay;
         params_.hitStretch   = p.hitStretch;
         params_.hitPitchTrim = p.hitPitchTrim;
@@ -410,6 +479,7 @@ public:
             double shapeEff = params_.shapeDepth + m.mtxShapeAdd;
             double noiseEff = params_.noise + m.mtxNoiseAdd;
             double panEff   = params_.pan + m.mtxPanAdd;
+            double balAdd   = 0.0;               // v18 BALANCE mod offsets
             levelMul_ = 1.0f;
 
             // v7: two per-tone LFOs (rate free/synced, per-dest depth laws)
@@ -424,6 +494,7 @@ public:
                 case 0:  pitchSemis += (double)v * d * d * 12.0; break;
                 case 1:  cutOct     += (double)v * d * 2.0;      break;
                 case 2:  shapeEff   += (double)v * d;            break;
+                case 4:  balAdd     += (double)v * d;            break;   // v18 BALANCE (linear)
                 default: levelMul_  *= 1.0f - d * 0.5f * (1.0f - v); break;
                 }
             }
@@ -434,6 +505,7 @@ public:
                 case 2:  shapeEff   += a;        break;
                 case 3:  panEff     += a;        break;
                 case 4:  noiseEff   += a;        break;
+                case 5:  balAdd     += a;        break;   // v18 BALANCE
                 default: break;
                 }
             }
@@ -498,6 +570,82 @@ public:
                 osc_[k].setLoopRate(loopGranular, morphInc);         // D15
             }
 
+            // ---- v18 SECOND WAVE LAYER control -----------------------------
+            // IDLE FAST PATH (structural rule): with effective balance 0 AND no
+            // BALANCE routing active, layer 2 computes NOTHING -- no tap
+            // rebuild, no frequency pushes, no per-sample processing -- and the
+            // layer-1 sum path below stays textually identical to pre-v18.
+            // (An idle layer 2 freezes; that is by design -- the no-routing
+            // condition guarantees it cannot be mid-modulation.)
+            {
+                const bool balRouted =
+                       (params_.lfo1.dest == 4 && params_.lfo1.depth > 0.0)
+                    || (params_.lfo2.dest == 4 && params_.lfo2.depth > 0.0)
+                    || (params_.auxDest == 5);
+                layer2On_ = balRouted || params_.waveBalance > 0.0;
+                if (layer2On_) {
+                    double b = params_.waveBalance + balAdd;
+                    if (b < 0.0) b = 0.0; else if (b > 1.0) b = 1.0;
+                    // equal-power crossfade, one-pole smoothed at control rate
+                    // (same idiom/coefficient class as the level smoother).
+                    balSm_ += kLevelSmooth * ((float)b - balSm_);
+                    const float a = balSm_ * 1.57079632679489662f;   // pi/2
+                    balG1_ = std::cos(a);
+                    balG2_ = std::sin(a);
+                    rebuildTaps2();
+                    // layer-2 pitch = its own base + the SAME mod offset the
+                    // layer-1 pitch accumulated (bend/drift/matrix/LFOs).
+                    const double pitchSemis2 = baseSemis2_ + (pitchSemis - baseSemis_);
+                    double baseFreq2 = 440.0 * std::pow(2.0, pitchSemis2 / 12.0);
+                    double speedMul2 = 1.0;
+                    bool   loopGranular2 = false;
+                    double morphInc2 = 0.0;
+                    // PLAY MODE params are per-tone and apply to BOTH layers,
+                    // each resolved against its own wave type/root (D15/TD-009
+                    // semantics duplicated verbatim from the layer-1 block).
+                    if ((waveType2_ == rompler::bank3::WaveType::OneShot
+                         || waveType2_ == rompler::bank3::WaveType::Cycle) && stretchMode) {
+                        double hs = params_.hitStretch;
+                        if (hs < 0.0) hs = 0.0; else if (hs > 1.0) hs = 1.0;
+                        const double speed = 0.25 * std::pow(2.0, 4.0 * hs);
+                        const double trim  = std::pow(2.0, params_.hitPitchTrim / 12.0);
+                        baseFreq2 = rootHz2_;
+                        speedMul2 = speed * trim;
+                        if (waveType2_ == rompler::bank3::WaveType::Cycle) {
+                            baseFreq2 = rootHz2_ * speedMul2;
+                            speedMul2 = 1.0;
+                        }
+                    } else if (waveType2_ == rompler::bank3::WaveType::Loop && stretchMode) {
+                        double v = params_.loopRate + (double)m.mtxLoopRateAdd;
+                        if (v < 0.0) v = 0.0; else if (v > 1.0) v = 1.0;
+                        double lrMul;
+                        if (params_.loopRateSync) {
+                            const double beats = toneLfoDivisionBeats(params_.loopRateBeats);
+                            const double naturalSec = (double)wfLen2_ / 44100.0;
+                            const double bpm = (double)(m.bpm > 1.0f ? m.bpm : 120.0f);
+                            const double syncSec = beats * 60.0 / bpm;
+                            lrMul = syncSec > 1e-6 ? naturalSec / syncSec : 1.0;
+                        } else {
+                            lrMul = 0.25 * std::pow(2.0, 4.0 * v);
+                        }
+                        if (params_.loopVarispeed) {
+                            speedMul2 = lrMul;
+                        } else {
+                            loopGranular2 = true;
+                            morphInc2 = (44100.0 / sr_) * lrMul;
+                        }
+                    }
+                    for (int k = 0; k < nTaps2_; ++k) {
+                        const double rt = std::pow(2.0, tapOff2_[k] / 12.0);
+                        osc2_[k].setFrequency(baseFreq2 * rt);
+                        osc2_[k].setSpeedMul(speedMul2);
+                        osc2_[k].setLoopRate(loopGranular2, morphInc2);
+                    }
+                    // per-layer WaveNorm + equal-power tap gain + velocity ratio
+                    g2Mul_ = tapGain2_ * waveNormGain2_ * velRatio2_;
+                }
+            }
+
             const double keyHz = params_.cutoffHz *
                 std::pow(2.0, params_.tvfKeyFollow * (note_ - 60) / 12.0);
             double hz = keyHz + params_.tvfEnvAmount * tvf;
@@ -506,13 +654,12 @@ public:
             filter_.setMorph(m.morph);   // TD-007 shared morph (type 13 only)
             filter_.setCutoffRes(hz, params_.resonance);
 
-            {   // Dream Vector gain law, one-pole smoothed at control rate
-                const double d  = m.phi - params_.dir;
-                const double c  = std::cos(2.0 * 3.14159265358979323846 * d);
-                const double g  = c > 0.0 ? c * c : 0.0;
-                const double tg = params_.level *
-                    ((1.0 - params_.vecInt) + params_.vecInt * g);
-                vecGain_ += kVecSmooth * ((float)tg - vecGain_);
+            {   // v18: tone level, one-pole smoothed at control rate. SAME
+                // coefficient and note-on zero-init as the old vector gain;
+                // with vint==0/orbit-off the old expression evaluated
+                // level*1.0 exactly, so this path is bit-identical.
+                const double tg = params_.level;
+                levelSm_ += kLevelSmooth * ((float)tg - levelSm_);
             }
             {   // equal-power pan
                 if (panEff > 1.0) panEff = 1.0; else if (panEff < -1.0) panEff = -1.0;
@@ -535,6 +682,14 @@ public:
         float x = 0.0f;
         for (int k = 0; k < nTaps_; ++k) x += osc_[k].process();
         x *= tapGain_ * waveNormGain_;                 // D11 loudness normalization
+        // v18 layer-2 crossfade (equal-power, control-rate-smoothed gains).
+        // layer2On_==false is the idle fast path: this branch is skipped and
+        // the layer-1 sum above is textually identical to the pre-v18 engine.
+        if (layer2On_) {
+            float x2 = 0.0f;
+            for (int k = 0; k < nTaps2_; ++k) x2 += osc2_[k].process();
+            x = x * balG1_ + x2 * g2Mul_ * balG2_;
+        }
         if (noiseEff_ > 0.0f) {
             noiseLp_ += noiseCoef_ * (rng_.bipolar() - noiseLp_);
             x += noiseEff_ * requant12(noiseLp_ * 0.9995f);   // 12-bit noise
@@ -542,7 +697,7 @@ public:
         x = Waveshaper::process(x, params_.shapeMode, shapeEff_);
         x = requant12(x);                                      // explicit stage
         x = filter_.process(x);          // TD-007 (bit-exact ToneSvf for 0-3)
-        const float s = x * tva * velGain_ * vecGain_ * levelMul_;
+        const float s = x * tva * velGain_ * levelSm_ * levelMul_;
         l += s * panL_;
         r += s * panR_;
     }
@@ -564,17 +719,33 @@ private:
         tapGain_ = voicingTapGain(nVoicing_) * voicingTapGain(nd);  // 1/sqrt(nV*nd)
     }
 
-    static constexpr float kVecSmooth = 0.3f;
+    // v18: layer-2 tap table -- voicing2/dreamy_spread2 x the SHARED
+    // detune_voices/detune_amount (same laws/constants as rebuildTaps).
+    void rebuildTaps2() noexcept {
+        nVoicing2_ = voicingIntervals(params_.voicing2, params_.dreamySpread2, intervalSemis2_);
+        int nd = params_.detuneVoices; if (nd < 1) nd = 1; else if (nd > 4) nd = 4;
+        double cents = params_.detuneAmount * 25.0;              // 0..+/-25 c
+        if (cents < 0.0) cents = 0.0; else if (cents > 25.0) cents = 25.0;
+        int k = 0;
+        for (int vi = 0; vi < nVoicing2_ && k < kMaxTaps; ++vi)
+            for (int di = 0; di < nd && k < kMaxTaps; ++di)
+                tapOff2_[k++] = (double)intervalSemis2_[vi] + detuneCents(nd, di, cents) / 100.0;
+        nTaps2_   = k;
+        tapGain2_ = voicingTapGain(nVoicing2_) * voicingTapGain(nd);
+    }
 
     PcmOsc3                osc_[kMaxTaps]; // s11 voicing x D9 detune taps (<=16)
+    PcmOsc3                osc2_[kMaxTaps];// v18 second wave layer (<=16)
     rompler::EnvelopeAdsr  tvfEnv_, tvaEnv_, auxEnv_;
     ToneFilter             filter_;     // TD-007: 14-type per-tone TVF
     Lfo                    lfo_[2];      // v7 per-tone LFO pair (v11: per-LFO shape)
     ToneParams             params_;
     GlueRng                rng_;
+    GlueRng                rng2_;        // v18: layer-2 START stream (own seed)
     double sr_ = 44100.0;
     double baseSemis_ = 0.0;
-    float  velGain_ = 1.0f, vecGain_ = 0.0f, levelMul_ = 1.0f;
+    double baseSemis2_ = 0.0;            // v18 layer 2
+    float  velGain_ = 1.0f, levelSm_ = 0.0f, levelMul_ = 1.0f;
     float  shapeEff_ = 0.0f, noiseEff_ = 0.0f, noiseCoef_ = 1.0f, noiseLp_ = 0.0f;
     float  lastAux_ = 0.0f;
     float  panL_ = 0.70710678f, panR_ = 0.70710678f;
@@ -589,6 +760,19 @@ private:
     double rootHz_   = 220.0;
     uint32_t wfLen_  = 1;             // D15 loop length (cached at noteOn, for sync)
     float  waveNormGain_ = 1.0f;      // D11 per-wave loudness gain (cached at noteOn)
+    // v18 layer-2 state
+    int    intervalSemis2_[4] = { 0, 0, 0, 0 };
+    double tapOff2_[kMaxTaps] = {};
+    int    nVoicing2_ = 1;
+    int    nTaps2_    = 1;
+    float  tapGain2_  = 1.0f;
+    rompler::bank3::WaveType waveType2_ = rompler::bank3::WaveType::Cycle;
+    double rootHz2_   = 220.0;
+    uint32_t wfLen2_  = 1;
+    float  waveNormGain2_ = 1.0f;
+    float  velRatio2_ = 1.0f;         // velGain2/velGain (see noteOn)
+    float  balSm_ = 0.0f, balG1_ = 1.0f, balG2_ = 0.0f, g2Mul_ = 1.0f;
+    bool   layer2On_ = false;
 };
 
 // ---------------------------------------------------------------- voice
@@ -598,7 +782,6 @@ public:
         sr_ = sr;
         for (uint32_t i = 0; i < 4; ++i) tones_[i].prepare(sr, voiceIdx * 4u + i);
         walkRng_.seed(0x51D5EEDu + voiceIdx * 0x9E3779B9u);
-        orbitRng_.seed(0xB16B00B5u + voiceIdx * 0x9E3779B9u);
         walk_ = walkTarget_ = 0.0f;
         walkCount_ = 0;
         // GAIN_STAGING s1: tone-sum normalization one-pole (~10 ms) so the
@@ -623,8 +806,6 @@ public:
                 uint64_t stamp) noexcept {
         note_ = midiNote;
         serial_ = stamp;
-        penvT_ = 0.0;
-        voicePhiOffset_ = patch.vec.orbitPerVoice ? orbitRng_.unipolar() : 0.0f;
         // GAIN_STAGING s1: snap the tone-sum scale to the current enabled count on
         // a fresh note (no fade-in); the one-pole only glides live toggles.
         toneNormScale_ = toneNormTarget(patch);
@@ -659,19 +840,6 @@ public:
         }
     }
 
-    float penvValue(const VectorParams& v) const noexcept {
-        if (!v.penvOn) return 0.0f;
-        const double T = std::max(v.penvTime, 0.001);
-        double u = penvT_ / T;
-        if (v.penvLoop) {
-            u = std::fmod(u, 2.0);
-            if (u > 1.0) u = 2.0 - u;
-        } else if (u > 1.0) {
-            u = 1.0;
-        }
-        return (float)(v.penvStart + (v.penvEnd - v.penvStart) * u);
-    }
-
     void process(float& l, float& r, const DreamPatch& patch, ModContext m) noexcept {
         // humanize drift (section 3): S&H random walk ~0.2 Hz, one-pole slew,
         // coherent for all 4 tones of this voice
@@ -684,10 +852,6 @@ public:
         walk_ += 2.0e-5f * (walkTarget_ - walk_);          // slow slew
         driftSemis_ = walk_ * (float)patch.drift * 0.03f;  // +/-3 cents max
         m.driftSemis = driftSemis_;
-
-        m.phi += penvValue(patch.vec) + voicePhiOffset_;
-        m.phi -= std::floor(m.phi);
-        penvT_ += 1.0 / sr_;
 
         // GAIN_STAGING s1: sum THIS voice's tones locally, apply the smoothed
         // 1/sqrt(nEnabledTones) trim, then add to the shared bus. For a single
@@ -705,10 +869,9 @@ private:
     static constexpr double kToneNormTau = 0.010;   // s, tone-sum scale one-pole
 
     Tone tones_[4];
-    GlueRng walkRng_, orbitRng_;
-    double sr_ = 44100.0, penvT_ = 0.0;
+    GlueRng walkRng_;
+    double sr_ = 44100.0;
     float  walk_ = 0.0f, walkTarget_ = 0.0f, driftSemis_ = 0.0f;
-    float  voicePhiOffset_ = 0.0f;
     float  toneNormScale_ = 1.0f, toneNormCoef_ = 1.0f;   // GAIN_STAGING s1
     int    walkCount_ = 0;
     int note_ = -1;
@@ -720,22 +883,6 @@ class DreamSynth {
 public:
     static constexpr int kMaxVoices = 24;
 
-    // ORBIT SHAPE (section 6): shape the raw 0..1 ramp into the phase
-    // contribution. Public static for tests.
-    static float orbitShapeFn(int shape, float raw, float shValue) noexcept {
-        switch (shape) {
-        case 1:  return 1.0f - std::fabs(2.0f * raw - 1.0f);            // TRI
-        case 2:  return 0.5f - 0.5f * std::cos(2.0f * 3.14159265f * raw); // SIN
-        case 3:  return raw < 0.5f ? 0.0f : 0.5f;                       // SQR
-        case 4:  return shValue;                                        // S+H (slewed)
-        default: return raw;                                            // SAW
-        }
-    }
-    static double orbitRateHz(double v01) noexcept {                    // 0.02..8 Hz
-        if (v01 < 0.0) v01 = 0.0; else if (v01 > 1.0) v01 = 1.0;
-        return 0.02 * std::pow(400.0, v01);
-    }
-
     void prepare(double sr) noexcept {
         sr_ = sr;
         for (int i = 0; i < kMaxVoices; ++i) {
@@ -744,10 +891,8 @@ public:
         }
         glfo_.prepare(sr, 0x1955B52Fu);
         glfo2_.prepare(sr, 0x2C6A5F3Bu);        // v16 GLOBAL LFO 2
-        shRng_.seed(0x5EEDBA5Eu);
         oversample_ = 0;               // TD-007: force re-push after prepare
-        orbitPhase_ = 0.0;
-        shHeld_ = shSlewed_ = 0.0f;
+        resetGlobalEnvs();             // v18 global env tier
         ctrlCount_ = 0;
     }
     DreamPatch& patch() noexcept { return patch_; }
@@ -769,7 +914,10 @@ public:
         } else {
             glfo2_.setRateHz(Lfo::rateHzFromParam((float)patch_.glfo2Rate01));
         }
-        orbitHz_ = orbitRateHz(patch_.vec.orbitRate01);
+        // v18 global env tier: ADSR straight from the patch (gflt/gaux_env_*
+        // params) -- NOT via any tone. set() is idempotent, pure arithmetic.
+        gfltEnv_.set(patch_.gfltA, patch_.gfltD, patch_.gfltS, patch_.gfltR);
+        gauxEnv_.set(patch_.gauxA, patch_.gauxD, patch_.gauxS, patch_.gauxR);
         for (auto& v : voices_) v.updateLive(patch_);
     }
 
@@ -787,6 +935,10 @@ public:
 
     void noteOn(int midiNote, float velocity01) noexcept {
         lastVelocity_ = velocity01;
+        // v18 global env tier, HELD-COUNT gating: attack ONLY on the 0->1
+        // held-notes transition (no per-note retrigger on legato).
+        if (heldKeys_ + pedalHeld_ == 0) { gfltEnv_.noteOn(); gauxEnv_.noteOn(); }
+        ++heldKeys_;
         DreamVoice* target = nullptr;
         for (int i = 0; i < kMaxVoices; ++i)
             if (!voices_[i].isActive()) { target = &voices_[i]; sustained_[i] = false; break; }
@@ -807,39 +959,51 @@ public:
                 if (sustainDown_) sustained_[i] = true;
                 else              voices_[i].noteOff();
             }
+        // v18 held-count bookkeeping (mirrors the sustained_[] pedal rule):
+        // a key released under the pedal stays HELD for the global tier.
+        if (heldKeys_ > 0) {
+            --heldKeys_;
+            if (sustainDown_) ++pedalHeld_;
+            else if (heldKeys_ + pedalHeld_ == 0) { gfltEnv_.noteOff(); gauxEnv_.noteOff(); }
+        }
     }
 
     void setSustain(bool down) noexcept {
         sustainDown_ = down;
-        if (!down)
+        if (!down) {
             for (int i = 0; i < kMaxVoices; ++i)
                 if (sustained_[i]) { sustained_[i] = false; voices_[i].noteOff(); }
+            pedalHeld_ = 0;                            // v18: pedal-held keys release
+            if (heldKeys_ == 0) { gfltEnv_.noteOff(); gauxEnv_.noteOff(); }
+        }
     }
 
     void allNotesOff() noexcept {
         sustainDown_ = false;
         for (int i = 0; i < kMaxVoices; ++i) { sustained_[i] = false; voices_[i].noteOff(); }
+        heldKeys_ = pedalHeld_ = 0;                    // v18
+        gfltEnv_.noteOff(); gauxEnv_.noteOff();
     }
     void killAll() noexcept {
         sustainDown_ = false;
         for (int i = 0; i < kMaxVoices; ++i) { sustained_[i] = false; voices_[i].kill(); }
+        resetGlobalEnvs();                             // v18: killAll RESETS the tier
     }
 
     float matrixCut1Oct() const noexcept { return mtxCut1Oct_; }
     float matrixCut2Oct() const noexcept { return mtxCut2Oct_; }
-    float auxMax() const noexcept { return auxMax_; }
+    // v18 global env tier value taps (advanced at the audio cadence, consumed
+    // at the existing control cadences: updateMatrix here, gfCtrl in the
+    // processor's global-filter env). gflt feeds the global filter env; gaux
+    // is the LIVE matrix G-Aux source.
+    float gfltEnvValue() const noexcept { return gfltVal_; }
+    float gauxEnvValue() const noexcept { return gauxVal_; }
 
     void process(float& l, float& r) noexcept {
         glfo_.tick();
         glfo2_.tick();                                // v16 GLOBAL LFO 2
-        if (patch_.vec.orbitOn) {
-            orbitPhase_ += orbitHz_ / sr_;
-            if (orbitPhase_ >= 1.0) {
-                orbitPhase_ -= 1.0;
-                shHeld_ = shRng_.unipolar();               // S+H: new jump target
-            }
-            shSlewed_ += 0.002f * (shHeld_ - shSlewed_);   // slewed random jumps
-        }
+        gfltVal_ = gfltEnv_.process();                // v18 global env tier
+        gauxVal_ = gauxEnv_.process();
 
         if (ctrlCount_-- <= 0) {
             ctrlCount_ = 15;
@@ -851,7 +1015,6 @@ public:
         m.morph         = morphEff_;   // TD-007 shared tone morph (ctrl-rate)
         m.glfoValue     = glfo_.value();
         m.bpm           = bpm_;
-        m.phi           = basePhi_;
         m.mtxPitchSemis = mtxPitchSemis_;
         m.mtxShapeAdd   = mtxShapeAdd_;
         m.mtxPanAdd     = mtxPanAdd_;
@@ -865,10 +1028,6 @@ public:
 
 private:
     void updateMatrix() noexcept {
-        double phi = patch_.vec.phase;
-        if (patch_.vec.orbitOn)
-            phi += orbitShapeFn(patch_.vec.orbitShape, (float)orbitPhase_, shSlewed_);
-
         float am = 0.0f;
         for (auto& v : voices_)
             if (v.isActive()) am = std::fmax(am, v.auxMax());
@@ -878,8 +1037,7 @@ private:
             switch (src) {
             case mtx::srcGlfo:   return glfo_.value();
             case mtx::srcGlfo2:  return glfo2_.value();       // v16
-            case mtx::srcGAux:   return 0.0f;                 // v16 reserved (v17 global aux env)
-            case mtx::srcVecPhs: return (float)(2.0 * (phi - std::floor(phi)) - 1.0);
+            case mtx::srcGAux:   return gauxVal_;             // v18 LIVE (global aux env)
             case mtx::srcAux:    return auxMax_;
             case mtx::srcVelo:   return lastVelocity_;
             case mtx::srcWheel:  return wheel_;
@@ -887,18 +1045,16 @@ private:
             }
         };
 
-        float pitch = 0, cut1 = 0, cut2 = 0, shape = 0, vecAdd = 0, pan = 0, noise = 0,
+        float pitch = 0, cut1 = 0, cut2 = 0, shape = 0, pan = 0, noise = 0,
               loopRate = 0, morph = 0;
         for (const auto& s : patch_.slot) {
             if (s.src == mtx::srcNone || s.dest == mtx::dstNone) continue;
-            if (s.src == mtx::srcVecPhs && s.dest == mtx::dstVecPhs) continue;
             const float v = srcValue(s.src) * (float)s.amt;
             switch (s.dest) {
             case mtx::dstPitch:  pitch  += v * 12.0f; break;
             case mtx::dstCut1:   cut1   += v * 2.0f;  break;
             case mtx::dstCut2:   cut2   += v * 2.0f;  break;
             case mtx::dstShape:  shape  += v;         break;
-            case mtx::dstVecPhs: vecAdd += v * 0.5f;  break;
             case mtx::dstPan:    pan    += v;         break;
             case mtx::dstNoise:  noise  += v;         break;
             case mtx::dstLoopRate: loopRate += v;     break;   // D15 (normalized offset)
@@ -923,8 +1079,20 @@ private:
             if (mv < 0.0f) mv = 0.0f; else if (mv > 1.0f) mv = 1.0f;
             morphEff_ = mv;
         }
-        phi += vecAdd;
-        basePhi_ = (float)(phi - std::floor(phi));
+    }
+
+    // v18: hard-reset the global env tier (prepare + killAll). EnvelopeAdsr
+    // has no reset() (dsp/bank is read-only), so re-init the POD instance and
+    // restore its sample rate; updateLive re-pushes the ADSR next block.
+    void resetGlobalEnvs() noexcept {
+        gfltEnv_ = rompler::EnvelopeAdsr{};
+        gauxEnv_ = rompler::EnvelopeAdsr{};
+        gfltEnv_.setSampleRate(sr_);
+        gauxEnv_.setSampleRate(sr_);
+        gfltEnv_.set(patch_.gfltA, patch_.gfltD, patch_.gfltS, patch_.gfltR);
+        gauxEnv_.set(patch_.gauxA, patch_.gauxD, patch_.gauxS, patch_.gauxR);
+        gfltVal_ = gauxVal_ = 0.0f;
+        heldKeys_ = pedalHeld_ = 0;
     }
 
     // TD-007 (flagged deviation, RT-safe): the 14-type ToneFilter grew each
@@ -942,14 +1110,16 @@ private:
     bool       sustained_[kMaxVoices] = {};
     DreamPatch patch_;
     Lfo        glfo_, glfo2_;   // v16: two global LFOs
-    GlueRng    shRng_;
+    rompler::EnvelopeAdsr gfltEnv_, gauxEnv_;   // v18 global env tier (NO gamp
+                                                // instance -- gamp is a value
+                                                // source via buildPatch only)
     double     sr_ = 44100.0;
-    double     orbitPhase_ = 0.0, orbitHz_ = 0.5;
     uint64_t   stamp_ = 0;
     float      bendSemis_ = 0.0f, wheel_ = 0.0f, lastVelocity_ = 0.8f;
     float      bpm_ = 120.0f;
-    float      basePhi_ = 0.0f, auxMax_ = 0.0f;
-    float      shHeld_ = 0.0f, shSlewed_ = 0.0f;
+    float      auxMax_ = 0.0f;
+    float      gfltVal_ = 0.0f, gauxVal_ = 0.0f;   // v18 tier value taps
+    int        heldKeys_ = 0, pedalHeld_ = 0;      // v18 held-count gating
     float      mtxPitchSemis_ = 0, mtxCut1Oct_ = 0, mtxCut2Oct_ = 0,
                mtxShapeAdd_ = 0, mtxPanAdd_ = 0, mtxNoiseAdd_ = 0,
                mtxLoopRateAdd_ = 0;   // D15

@@ -6,8 +6,6 @@
 // FLAGGED additions beyond the section-9 table (each user-approved or
 // spec-implied elsewhere, documented in PROJECT-NOTES):
 //   aux_amt_[t]     -1..+1  aux env depth (section-9 omission; approved)
-//   vec_penv_loop   bool    P-ENV loop flag (section 6 + GUI_SPEC name it)
-//   vec_orbit_voice bool    per-voice free-run (section 6 "non-panel param")
 //   interp, engine  choices v2 carryovers (DropSample/Linear, Vintage/Modern)
 //   voicing_[t]     choice  s11 multi-tap voicing (Single/Oct/Power/Dreamy)
 //   dreamy_spread_[t] choice s11 DREAMY interval set (Add9/Min7/Sus2)
@@ -24,12 +22,24 @@
 // Normalized 0..1 -> real-unit maps live in PluginProcessor.cpp (documented
 // there); GUI displays 0-127 (bipolar -63..+63) regardless.
 //
+// v18 renovation (architect-gated): the Dream Vector tier is DELETED
+// (vec_phase/orbit/p-env + per-tone dir/vint), each tone gains a SECOND WAVE
+// LAYER (wave2/oct2/semi2/fine2/start2/velo2/start2_random/voicing2/
+// dreamy_spread2 mirroring the layer-1 ranges/laws/defaults + wave_balance,
+// default 0.0 = 100% wave 1), per-tone amp/flt/aux_ovr override flags, and
+// the GLOBAL ENV TIER gamp/gflt/gaux_env_a/d/s/r (a tone with ovr false takes
+// its ADSR from the matching global tier -- parameter indirection in
+// buildPatch, no extra envelope stage). Pre-v18 state/preset files are
+// migrated via plugin/V18Remap.h (mtx lists shrank; ovr forced true).
+//
 // Choice-count freezes: wave 218 (78 cycle + 130 Loop + 10 Shot, bank3 order);
 // flt type 4 (TD-007: globals shrank from 14); shaper 6; tvf type 14 (TD-007:
-// per-tone grew from 4 -- full list incl. DreamPln); lfo/orbit shapes 5;
-// mtx src 7, dst 10; voicing 4; dreamy_spread 3; loop_mode 2; hit_play 2;
-// modfx 7; dly 3; rev 3. TD-007 is a declared PARAM-LIST change (choice counts
-// moved on tvf_type_[t] / flt1_type / flt2_type) -> Cubase FULL RE-SCAN.
+// per-tone grew from 4 -- full list incl. DreamPln); lfo shapes 5;
+// mtx src 6, dst 9 (v18: Vec Phs deleted from both); lfo dest 5 / aux dest 6
+// (v18: +Balance); voicing 4; dreamy_spread 3; loop_mode 2; hit_play 2;
+// modfx 7; dly 3; rev 3. v18 is a declared PARAM-LIST change (ids deleted +
+// added, choice counts moved on mtx*_src/mtx*_dst and the dest lists) ->
+// Cubase FULL RE-SCAN.
 
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -54,32 +64,8 @@ inline float envTimeFromText(const juce::String& t) {
     else                      sec = s.getDoubleValue() * 0.001;   // bare number = ms
     return (float)lawv::envTimeInv(sec);
 }
-inline juce::String penvTimeToText(float v01) {
-    const double sec = lawv::penvTimeSec((double)v01);
-    if (sec < 1.0)  return juce::String(juce::roundToInt(sec * 1000.0)) + " ms";
-    return juce::String(sec, sec < 10.0 ? 2 : 1) + " s";
-}
-inline float penvTimeFromText(const juce::String& t) {
-    const juce::String s = t.trim().toLowerCase();
-    double sec;
-    if (s.endsWith("ms"))     sec = s.dropLastCharacters(2).getDoubleValue() * 0.001;
-    else if (s.endsWith("s")) sec = s.dropLastCharacters(1).getDoubleValue();
-    else                      sec = s.getDoubleValue();           // bare number = s
-    return (float)lawv::penvTimeInv(sec);
-}
-
 // ---- global ----------------------------------------------------------------
 inline constexpr auto kMaster        = "master";
-inline constexpr auto kVecPhase      = "vec_phase";
-inline constexpr auto kVecOrbitOn    = "vec_orbit_on";
-inline constexpr auto kVecOrbitRate  = "vec_orbit_rate";
-inline constexpr auto kVecOrbitShape = "vec_orbit_shape";
-inline constexpr auto kVecOrbitVoice = "vec_orbit_voice";   // flagged (s6)
-inline constexpr auto kVecPenvOn     = "vec_penv_on";
-inline constexpr auto kVecPenvStart  = "vec_penv_start";
-inline constexpr auto kVecPenvEnd    = "vec_penv_end";
-inline constexpr auto kVecPenvTime   = "vec_penv_time";
-inline constexpr auto kVecPenvLoop   = "vec_penv_loop";     // flagged (s6)
 inline constexpr auto kFltRoute      = "flt_route";
 inline constexpr auto kFltBal        = "flt_bal";    // v7: filter 1<->2 balance
 inline constexpr auto kFlt1Type      = "flt1_type";
@@ -155,6 +141,17 @@ inline constexpr auto kGCutoff       = "g_cutoff";  // D5 global tone-cutoff off
 inline constexpr auto kGRes          = "g_res";     // D5 global tone-reso offset
 inline constexpr auto kGOctave       = "g_octave";  // D8 global octave -2..+2
 inline constexpr auto kLimiterOn     = "limiter_on";// D12 output limiter enable
+// ---- v18 GLOBAL ENV TIER ---------------------------------------------------
+// Three global ADSR value sources; a tone whose amp/flt/aux_ovr flag is FALSE
+// takes its TVA/TVF/AUX envelope times from the matching tier (buildPatch
+// indirection). Defaults EQUAL the per-tone defaults so a fresh patch is
+// unchanged whichever side of the indirection it reads.
+inline constexpr auto kGampA = "gamp_env_a";  inline constexpr auto kGampD = "gamp_env_d";
+inline constexpr auto kGampS = "gamp_env_s";  inline constexpr auto kGampR = "gamp_env_r";
+inline constexpr auto kGfltA = "gflt_env_a";  inline constexpr auto kGfltD = "gflt_env_d";
+inline constexpr auto kGfltS = "gflt_env_s";  inline constexpr auto kGfltR = "gflt_env_r";
+inline constexpr auto kGauxA = "gaux_env_a";  inline constexpr auto kGauxD = "gaux_env_d";
+inline constexpr auto kGauxS = "gaux_env_s";  inline constexpr auto kGauxR = "gaux_env_r";
 
 inline juce::String tid(const char* base, int t) {          // per-tone id
     static const char* sfx[4] = { "_a", "_b", "_c", "_d" };
@@ -187,14 +184,6 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
                 .withStringFromValueFunction([](float v, int) { return envTimeToText(v); })
                 .withValueFromStringFunction([](const String& s) { return envTimeFromText(s); }));
     };
-    auto penvt = [](const String& id, const String& name, float def) {
-        return std::make_unique<AudioParameterFloat>(
-            ParameterID { id, 1 }, name, NormalisableRange<float>(0.0f, 1.0f, 0.001f), def,
-            AudioParameterFloatAttributes()
-                .withStringFromValueFunction([](float v, int) { return penvTimeToText(v); })
-                .withValueFromStringFunction([](const String& s) { return penvTimeFromText(s); }));
-    };
-
     // wave list from bank3 (218, order LOCKED)
     StringArray waves;
     for (int i = 0; i < rompler::bank3::kNumWaveforms; ++i)
@@ -215,15 +204,18 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
                                     "DreamPln" };
     const StringArray filterTypes { "LP 24", "LP 12", "BP", "HP" };
     const StringArray lfoShapes   { "Tri", "Sin", "Saw", "Sqr", "S+H" };
-    const StringArray orbitShapes { "Saw", "Tri", "Sin", "Sqr", "S+H" };
-    const StringArray auxDests    { "Pitch", "Start", "Shape", "Pan", "Noise" };
-    const StringArray lfoDests    { "Pitch", "Cutoff", "Shape", "Level" };
-    const StringArray mtxSrcs     { "G-LFO 1", "Vec Phs", "Aux", "Velo", "Wheel",
-                                    "G-LFO 2", "G-Aux" };   // v16: +G-LFO 2 (live), +G-Aux (reserved)
+    // v18: +Balance dest on both per-tone mod tiers (wave-layer crossfade)
+    const StringArray auxDests    { "Pitch", "Start", "Shape", "Pan", "Noise",
+                                    "Balance" };            // v18 idx 5
+    const StringArray lfoDests    { "Pitch", "Cutoff", "Shape", "Level",
+                                    "Balance" };            // v18 idx 4
+    // v18: Vec Phs deleted from BOTH matrix lists (pre-v18 files remapped via
+    // plugin/V18Remap.h); G-Aux is LIVE now (global aux env tier).
+    const StringArray mtxSrcs     { "G-LFO 1", "Aux", "Velo", "Wheel",
+                                    "G-LFO 2", "G-Aux" };
     const StringArray mtxDests    { "Pitch", "Cut 1", "Cut 2", "Morph",
-                                    "Shape", "Vec Phs", "Pan", "Noise",
-                                    "Fx Param", "Loop Rate" };   // s9 dst 9 (inert)
-                                                                 // + D15 dst 10 loop rate
+                                    "Shape", "Pan", "Noise",
+                                    "Fx Param", "Loop Rate" };
     const StringArray voicings    { "Single", "Oct", "Power", "Dreamy" };
     const StringArray dreamySpreads { "Add9", "Min7", "Sus2" };
     const StringArray loopModes   { "Fwd", "Pingpong" };
@@ -255,8 +247,23 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         layout.add(uni(tid("shape_depth", t), P + "Shape Depth", 0.0f));
         layout.add(uni(tid("noise", t), P + "Noise", 0.0f));
         layout.add(uni(tid("noise_color", t), P + "Noise Color", 0.0f));
-        layout.add(uni(tid("dir", t), P + "Vec Dir", 0.25f * (float)t));
-        layout.add(uni(tid("vint", t), P + "Vec Int", 0.0f));
+        // v18 SECOND WAVE LAYER: mirrors the layer-1 ranges/laws/defaults.
+        // wave_balance 0.0 = 100% wave 1 (equal-power crossfade in the tone).
+        layout.add(choice(tid("wave2", t), P + "Wave 2", waves, 0));
+        layout.add(std::make_unique<AudioParameterInt>(
+            ParameterID { tid("oct2", t), 1 }, P + "Octave 2", -2, 2, 0));
+        layout.add(std::make_unique<AudioParameterInt>(
+            ParameterID { tid("semi2", t), 1 }, P + "Semi 2", -12, 12, 0));
+        layout.add(std::make_unique<AudioParameterFloat>(
+            ParameterID { tid("fine2", t), 1 }, P + "Fine 2",
+            NormalisableRange<float>(-50.0f, 50.0f, 0.1f), 0.0f,
+            AudioParameterFloatAttributes().withLabel("ct")));
+        layout.add(uni(tid("start2", t), P + "Sample Start 2", 0.0f));
+        layout.add(boolean(tid("start2_random", t), P + "Start Random 2", false));
+        layout.add(uni(tid("velo2", t), P + "Vel Sens 2", 0.5f));
+        layout.add(choice(tid("voicing2", t), P + "Voicing 2", voicings, 0));
+        layout.add(choice(tid("dreamy_spread2", t), P + "Dreamy Spread 2", dreamySpreads, 0));
+        layout.add(uni(tid("wave_balance", t), P + "Wave Balance", 0.0f));
         // s11 multi-tap voicing / s12 loop mode / s13 hit varispeed (per tone)
         layout.add(choice(tid("voicing", t), P + "Voicing", voicings, 0));
         layout.add(choice(tid("dreamy_spread", t), P + "Dreamy Spread", dreamySpreads, 0));
@@ -294,8 +301,14 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         }
         layout.add(choice(tid("aux_dest", t), P + "Aux Dest", auxDests, 0));
         layout.add(bip(tid("aux_amt", t), P + "Aux Amt", 0.0f));   // flagged
+        // v18 override flags: FALSE = this tone's TVA/TVF/AUX envelope times
+        // come from the matching GLOBAL tier (gamp/gflt/gaux_env_*); TRUE =
+        // the per-tone knobs below win. Pre-v18 loads force all three TRUE.
+        layout.add(boolean(tid("amp_ovr", t), P + "Amp Env Override", false));
+        layout.add(boolean(tid("flt_ovr", t), P + "Flt Env Override", false));
+        layout.add(boolean(tid("aux_ovr", t), P + "Aux Env Override", false));
         layout.add(choice(tid("tvf_type", t), P + "TVF Type", tvfTypes, 0));
-        layout.add(uni(tid("tvf_cut", t), P + "TVF Cutoff", 0.8f));
+        layout.add(uni(tid("tvf_cut", t), P + "TVF Cutoff", 1.0f));   // v18: 0.8 -> 1.0
         layout.add(uni(tid("tvf_res", t), P + "TVF Reso", 0.0f));
         layout.add(uni(tid("tvf_env", t), P + "TVF Env", 0.0f));
         // D10: filter key-follow is now BIPOLAR (-1..+1, display -100..+100,
@@ -327,16 +340,22 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
 
     // ---- global ------------------------------------------------------------
     layout.add(uni(kMaster, "Master", 0.78f));
-    layout.add(uni(kVecPhase, "Vec Phase", 0.0f));
-    layout.add(boolean(kVecOrbitOn, "Orbit On", false));
-    layout.add(uni(kVecOrbitRate, "Orbit Rate", 0.3f));
-    layout.add(choice(kVecOrbitShape, "Orbit Shape", orbitShapes, 0));
-    layout.add(boolean(kVecOrbitVoice, "Orbit Per Voice", false));
-    layout.add(boolean(kVecPenvOn, "P-Env On", false));
-    layout.add(uni(kVecPenvStart, "P-Env Start", 0.0f));
-    layout.add(uni(kVecPenvEnd, "P-Env End", 0.5f));
-    layout.add(penvt(kVecPenvTime, "P-Env Time", 0.3f));
-    layout.add(boolean(kVecPenvLoop, "P-Env Loop", false));
+
+    // v18 GLOBAL ENV TIER (declared exactly like the per-tone tva/aux blocks:
+    // envt law for A/D/R, uni for S). gamp defaults mirror the tva_* literals,
+    // gflt/gaux use the architect-set tier defaults.
+    layout.add(envt(kGampA, "G-Amp Attack",  0.075f));
+    layout.add(envt(kGampD, "G-Amp Decay",   0.634f));
+    layout.add(uni (kGampS, "G-Amp Sustain", 1.0f));
+    layout.add(envt(kGampR, "G-Amp Release", 0.634f));
+    layout.add(envt(kGfltA, "G-Flt Attack",  0.04f));
+    layout.add(envt(kGfltD, "G-Flt Decay",   0.45f));
+    layout.add(uni (kGfltS, "G-Flt Sustain", 0.30f));
+    layout.add(envt(kGfltR, "G-Flt Release", 0.50f));
+    layout.add(envt(kGauxA, "G-Aux Attack",  0.20f));
+    layout.add(envt(kGauxD, "G-Aux Decay",   0.40f));
+    layout.add(uni (kGauxS, "G-Aux Sustain", 0.60f));
+    layout.add(envt(kGauxR, "G-Aux Release", 0.55f));
 
     layout.add(boolean(kFltRoute, "Filter Routing", false));   // v15 GUI: Bool (false=Ser, true=Par)
     layout.add(bip(kFltBal, "Filter Balance", 0.0f));

@@ -1,5 +1,13 @@
+/* ============================================================================
+   The Dreamer — production stylesheet (design tokens + component classes)
+   Pairs with editor.html + app.js. All exact values come from the reference
+   master (../The Dreamer GUI.png / .html). Layout is LOCKED: do not reflow.
+   ========================================================================== */
+
 /* Local bundled fonts (flat filenames; Google Fonts is CSP-blocked in the WebView).
-   Barlow 400/600 -> SemiBold, 700 -> Bold; Doto variable; Michroma. */
+   Barlow 400/600 -> SemiBold, 700 -> Bold; Doto variable; Michroma.
+   ⚠ GUI-Claude fold upstream: handoff pointed at ./fonts/*.ttf incl. a Regular
+   TTF the plugin does not bundle — plugin ships flat filenames, 400 aliases SemiBold. */
 @font-face { font-family:'Barlow Semi Condensed'; font-weight:400; font-style:normal; font-display:block; src:url("BarlowSemiCondensed-SemiBold.ttf") format('truetype'); }
 @font-face { font-family:'Barlow Semi Condensed'; font-weight:600; font-style:normal; font-display:block; src:url("BarlowSemiCondensed-SemiBold.ttf") format('truetype'); }
 @font-face { font-family:'Barlow Semi Condensed'; font-weight:700; font-style:normal; font-display:block; src:url("BarlowSemiCondensed-Bold.ttf") format('truetype'); }
@@ -91,6 +99,10 @@ a:hover { color: var(--ptr-yellow); }
 }
 .knob-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .knob-cell.dim { opacity: .35; pointer-events: none; }
+/* v18: unique white-beige knob (WAVE 1 · WAVE 2 balance) */
+.knob.beige .knob-cap { background: repeating-conic-gradient(#efe7d2 0deg 12deg, #d9cfb4 12deg 24deg); }
+.knob.beige .knob-face { background: #e8dfc6; box-shadow: inset 0 1px 1px rgba(255,255,255,.7), inset 0 -1px 2px rgba(0,0,0,.25); }
+.knob.beige .knob-ptr { background: #3a3320; }
 
 /* ---- vertical slider ------------------------------------------------------ */
 .slider {

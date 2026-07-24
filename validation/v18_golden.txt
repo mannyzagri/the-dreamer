@@ -1,0 +1,15 @@
+# v18 pre-change baseline (engine @ branch base = main 2.7.4, commit 5f1ce1b)
+# Written by the one-time generator (scratchpad v18_baseline_gen.cpp) BUILT AND
+# RUN BEFORE any v18 edit, per the architect contract ([vec_purge] /
+# [wave2_bitexact] golden + [bench] INIT baseline).
+# G1 = 1-tone Basic Sine, vint 0 / orbit off, note 69, 2 s @ 48 kHz, stereo
+#      FNV-1a-64 over the float bit patterns (L,R interleaved).
+# G2 = 4-tone workout (voicing POWER, detune 2, tone LFOs pitch/SQR-tremolo,
+#      AUX->PITCH, noise, drift 0.5, matrix WHEEL->PITCH / G-LFO->CUT1 /
+#      AUX->NOISE by enum NAME), chord {45,57,64}, wheel 0.3, 2 s.
+# init_bench = INIT patch (tone A Basic Saw), 24 voices, 1 s render, min-of-7
+#      wall-time as % of realtime. Observed run-to-run spread ~1-3% on this VM
+#      (5 runs: 9.27/9.36/9.27/9.09/9.32) -> baseline pinned at the MIN.
+g1_hash 4eb8e1acf2d0d09f
+g2_hash 09f41170aba8a8bd
+init_bench_pct_rt 9.0914
